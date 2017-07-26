@@ -17,7 +17,8 @@
 namespace leveldb {
 
 class Env;
-
+class VersionSet;
+class Version;
 class TableCache {
  public:
   TableCache(const std::string& dbname, const Options* options, int entries);
@@ -46,13 +47,14 @@ class TableCache {
 
   // Evict any entry for the specified file number
   void Evict(uint64_t file_number);
-
+  void adjustFilters(uint64_t file_number,uint64_t file_size);
  private:
   Env* const env_;
   const std::string dbname_;
   const Options* options_;
   Cache* cache_;
-
+  friend class VersionSet;
+  //friend class Version;
   Status FindTable(uint64_t file_number, uint64_t file_size, Cache::Handle**);
 };
 

@@ -45,7 +45,7 @@ class FilterBlockTest {
 
 TEST(FilterBlockTest, EmptyBuilder) {
   FilterBlockBuilder builder(&policy_);
-  Slice block = builder.Finish();
+  Slice block = builder.Finish().front();
   ASSERT_EQ("\\x00\\x00\\x00\\x00\\x0b", EscapeString(block));
   FilterBlockReader reader(&policy_, block);
   ASSERT_TRUE(reader.KeyMayMatch(0, "foo"));
@@ -62,7 +62,7 @@ TEST(FilterBlockTest, SingleChunk) {
   builder.AddKey("box");
   builder.StartBlock(300);
   builder.AddKey("hello");
-  Slice block = builder.Finish();
+  Slice block = builder.Finish().front();
   FilterBlockReader reader(&policy_, block);
   ASSERT_TRUE(reader.KeyMayMatch(100, "foo"));
   ASSERT_TRUE(reader.KeyMayMatch(100, "bar"));
@@ -93,7 +93,7 @@ TEST(FilterBlockTest, MultiChunk) {
   builder.AddKey("box");
   builder.AddKey("hello");
 
-  Slice block = builder.Finish();
+  Slice block = builder.Finish().front();
   FilterBlockReader reader(&policy_, block);
 
   // Check first filter

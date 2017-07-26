@@ -124,4 +124,16 @@ void TableCache::Evict(uint64_t file_number) {
   cache_->Erase(Slice(buf, sizeof(buf)));
 }
 
+void TableCache::adjustFilters(uint64_t file_number, uint64_t file_size)
+{
+    Cache::Handle* handle = NULL;
+    Status s = FindTable(file_number, file_size, &handle);
+    if (s.ok()) {
+	Table* t = reinterpret_cast<TableAndFile*>(cache_->Value(handle))->table;
+	t->AddFilters(1);
+	cache_->Release(handle);
+    }
+}
+
+
 }  // namespace leveldb

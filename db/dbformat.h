@@ -136,6 +136,10 @@ class InternalFilterPolicy : public FilterPolicy {
   virtual const char* Name() const;
   virtual void CreateFilter(const Slice* keys, int n, std::string* dst) const;
   virtual bool KeyMayMatch(const Slice& key, const Slice& filter) const;
+  virtual int filterNums() const;
+  virtual void CreateFilter(const Slice *keys,int n,std::list<std::string> &dsts) const;
+  virtual bool KeyMayMatchFilters(const Slice& key, const std::list<leveldb::Slice>& filters) const;
+ 
 };
 
 // Modules in this directory should keep internal keys wrapped inside

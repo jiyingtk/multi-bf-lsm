@@ -313,7 +313,7 @@ struct ThreadState {
 };
 
 }  // namespace
-
+int bits_per_key_per_filters[]={4,4,4,0};
 class Benchmark {
  private:
   Cache* cache_;
@@ -404,7 +404,7 @@ class Benchmark {
   Benchmark()
   : cache_(FLAGS_cache_size >= 0 ? NewLRUCache(FLAGS_cache_size) : NULL),
     filter_policy_(FLAGS_bloom_bits >= 0
-                   ? NewBloomFilterPolicy(FLAGS_bloom_bits)
+                   ? NewBloomFilterPolicy(bits_per_key_per_filters,FLAGS_bloom_bits)
                    : NULL),
     db_(NULL),
     num_(FLAGS_num),

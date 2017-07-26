@@ -14,14 +14,21 @@
 #include "table/format.h"
 #include "table/two_level_iterator.h"
 #include "util/coding.h"
-
+#include<list>
+#include <boost/config/posix_features.hpp>
 namespace leveldb {
 
 struct Table::Rep {
   ~Rep() {
     delete filter;
-    delete [] filter_data;
+    for(std::vector<const char *>::iterator filter_datas_iter=filter_datas.begin() ; filter_datas_iter != filter_datas.end() ; filter_datas_iter++){
+	delete [] (*filter_datas_iter);
+    }
+    filter_handles.clear();
     delete index_block;
+    if(meta){
+	delete meta;
+    }
   }
 
   Options options;
@@ -29,10 +36,12 @@ struct Table::Rep {
   RandomAccessFile* file;
   uint64_t cache_id;
   FilterBlockReader* filter;
-  const char* filter_data;
-
+ // const char* filter_data;
+  std::vector<const char*> filter_datas; // be careful about vector memory overhead
+  std::vector<Slice> filter_handles;    //use string instead of slice 
   BlockHandle metaindex_handle;  // Handle to metaindex_block: saved from footer
   Block* index_block;
+  Block *meta=NULL;
 };
 
 Status Table::Open(const Options& options,
@@ -77,7 +86,7 @@ Status Table::Open(const Options& options,
     rep->metaindex_handle = footer.metaindex_handle();
     rep->index_block = index_block;
     rep->cache_id = (options.block_cache ? options.block_cache->NewId() : 0);
-    rep->filter_data = NULL;
+    rep->filter_datas.clear();
     rep->filter = NULL;
     *table = new Table(rep);
     (*table)->ReadMeta(footer);
@@ -105,16 +114,24 @@ void Table::ReadMeta(const Footer& footer) {
     return;
   }
   Block* meta = new Block(contents);
-
+  rep_->meta = meta;
   Iterator* iter = meta->NewIterator(BytewiseComparator());
-  std::string key = "filter.";
+  char id[]={'1',0};
+  std::string key = "filter."+std::string(id);
   key.append(rep_->options.filter_policy->Name());
   iter->Seek(key);
   if (iter->Valid() && iter->key() == Slice(key)) {
-    ReadFilter(iter->value());
+    //ReadFilter(iter->value());
+  }else{
+	printf("filter iter is not valid\n");
   }
+  while(iter->Valid()){
+      rep_->filter_handles.push_back(iter->value());
+      ReadFilter(iter->value());
+      iter->Next();
+   }
   delete iter;
-  delete meta;
+ // delete meta;  //reserve meta index_block
 }
 
 void Table::ReadFilter(const Slice& filter_handle_value) {
@@ -135,10 +152,35 @@ void Table::ReadFilter(const Slice& filter_handle_value) {
     return;
   }
   if (block.heap_allocated) {
-    rep_->filter_data = block.data.data();     // Will need to delete later
+    rep_->filter_datas.push_back(block.data.data());     // Will need to delete later
   }
-  rep_->filter = new FilterBlockReader(rep_->options.filter_policy, block.data);
+  if(rep_->filter == NULL){
+	rep_->filter = new FilterBlockReader(rep_->options.filter_policy, block.data);
+  }else{
+	rep_->filter->AddFilter(block.data);
+  }
 }
+ //TODO: read n block sequentially
+void Table::AddFilters(int n)
+{
+    if(rep_->filter == NULL){
+	return;
+    }
+    int curr_filter_num = rep_->filter->getCurrFiltersNum();
+    while(n--&&curr_filter_num < rep_->filter_handles.size()){  // avoid overhead of filters
+	ReadFilter(rep_->filter_handles[curr_filter_num++]); 
+    }
+}
+
+void Table::RemoveFilters(int n)
+{
+    rep_->filter->RemoveFilters(n);
+    while(n--&&rep_->filter->getCurrFiltersNum()>0){
+	    delete [] (rep_->filter_datas.back());
+	    rep_->filter_datas.pop_back();
+    }
+}
+
 
 Table::~Table() {
   delete rep_;

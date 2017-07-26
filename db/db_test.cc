@@ -185,7 +185,7 @@ class SpecialEnv : public EnvWrapper {
     return s;
   }
 };
-
+int bits_per_key_per_filters[]={4,4,4,0};
 class DBTest {
  private:
   const FilterPolicy* filter_policy_;
@@ -209,7 +209,7 @@ class DBTest {
 
   DBTest() : option_config_(kDefault),
              env_(new SpecialEnv(Env::Default())) {
-    filter_policy_ = NewBloomFilterPolicy(10);
+    filter_policy_ = NewBloomFilterPolicy(bits_per_key_per_filters,10);
     dbname_ = test::TmpDir() + "/db_test";
     DestroyDB(dbname_, Options());
     db_ = NULL;
@@ -1713,7 +1713,7 @@ TEST(DBTest, BloomFilter) {
   Options options = CurrentOptions();
   options.env = env_;
   options.block_cache = NewLRUCache(0);  // Prevent cache hits
-  options.filter_policy = NewBloomFilterPolicy(10);
+  options.filter_policy = NewBloomFilterPolicy(bits_per_key_per_filters,10);
   Reopen(&options);
 
   // Populate multiple layers

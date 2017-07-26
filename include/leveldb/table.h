@@ -54,7 +54,8 @@ class Table {
   // E.g., the approximate offset of the last key in the table will
   // be close to the file length.
   uint64_t ApproximateOffsetOf(const Slice& key) const;
-
+   void AddFilters(int n);
+   void RemoveFilters(int n);
  private:
   struct Rep;
   Rep* rep_;

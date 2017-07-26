@@ -17,7 +17,7 @@ static Slice Key(int i, char* buffer) {
   EncodeFixed32(buffer, i);
   return Slice(buffer, sizeof(uint32_t));
 }
-
+int bits_per_key_per_filter[]={4,4,4,0};
 class BloomTest {
  private:
   const FilterPolicy* policy_;
@@ -25,7 +25,7 @@ class BloomTest {
   std::vector<std::string> keys_;
 
  public:
-  BloomTest() : policy_(NewBloomFilterPolicy(10)) { }
+  BloomTest() : policy_(NewBloomFilterPolicy(bits_per_key_per_filter,10)) { }
 
   ~BloomTest() {
     delete policy_;

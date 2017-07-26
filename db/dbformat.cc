@@ -118,6 +118,28 @@ bool InternalFilterPolicy::KeyMayMatch(const Slice& key, const Slice& f) const {
   return user_policy_->KeyMayMatch(ExtractUserKey(key), f);
 }
 
+bool InternalFilterPolicy::KeyMayMatchFilters(const Slice& key, const std::list< Slice>& filters) const
+{
+    return user_policy_->KeyMayMatchFilters(ExtractUserKey(key),filters);
+}
+
+void InternalFilterPolicy::CreateFilter(const Slice* keys, int n, std::list< std::string >& dsts) const
+{
+   Slice* mkey = const_cast<Slice*>(keys);
+   for (int i = 0; i < n; i++) {
+	mkey[i] = ExtractUserKey(keys[i]);
+	// TODO(sanjay): Suppress dups?
+    }
+    user_policy_->CreateFilter(keys, n, dsts);
+}
+
+int InternalFilterPolicy::filterNums() const
+{
+    return user_policy_->filterNums();
+}
+
+
+
 LookupKey::LookupKey(const Slice& user_key, SequenceNumber s) {
   size_t usize = user_key.size();
   size_t needed = usize + 13;  // A conservative estimate

@@ -15,7 +15,7 @@
 #include <vector>
 #include "leveldb/slice.h"
 #include "util/hash.h"
-
+#include<list>
 namespace leveldb {
 
 class FilterPolicy;
@@ -32,7 +32,7 @@ class FilterBlockBuilder {
 
   void StartBlock(uint64_t block_offset);
   void AddKey(const Slice& key);
-  Slice Finish();
+  std::list<std::string> &Finish();
 
  private:
   void GenerateFilter();
@@ -40,9 +40,11 @@ class FilterBlockBuilder {
   const FilterPolicy* policy_;
   std::string keys_;              // Flattened key contents
   std::vector<size_t> start_;     // Starting index in keys_ of each key
-  std::string result_;            // Filter data computed so far
+  //std::string result_;            // Filter data computed so far
+  std::list<std::string> results_;
   std::vector<Slice> tmp_keys_;   // policy_->CreateFilter() argument
-  std::vector<uint32_t> filter_offsets_;
+ // std::vector<uint32_t> filter_offsets_;
+  std::list<std::vector<uint32_t>> filters_offsets_;
 
   // No copying allowed
   FilterBlockBuilder(const FilterBlockBuilder&);
@@ -54,13 +56,20 @@ class FilterBlockReader {
  // REQUIRES: "contents" and *policy must stay live while *this is live.
   FilterBlockReader(const FilterPolicy* policy, const Slice& contents);
   bool KeyMayMatch(uint64_t block_offset, const Slice& key);
-
+  void AddFilter(Slice& contents);
+  void RemoveFilters(int n);
+  inline int getCurrFiltersNum(){
+    return curr_num_of_filters_;  
+  }
  private:
   const FilterPolicy* policy_;
-  const char* data_;    // Pointer to filter data (at block-start)
-  const char* offset_;  // Pointer to beginning of offset array (at block-end)
+  std::vector<const char*> datas_;    // Pointer to filter data (at block-start)
+  std::vector<const char*> offsets_;  // Pointer to beginning of offset array (at block-end)
   size_t num_;          // Number of entries in offset array
   size_t base_lg_;      // Encoding parameter (see kFilterBaseLg in .cc file)
+  int max_num_of_filters_;
+  int curr_num_of_filters_;
+  void readFiltes(const Slice& contents);
 };
 
 }

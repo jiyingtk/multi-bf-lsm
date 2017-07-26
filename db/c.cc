@@ -6,6 +6,7 @@
 
 #include <stdlib.h>
 #include <unistd.h>
+#include <boost/concept_check.hpp>
 #include "leveldb/cache.h"
 #include "leveldb/comparator.h"
 #include "leveldb/db.h"
@@ -122,6 +123,16 @@ struct leveldb_filterpolicy_t : public FilterPolicy {
     return (*key_match_)(state_, key.data(), key.size(),
                          filter.data(), filter.size());
   }
+  
+   virtual void CreateFilter(const Slice *keys,int n,std::list<std::string> &dsts) const{
+	
+   }
+   
+   virtual bool KeyMayMatchFilters(const Slice& key, const std::list<leveldb::Slice>& filters) const {
+	return true;
+   }
+  
+   virtual int filterNums() const { return 1;}
 };
 
 struct leveldb_env_t {
@@ -513,7 +524,8 @@ leveldb_filterpolicy_t* leveldb_filterpolicy_create_bloom(int bits_per_key) {
     static void DoNothing(void*) { }
   };
   Wrapper* wrapper = new Wrapper;
-  wrapper->rep_ = NewBloomFilterPolicy(bits_per_key);
+  int a[]={1,2,3,4,0};
+  wrapper->rep_ = NewBloomFilterPolicy(a,bits_per_key);
   wrapper->state_ = NULL;
   wrapper->destructor_ = &Wrapper::DoNothing;
   return wrapper;

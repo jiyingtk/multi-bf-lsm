@@ -202,12 +202,20 @@ Status TableBuilder::Finish() {
   assert(!r->closed);
   r->closed = true;
 
-  BlockHandle filter_block_handle, metaindex_block_handle, index_block_handle;
-
+  BlockHandle temp_filter_block_handle, metaindex_block_handle, index_block_handle;
+  std::vector<BlockHandle> filter_block_handles;
+ 
   // Write filter block
   if (ok() && r->filter_block != NULL) {
-    WriteRawBlock(r->filter_block->Finish(), kNoCompression,
-                  &filter_block_handle);
+	std::list<std::string> &results = r->filter_block->Finish();
+	for(auto results_iter = results.begin() ; results_iter != results.end() ; results_iter++){
+	     Slice rawSlice(*results_iter);
+	    WriteRawBlock(rawSlice, kNoCompression,
+                  &temp_filter_block_handle);
+	    filter_block_handles.push_back(temp_filter_block_handle);
+	}
+	//WriteRawBlock(r->filter_block->Finish(), kNoCompression,
+                 // &filter_block_handle);
   }
 
   // Write metaindex block
@@ -215,11 +223,15 @@ Status TableBuilder::Finish() {
     BlockBuilder meta_index_block(&r->options);
     if (r->filter_block != NULL) {
       // Add mapping from "filter.Name" to location of filter data
-      std::string key = "filter.";
-      key.append(r->options.filter_policy->Name());
-      std::string handle_encoding;
-      filter_block_handle.EncodeTo(&handle_encoding);
-      meta_index_block.Add(key, handle_encoding);
+	char id[]={'1',0};
+	for(auto handle_iter = filter_block_handles.begin() ; handle_iter != filter_block_handles.end() ; handle_iter++){
+	    std::string key = "filter." + std::string(id);	//TODO::key may should add filter id
+	    key.append(r->options.filter_policy->Name());
+	    std::string handle_encoding;
+	    handle_iter->EncodeTo(&handle_encoding);
+	    meta_index_block.Add(key, handle_encoding);
+	    id[0]++;
+	}
     }
 
     // TODO(postrelease): Add stats and other meta blocks
