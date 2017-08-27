@@ -21,8 +21,8 @@ struct FileMetaData {
   uint64_t file_size;         // File size in bytes
   InternalKey smallest;       // Smallest internal key served by table
   InternalKey largest;        // Largest internal key served by table
-
-  FileMetaData() : refs(0), allowed_seeks(1 << 30), file_size(0) { }
+  int access_time;			//file access_time in Get request
+  FileMetaData() : refs(0), allowed_seeks(1 << 30), file_size(0),access_time(0){}
 };
 
 class VersionEdit {

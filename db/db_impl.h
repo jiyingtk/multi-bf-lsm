@@ -63,7 +63,7 @@ class DBImpl : public DB {
   // Samples are taken approximately once every config::kReadBytesPeriod
   // bytes.
   void RecordReadSample(Slice key);
-
+  void adjustFilter();
  private:
   friend class DB;
   struct CompactionState;

@@ -1440,9 +1440,18 @@ bool DBImpl::GetProperty(const Slice& property, std::string* value) {
              static_cast<unsigned long long>(total_usage));
     value->append(buf);
     return true;
-  }
-
-  return false;
+  }else if(in.starts_with("files-access-frequencies")){
+ 	in.remove_prefix(strlen("files-access-frequencies"));
+ 	uint64_t level;
+ 	bool ok = ConsumeDecimalNumber(&in, &level) && in.empty();
+ 	if (!ok || level >= config::kNumLevels) {
+ 	    return false;
+ 	} else {
+ 	    versions_->printTables(level,value); 
+ 	    return true;
+ 	}
+   }
+   return false;
 }
 
 void DBImpl::GetApproximateSizes(
@@ -1530,6 +1539,13 @@ Status DB::Open(const Options& options, const std::string& dbname,
   }
   return s;
 }
+
+void DBImpl::adjustFilter()
+{
+    MutexLock l(&mutex_);
+    versions_->adjustFilter();
+}
+
 
 Snapshot::~Snapshot() {
 }

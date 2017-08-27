@@ -47,7 +47,7 @@ class TableCache {
 
   // Evict any entry for the specified file number
   void Evict(uint64_t file_number);
-  void adjustFilters(uint64_t file_number,uint64_t file_size);
+  void adjustFilters(uint64_t file_number,uint64_t file_size,int n);
  private:
   Env* const env_;
   const std::string dbname_;

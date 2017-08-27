@@ -50,6 +50,7 @@ int RunAllTests() {
       }
       fprintf(stderr, "==== Test %s.%s\n", t.base, t.name);
       (*t.func)();
+      fprintf(stderr, "==== Test num %d\n", num);
       ++num;
     }
   }

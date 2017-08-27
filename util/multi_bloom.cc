@@ -155,6 +155,14 @@ public:
 	virtual const char* Name() const{
 	    return "leveldb.multi_bloom_filter";
 	}
+	
+	virtual ~MultiFilter(){
+	    for(auto iter = filters.begin() ; !filters.empty(); ){
+		delete *iter;
+		iter = filters.erase(iter);
+	    }
+	    fprintf(stderr,"Multi_bloom_filter destructor is called");
+	}
 };
 
 }
