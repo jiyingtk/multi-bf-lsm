@@ -407,6 +407,7 @@ Status Version::Get(const ReadOptions& options,
       saver.value = value;
       s = vset_->table_cache_->Get(options, f->number, f->file_size,
                                    ikey, &saver, SaveValue);
+      f->access_time++;
       if (!s.ok()) {
         return s;
       }
@@ -433,10 +434,10 @@ bool Version::UpdateStats(const GetStats& stats) {
  
   if (f != NULL) {
     f->allowed_seeks--;
-     vset_->table_cache_->adjustFilters(f->number,f->file_size);
+     //vset_->table_cache_->adjustFilters(f->number,f->file_size);
     if (f->allowed_seeks <= 0 && file_to_compact_ == NULL) {
-      //file_to_compact_ = f;
-      //file_to_compact_level_ = stats.seek_file_level;
+      file_to_compact_ = f;
+      file_to_compact_level_ = stats.seek_file_level;
      
       return true;
     }
@@ -598,6 +599,21 @@ std::string Version::DebugString() const {
     }
   }
   return r;
+}
+
+void Version::printTables(int level, std::string* file_strs)
+ {
+     //int begin = - 1,end=-1;
+     char buf[100];
+     for(int i = 0 ; i < files_[level].size(); i++){
+ 	if(i == 0){
+ 	    snprintf(buf, sizeof(buf),"%d",files_[level][i]->access_time);
+ 	}else{
+ 	    snprintf(buf,sizeof(buf),",%d",files_[level][i]->access_time);
+ 	}
+ 	file_strs->append(buf);
+    }
+     file_strs->append("\n");
 }
 
 // A helper class so we can efficiently apply a whole sequence
@@ -1302,7 +1318,7 @@ Compaction* VersionSet::PickCompaction() {
   // We prefer compactions triggered by too much data in a level over
   // the compactions triggered by seeks.
   const bool size_compaction = (current_->compaction_score_ >= 1);
-  const bool seek_compaction = (current_->file_to_compact_ != NULL);
+  const bool seek_compaction = (current_->file_to_compact_ != NULL)&&(options_->opEp_.seek_compaction_);
   if (size_compaction) {
     level = current_->compaction_level_;
     assert(level >= 0);
@@ -1417,6 +1433,31 @@ void VersionSet::SetupOtherInputs(Compaction* c) {
   c->edit_.SetCompactPointer(level, largest);
 }
 
+
+void VersionSet::printTables(int level,std::string *file_strs)
+ {
+     current_->Ref();
+     current_->printTables(level,file_strs);
+     current_->Unref();
+ }
+ 
+void VersionSet::adjustFilter()
+{
+    current_->Ref();
+    auto & curr_files = current_->files_;
+    for(int level = 0 ; level < config::kNumLevels ; level++){
+	for(int i = 0 ; i < curr_files[level].size() ; i++){
+	    if(curr_files[level][i]->access_time >= 180){
+		table_cache_->adjustFilters(curr_files[level][i]->number,curr_files[level][i]->file_size,7);
+	    }else if(curr_files[level][i]->access_time >= 60 && curr_files[level][i]->access_time <180){
+		table_cache_->adjustFilters(curr_files[level][i]->number,curr_files[level][i]->file_size,1);
+	    }
+	}
+    }
+    current_->Unref();
+}
+
+ 
 Compaction* VersionSet::CompactRange(
     int level,
     const InternalKey* begin,
