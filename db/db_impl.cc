@@ -1542,6 +1542,16 @@ Status DB::Open(const Options& options, const std::string& dbname,
   return s;
 }
 
+void DBImpl::DoSomeThing(void* arg)
+{
+    char *thing_str = static_cast<char *>(arg);
+    char adjust_filter_str[] = "adjust_filter";
+    if(strncmp(thing_str,adjust_filter_str,strlen(adjust_filter_str)) == 0){
+	adjustFilter();
+    }
+}
+
+
 void DBImpl::adjustFilter()
 {
     MutexLock l(&mutex_);

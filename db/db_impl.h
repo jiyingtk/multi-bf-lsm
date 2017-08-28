@@ -63,6 +63,7 @@ class DBImpl : public DB {
   // Samples are taken approximately once every config::kReadBytesPeriod
   // bytes.
   void RecordReadSample(Slice key);
+  virtual void DoSomeThing(void *arg);
   void adjustFilter();
  private:
   friend class DB;
