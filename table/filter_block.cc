@@ -141,7 +141,7 @@ void FilterBlockReader::RemoveFilters(int n)
     assert(n <= curr_num_of_filters_);	//at least 0 filters
     while(n--){
 	const char *toBeDelete = datas_.back();
-	delete []toBeDelete;
+	//delete []toBeDelete;   
 	datas_.pop_back();
 	offsets_.pop_back();
 	curr_num_of_filters_--;

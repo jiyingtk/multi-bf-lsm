@@ -32,7 +32,7 @@
 #include "util/coding.h"
 #include "util/logging.h"
 #include "util/mutexlock.h"
-
+unsigned long long filter_mem_space = 0;
 namespace leveldb {
 
 const int kNumNonTableCacheFiles = 10;
@@ -1423,6 +1423,8 @@ bool DBImpl::GetProperty(const Slice& property, std::string* value) {
         value->append(buf);
       }
     }
+    snprintf(buf,sizeof(buf),"filter mem space overhead:%llu\n",filter_mem_space);
+    value->append(buf);
     return true;
   } else if (in == "sstables") {
     *value = versions_->current()->DebugString();
