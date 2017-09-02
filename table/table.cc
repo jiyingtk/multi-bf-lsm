@@ -22,9 +22,16 @@ namespace leveldb {
 
 struct Table::Rep {
   ~Rep() {
+    int curr_filter_num = filter->getCurrFiltersNum();
     delete filter;
     for(std::vector<const char *>::iterator filter_datas_iter=filter_datas.begin() ; filter_datas_iter != filter_datas.end() ; filter_datas_iter++){
-	delete [] (*filter_datas_iter);
+	 delete [] (*filter_datas_iter);
+	 BlockHandle filter_handle;
+	 if(!filter_handle.DecodeFrom(&(filter_handles[--curr_filter_num])).ok()){
+		assert(0);
+		return ;
+	 }
+	 filter_mem_space -= (filter_handle.size()+kBlockTrailerSize) ;
     }
     filter_handles.clear();   //followers delete meta will free space in handle slice
     delete index_block;
@@ -187,7 +194,7 @@ void Table::RemoveFilters(int n)
 		assert(0);
 		return ;
 	    }
-	    filter_mem_space -= filter_handle.size() ;
+	    filter_mem_space -= (filter_handle.size()+kBlockTrailerSize) ;
     }
 }
 
