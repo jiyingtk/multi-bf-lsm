@@ -56,6 +56,7 @@ class Table {
   uint64_t ApproximateOffsetOf(const Slice& key) const;
    void AddFilters(int n);
    void RemoveFilters(int n);
+   size_t getCurrFiltersSize();
  private:
   struct Rep;
   Rep* rep_;

@@ -24,7 +24,6 @@
 #include "port/thread_annotations.h"
 
 namespace leveldb {
-
 namespace log { class Writer; }
 
 class Compaction;
@@ -112,7 +111,8 @@ class Version {
 
   // Return a human readable string that describes this version's contents.
   std::string DebugString() const;
-  void printTables(int level,std::string *file_strs);
+  void printTables(int level,std::string *file_strs,const char*property_str,TableCache *table_cache);
+  void findAllTables(TableCache *table_cache);
  private:
   friend class Compaction;
   friend class VersionSet;
@@ -267,8 +267,9 @@ class VersionSet {
     char buffer[100];
   };
   const char* LevelSummary(LevelSummaryStorage* scratch) const;
-  void printTables(int level,std::string *file_strs);
+  void printTables(int level,std::string *file_strs,const char*property_str="file_access_frequencies");
   void adjustFilter();
+  void findAllTables();
  private:
   class Builder;
 

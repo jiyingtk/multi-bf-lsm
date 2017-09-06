@@ -32,7 +32,9 @@
 #include "util/coding.h"
 #include "util/logging.h"
 #include "util/mutexlock.h"
+
 unsigned long long filter_mem_space = 0;
+unsigned long long filter_num = 0;
 namespace leveldb {
 
 const int kNumNonTableCacheFiles = 10;
@@ -145,8 +147,35 @@ DBImpl::DBImpl(const Options& raw_options, const std::string& dbname)
                              &internal_comparator_);
 }
 
+void DBImpl::untilCompactionEnds()
+ {
+    std::string preValue,afterValue;
+    int count = 0;
+    const int countMAX = 24000;
+    this->GetProperty("leveldb.num-files",&afterValue);
+    // std::cout<<afterValue<<std::endl;
+    //std::cout<<preValue<<std::endl;
+    while(preValue.compare(afterValue) != 0 && count < countMAX){
+      preValue = afterValue;
+      sleep(120);
+      this->GetProperty("leveldb.num-files",&afterValue);
+      count++;
+    }
+    std::cout<<"--- untilCompactionEnds will output ------------"<<std::endl;
+    if(count == countMAX){
+      fprintf(stderr,"Compaction is still running!\n");
+    }else{
+      fprintf(stderr,"no compaction!\n");
+    }
+    std::string stat_str;
+    this->GetProperty("leveldb.stats",&stat_str);
+    stat_str.append("\n--------------above are untilCompactionEnds output--------------\n");
+    std::cout<<stat_str<<std::endl;
+}
+
 DBImpl::~DBImpl() {
   // Wait for background work to finish
+  untilCompactionEnds();
   mutex_.Lock();
   shutting_down_.Release_Store(this);  // Any non-NULL value is ok
   while (bg_compaction_scheduled_) {
@@ -1423,7 +1452,7 @@ bool DBImpl::GetProperty(const Slice& property, std::string* value) {
         value->append(buf);
       }
     }
-    snprintf(buf,sizeof(buf),"filter mem space overhead:%llu\n",filter_mem_space);
+    snprintf(buf,sizeof(buf),"filter mem space overhead:%llu filter_num:%llu \n",filter_mem_space,filter_num);
     value->append(buf);
     return true;
   } else if (in == "sstables") {
@@ -1452,6 +1481,23 @@ bool DBImpl::GetProperty(const Slice& property, std::string* value) {
  	    versions_->printTables(level,value); 
  	    return true;
  	}
+   }else if(in == "num-files"){
+      for(int level = 0  ; level < config::kNumLevels ; level++){
+	char buf[100];
+	snprintf(buf, sizeof(buf), "%d",versions_->NumLevelFiles(static_cast<int>(level)));
+	value->append(buf);
+      }
+      return true;
+   }else if(in.starts_with("file_filter_size")){
+        in.remove_prefix(strlen("file_filter_size"));
+ 	uint64_t level;
+ 	bool ok = ConsumeDecimalNumber(&in, &level) && in.empty();
+ 	if (!ok || level >= config::kNumLevels) {
+ 	    return false;
+ 	} else {
+	    versions_->printTables(level,value,"file_filter_size"); 
+ 	    return true;
+ 	}  
    }
    return false;
 }
@@ -1535,6 +1581,9 @@ Status DB::Open(const Options& options, const std::string& dbname,
   impl->mutex_.Unlock();
   if (s.ok()) {
     assert(impl->mem_ != NULL);
+    impl->mutex_.Lock();
+    impl->versions_->findAllTables();
+    impl->mutex_.Unlock();
     *dbptr = impl;
   } else {
     delete impl;

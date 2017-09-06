@@ -69,7 +69,7 @@ class FilterBlockReader {
   size_t base_lg_;      // Encoding parameter (see kFilterBaseLg in .cc file)
   int max_num_of_filters_;
   int curr_num_of_filters_;
-  void readFiltes(const Slice& contents);
+  void readFilters(const Slice& contents);
 };
 
 }

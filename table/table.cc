@@ -18,6 +18,7 @@
 #include <boost/config/posix_features.hpp>
 //filter memory space overhead
 extern unsigned long long filter_mem_space;
+extern unsigned long long filter_num;
 namespace leveldb {
 
 struct Table::Rep {
@@ -32,6 +33,7 @@ struct Table::Rep {
 		return ;
 	 }
 	 filter_mem_space -= (filter_handle.size()+kBlockTrailerSize) ;
+	 filter_num--;
     }
     filter_handles.clear();   //followers delete meta will free space in handle slice
     delete index_block;
@@ -130,13 +132,13 @@ void Table::ReadMeta(const Footer& footer) {
   key.append(rep_->options.filter_policy->Name());
   iter->Seek(key);
   if (iter->Valid() && iter->key() == Slice(key)) {
-    //ReadFilter(iter->value());
+    ReadFilter(iter->value());
   }else{
-	printf("filter iter is not valid\n");
+    fprintf(stderr,"filter iter is not valid\n");
   }
   while(iter->Valid()){
       rep_->filter_handles.push_back(iter->value());
-      ReadFilter(iter->value());
+      // ReadFilter(iter->value());
       iter->Next();
    }
   delete iter;
@@ -163,6 +165,7 @@ void Table::ReadFilter(const Slice& filter_handle_value) {
   if (block.heap_allocated) {
     rep_->filter_datas.push_back(block.data.data());     // Will need to delete later
     filter_mem_space += block.data.size();
+    filter_num++;
   }
   if(rep_->filter == NULL){
 	rep_->filter = new FilterBlockReader(rep_->options.filter_policy, block.data);
@@ -195,9 +198,23 @@ void Table::RemoveFilters(int n)
 		return ;
 	    }
 	    filter_mem_space -= (filter_handle.size()+kBlockTrailerSize) ;
+	    filter_num--;
     }
 }
 
+size_t Table::getCurrFiltersSize(){
+    int curr_filter_num = rep_->filter->getCurrFiltersNum();
+    size_t table_filter_size = 0;
+    while(curr_filter_num--){
+      BlockHandle filter_handle;
+      if(!filter_handle.DecodeFrom(&(rep_->filter_handles[curr_filter_num])).ok()){
+	assert(0);
+	return 0;
+      }
+      table_filter_size += (filter_handle.size()+kBlockTrailerSize) ;
+    }
+    return table_filter_size;
+}
 
 Table::~Table() {
   delete rep_;

@@ -14,7 +14,8 @@
 #include "leveldb/env.h"
 #include "port/port.h"
 #include "port/thread_annotations.h"
-
+#include <iostream>
+#include <unistd.h>
 namespace leveldb {
 
 class MemTable;
@@ -65,6 +66,7 @@ class DBImpl : public DB {
   void RecordReadSample(Slice key);
   virtual void DoSomeThing(void *arg);
   void adjustFilter();
+  void untilCompactionEnds();
  private:
   friend class DB;
   struct CompactionState;

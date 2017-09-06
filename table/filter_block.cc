@@ -114,7 +114,7 @@ FilterBlockReader::FilterBlockReader(const FilterPolicy* policy,
 
 
 
-void FilterBlockReader::readFiltes(const Slice& contents)
+void FilterBlockReader::readFilters(const Slice& contents)
 {
     size_t base_lg,num;
     size_t n = contents.size();
@@ -132,7 +132,7 @@ void FilterBlockReader::readFiltes(const Slice& contents)
 void FilterBlockReader::AddFilter(Slice &contents)
 {
     assert(1 + curr_num_of_filters_ <= max_num_of_filters_);
-    readFiltes(contents);
+    readFilters(contents);
     curr_num_of_filters_++;
 }
 

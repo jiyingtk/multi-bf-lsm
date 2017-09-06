@@ -601,19 +601,48 @@ std::string Version::DebugString() const {
   return r;
 }
 
-void Version::printTables(int level, std::string* file_strs)
- {
+void Version::findAllTables(TableCache* table_cache)
+{
+    for (int level = 0; level < config::kNumLevels; level++){
+         size_t num_files = files_[level].size();
+         if(num_files == 0){
+	    continue;
+	 }
+         for(int i = 0 ; i < num_files ; i++){
+	   auto iter = table_cache->NewIterator(ReadOptions(), files_[level][i]->number, files_[level][i]->file_size);
+	   delete iter;
+	 }
+    }          
+}
+void Version::printTables(int level, std::string* file_strs,const char *property_str,TableCache *table_cache)
+{
      //int begin = - 1,end=-1;
      char buf[100];
-     for(int i = 0 ; i < files_[level].size(); i++){
- 	if(i == 0){
- 	    snprintf(buf, sizeof(buf),"%d",files_[level][i]->access_time);
- 	}else{
+     if(strncmp(property_str,"file_access_frequencies",strlen("file_access_frequencies")) == 0){
+       for(int i = 0 ; i < files_[level].size(); i++){
+	 if(i == 0){
+	   snprintf(buf, sizeof(buf),"%d",files_[level][i]->access_time);
+	 }else{
  	    snprintf(buf,sizeof(buf),",%d",files_[level][i]->access_time);
- 	}
- 	file_strs->append(buf);
-    }
-     file_strs->append("\n");
+	 }
+	 file_strs->append(buf);
+       }
+       file_strs->append("\n");
+     }else if(strncmp(property_str,"file_filter_size",strlen("file_filter_size")) == 0){
+       for(int i = 0 ; i < files_[level].size(); i++){
+	 auto table = table_cache->GetTable(files_[level][i]->number, files_[level][i]->file_size);
+	 if(table == NULL){
+	   fprintf(stderr,"no such table!");
+	 }
+	 if(i == 0){
+	   snprintf(buf, sizeof(buf),"%lu",table->getCurrFiltersSize());
+	 }else{
+ 	    snprintf(buf,sizeof(buf),",%lu",table->getCurrFiltersSize());
+	 }
+	 file_strs->append(buf);
+       }
+       file_strs->append("\n");     
+     }
 }
 
 // A helper class so we can efficiently apply a whole sequence
@@ -1434,25 +1463,39 @@ void VersionSet::SetupOtherInputs(Compaction* c) {
 }
 
 
-void VersionSet::printTables(int level,std::string *file_strs)
- {
+void VersionSet::printTables(int level,std::string *file_strs,const char* property_str)
+{
      current_->Ref();
-     current_->printTables(level,file_strs);
+     current_->printTables(level,file_strs,property_str,table_cache_);
      current_->Unref();
- }
- 
+}
+
+void VersionSet::findAllTables()
+{
+     current_->Ref();
+     current_->findAllTables(table_cache_);
+     current_->Unref();
+} 
+
 void VersionSet::adjustFilter()
 {
     current_->Ref();
     auto & curr_files = current_->files_;
+    int adjustType[]={0,0};
     for(int level = 0 ; level < config::kNumLevels ; level++){
 	for(int i = 0 ; i < curr_files[level].size() ; i++){
 	    if(curr_files[level][i]->access_time >= 180){
 		table_cache_->adjustFilters(curr_files[level][i]->number,curr_files[level][i]->file_size,7);
+		adjustType[0]++;
 	    }else if(curr_files[level][i]->access_time >= 60 && curr_files[level][i]->access_time <180){
 		table_cache_->adjustFilters(curr_files[level][i]->number,curr_files[level][i]->file_size,1);
+		adjustType[1]++;
 	    }
 	}
+    }
+    printf("---------Adjust Type----------\n");
+    for(int i = 0 ; i < sizeof(adjustType)/sizeof(int) ; i++){
+      printf("type:%d :%d\n",i,adjustType[i]);
     }
     current_->Unref();
 }
