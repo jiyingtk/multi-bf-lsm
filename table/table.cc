@@ -28,7 +28,8 @@ struct Table::Rep {
     for(std::vector<const char *>::iterator filter_datas_iter=filter_datas.begin() ; filter_datas_iter != filter_datas.end() ; filter_datas_iter++){
 	 delete [] (*filter_datas_iter);
 	 BlockHandle filter_handle;
-	 if(!filter_handle.DecodeFrom(&(filter_handles[--curr_filter_num])).ok()){
+	 Slice v = filter_handles[--curr_filter_num];
+	 if(!filter_handle.DecodeFrom(&v).ok()){
 		assert(0);
 		return ;
 	 }
@@ -193,7 +194,8 @@ void Table::RemoveFilters(int n)
 	    delete [] (rep_->filter_datas.back());
 	    rep_->filter_datas.pop_back();
 	    BlockHandle filter_handle;
-	    if(!filter_handle.DecodeFrom(&(rep_->filter_handles[--curr_filter_num])).ok()){
+	    Slice v = rep_->filter_handles[--curr_filter_num];
+	    if(!filter_handle.DecodeFrom(&v).ok()){
 		assert(0);
 		return ;
 	    }
@@ -207,7 +209,8 @@ size_t Table::getCurrFiltersSize(){
     size_t table_filter_size = 0;
     while(curr_filter_num--){
       BlockHandle filter_handle;
-      if(!filter_handle.DecodeFrom(&(rep_->filter_handles[curr_filter_num])).ok()){
+      Slice v = rep_->filter_handles[curr_filter_num];
+      if(!filter_handle.DecodeFrom(&v).ok()){
 	assert(0);
 	return 0;
       }

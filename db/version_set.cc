@@ -633,6 +633,7 @@ void Version::printTables(int level, std::string* file_strs,const char *property
 	 auto table = table_cache->GetTable(files_[level][i]->number, files_[level][i]->file_size);
 	 if(table == NULL){
 	   fprintf(stderr,"no such table!");
+	   continue;
 	 }
 	 if(i == 0){
 	   snprintf(buf, sizeof(buf),"%lu",table->getCurrFiltersSize());
