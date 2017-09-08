@@ -139,13 +139,16 @@ void TableCache::adjustFilters(uint64_t file_number, uint64_t file_size,int n)
     }
 }
 
-Table *TableCache::GetTable(uint64_t file_number,uint64_t file_size){
+size_t TableCache::GetTableCurrFiltersSize(uint64_t file_number,uint64_t file_size){
     Cache::Handle* handle = NULL;
     Status s = FindTable(file_number, file_size, &handle);
     if (s.ok()) {
       Table* t = reinterpret_cast<TableAndFile*>(cache_->Value(handle))->table;
+      size_t res = t->getCurrFiltersSize();
+      cache_->Release(handle);
+      return res;
     }else{
-      return NULL;
+      return 0;
     }
 }
 

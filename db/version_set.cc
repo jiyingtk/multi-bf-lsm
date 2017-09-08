@@ -630,14 +630,10 @@ void Version::printTables(int level, std::string* file_strs,const char *property
        file_strs->append("\n");
      }else if(strncmp(property_str,"file_filter_size",strlen("file_filter_size")) == 0){
        for(int i = 0 ; i < files_[level].size(); i++){
-	 auto table = table_cache->GetTable(files_[level][i]->number, files_[level][i]->file_size);
-	 if(table == NULL){
-	   fprintf(stderr,"no such table!");
-	 }
 	 if(i == 0){
-	   snprintf(buf, sizeof(buf),"%lu",table->getCurrFiltersSize());
+	   snprintf(buf, sizeof(buf),"%lu",table_cache->GetTableCurrFiltersSize(files_[level][i]->number, files_[level][i]->file_size));
 	 }else{
- 	    snprintf(buf,sizeof(buf),",%lu",table->getCurrFiltersSize());
+ 	    snprintf(buf,sizeof(buf),",%lu",table_cache->GetTableCurrFiltersSize(files_[level][i]->number, files_[level][i]->file_size));
 	 }
 	 file_strs->append(buf);
        }
