@@ -32,7 +32,8 @@
 #include "util/coding.h"
 #include "util/logging.h"
 #include "util/mutexlock.h"
-
+#include "leveldb/statistics.h"
+#include "util/stop_watch.h"
 unsigned long long filter_mem_space = 0;
 unsigned long long filter_num = 0;
 namespace leveldb {
@@ -125,6 +126,7 @@ DBImpl::DBImpl(const Options& raw_options, const std::string& dbname)
       owns_info_log_(options_.info_log != raw_options.info_log),
       owns_cache_(options_.block_cache != raw_options.block_cache),
       dbname_(dbname),
+      statis_(options_.opEp_.stats_.get()),
       db_lock_(NULL),
       shutting_down_(NULL),
       bg_cv_(&mutex_),
@@ -1156,7 +1158,9 @@ Status DBImpl::Get(const ReadOptions& options,
 
   bool have_stat_update = false;
   Version::GetStats stats;
-
+  std::allocator<StopWatch> alloc_stop_watch;
+  auto p = alloc_stop_watch.allocate(1);
+  alloc_stop_watch.construct(p,env_,statis_,MEM_READ_TIME);
   // Unlock while reading from files and memtables
   {
     mutex_.Unlock();
@@ -1164,12 +1168,18 @@ Status DBImpl::Get(const ReadOptions& options,
     LookupKey lkey(key, snapshot);
     if (mem->Get(lkey, value, &s)) {
       // Done
+	alloc_stop_watch.destroy(p);
     } else if (imm != NULL && imm->Get(lkey, value, &s)) {
       // Done
+	p->setHistType(IMMEM_READ_TIME);
+	alloc_stop_watch.destroy(p);
     } else {
       s = current->Get(options, lkey, value, &stats);
+      p->setHistType(options.read_file_nums+READ_0_TIME);
       have_stat_update = true;
+      alloc_stop_watch.destroy(p);
     }
+    alloc_stop_watch.deallocate(p,1);
     mutex_.Lock();
   }
 
@@ -1451,6 +1461,7 @@ bool DBImpl::GetProperty(const Slice& property, std::string* value) {
             stats_[level].bytes_written / 1048576.0);
         value->append(buf);
       }
+      value->append(printStatistics());
     }
     snprintf(buf,sizeof(buf),"filter mem space overhead:%llu filter_num:%llu \n",filter_mem_space,filter_num);
     value->append(buf);
@@ -1526,6 +1537,13 @@ void DBImpl::GetApproximateSizes(
     MutexLock l(&mutex_);
     v->Unref();
   }
+}
+std::string DBImpl::printStatistics()
+{
+    if(statis_){
+	    return statis_->ToString();
+    }
+    return std::string();
 }
 
 // Default implementations of convenience methods that subclasses of DB

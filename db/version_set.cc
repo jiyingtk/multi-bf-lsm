@@ -342,7 +342,7 @@ Status Version::Get(const ReadOptions& options,
   stats->seek_file_level = -1;
   FileMetaData* last_file_read = NULL;
   int last_file_read_level = -1;
-
+  options.read_file_nums = 0;
   // We can search level-by-level since entries never hop across
   // levels.  Therefore we are guaranteed that if we find data
   // in an smaller level, later levels are irrelevant.

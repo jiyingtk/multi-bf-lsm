@@ -323,6 +323,7 @@ Status Table::InternalGet(const ReadOptions& options, const Slice& k,
         (*saver)(arg, block_iter->key(), block_iter->value());
       }
       s = block_iter->status();
+      options.read_file_nums++;
       delete block_iter;
     }
   }
