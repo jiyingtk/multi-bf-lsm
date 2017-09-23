@@ -1461,8 +1461,8 @@ bool DBImpl::GetProperty(const Slice& property, std::string* value) {
             stats_[level].bytes_written / 1048576.0);
         value->append(buf);
       }
-      value->append(printStatistics());
     }
+    value->append(printStatistics());
     snprintf(buf,sizeof(buf),"filter mem space overhead:%llu filter_num:%llu \n",filter_mem_space,filter_num);
     value->append(buf);
     return true;

@@ -61,6 +61,8 @@ public:
 	virtual void measureTime(uint32_t tickerType,uint64_t value);
 	virtual void setTickerCount(uint32_t tickerType,uint64_t count = 0);
 	virtual std::string ToString(uint32_t begin_type = READ_0_TIME,uint32_t end_type= READ_7_TIME);
+	virtual void reset();
+	virtual void init();
 private:
 	uint64_t tickers_[TICKER_ENUM_MAX];
 	HistogramData histograms_[TICKER_ENUM_MAX];

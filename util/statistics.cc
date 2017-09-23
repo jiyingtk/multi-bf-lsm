@@ -2,7 +2,7 @@
 #include <limits>
 #include <stdio.h>
 namespace leveldb{
-Statistics::Statistics(){
+void Statistics::init(){
     int i;
     for(i = 0 ; i < TICKER_ENUM_MAX ; i++){
 	histograms_[i].min = std::numeric_limits<double>::max();
@@ -11,6 +11,15 @@ Statistics::Statistics(){
 	tickers_[i] = 0;
     }
 }
+
+Statistics::Statistics(){
+  init();
+}
+
+void Statistics::reset(){
+  init();
+}
+
 inline uint64_t Statistics::getTickerCount(uint32_t tickerType) const
 {
     assert(tickerType < TICKER_ENUM_MAX);
@@ -48,12 +57,13 @@ std::string Statistics::ToString(uint32_t begin_type, uint32_t end_type)
 	std::string res;
 	res.reserve(20000);
 	for(i = begin_type ; i <= end_type ; i++){
-	    histograms_[i].min = histograms_[i].min == std::numeric_limits<double>::max() ? -1 : histograms_[i].min;
+       	    histograms_[i].min = (histograms_[i].min == std::numeric_limits<double>::max() ? -1 : histograms_[i].min);
 	    histograms_[i].average = histograms_[i].average/tickers_[i];
-	    snprintf(buf,sizeof(buf),"%s min:%.3lf ave:%.3lf max:%.3lf\n",TickersNameMap[i].second.c_str(),histograms_[i].min,histograms_[i].average,histograms_[i].max);
+	    snprintf(buf,sizeof(buf),"%s min:%.3lf ave:%.3lf max:%.3lf count:%llu\n",TickersNameMap[i].second.c_str(),histograms_[i].min,histograms_[i].average,histograms_[i].max,tickers_[i]);
 	    res.append(buf);
 	}
 	res.shrink_to_fit();
+	reset();
 	return res;
 }
 
