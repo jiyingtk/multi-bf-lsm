@@ -208,12 +208,14 @@ Status TableBuilder::Finish() {
   // Write filter block
   if (ok() && r->filter_block != NULL) {
 	std::list<std::string> &results = r->filter_block->Finish();
+	uint64_t start_micros = Env::Default()->NowMicros();
 	for(auto results_iter = results.begin() ; results_iter != results.end() ; results_iter++){
 	     Slice rawSlice(*results_iter);
 	    WriteRawBlock(rawSlice, kNoCompression,
                   &temp_filter_block_handle);
 	    filter_block_handles.push_back(temp_filter_block_handle);
 	}
+	MeasureTime(Statistics::GetStatistics().get(),Tickers::WRITE_FILTER_TIME,Env::Default()->NowMicros() - start_micros);
 	//WriteRawBlock(r->filter_block->Finish(), kNoCompression,
                  // &filter_block_handle);
   }

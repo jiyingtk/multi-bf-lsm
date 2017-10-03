@@ -1419,7 +1419,7 @@ Status DBImpl::MakeRoomForWrite(bool force) {
 
 bool DBImpl::GetProperty(const Slice& property, std::string* value) {
   value->clear();
-
+  
   MutexLock l(&mutex_);
   Slice in = property;
   Slice prefix("leveldb.");
@@ -1441,6 +1441,7 @@ bool DBImpl::GetProperty(const Slice& property, std::string* value) {
     }
   } else if (in == "stats") {
     char buf[200];
+    uint64_t stats_sum = 0;
     snprintf(buf, sizeof(buf),
              "                               Compactions\n"
              "Level  Files Size(MB) Time(sec) Read(MB) Write(MB)\n"
@@ -1460,7 +1461,13 @@ bool DBImpl::GetProperty(const Slice& property, std::string* value) {
             stats_[level].bytes_read / 1048576.0,
             stats_[level].bytes_written / 1048576.0);
         value->append(buf);
+	stats_sum += stats_[level].micros;
       }
+      snprintf(buf,sizeof(buf),"create filters time / compaction time = %.5lf%% write filters time / compaction time = %.5lf%%\n",
+	       statis_->GetTickerHistogram(Tickers::CREATE_FILTER_TIME)*1.0/stats_sum,
+	       statis_->GetTickerHistogram(Tickers::WRITE_FILTER_TIME)*1.0/stats_sum
+	      );
+      value->append(buf);
     }
     value->append(printStatistics());
     snprintf(buf,sizeof(buf),"filter mem space overhead:%llu filter_num:%llu \n",filter_mem_space,filter_num);

@@ -6,7 +6,7 @@
 
 #include "leveldb/filter_policy.h"
 #include "util/coding.h"
-#include <boost/concept_check.hpp>
+#include <util/stop_watch.h>
 
 namespace leveldb {
 
@@ -88,8 +88,9 @@ void FilterBlockBuilder::GenerateFilter() {
 	filters_offsets_iter->push_back(results_iter->size());
 	results_iter++;
     }
-  policy_->CreateFilter(&tmp_keys_[0], static_cast<int>(num_keys), results_);
-
+    uint64_t start_micros = Env::Default()->NowMicros();
+    policy_->CreateFilter(&tmp_keys_[0], static_cast<int>(num_keys), results_);
+    MeasureTime(Statistics::GetStatistics().get(),Tickers::CREATE_FILTER_TIME,Env::Default()->NowMicros() - start_micros);
   tmp_keys_.clear();
   keys_.clear();
   start_.clear();
