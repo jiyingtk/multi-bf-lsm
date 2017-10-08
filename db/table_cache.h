@@ -13,9 +13,13 @@
 #include "leveldb/cache.h"
 #include "leveldb/table.h"
 #include "port/port.h"
-
+#include "leveldb/env.h"
+#include "leveldb/table.h"
 namespace leveldb {
-
+struct TableAndFile {
+  RandomAccessFile* file;
+  Table* table;
+};
 class Env;
 class VersionSet;
 class Version;

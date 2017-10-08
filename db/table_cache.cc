@@ -3,18 +3,12 @@
 // found in the LICENSE file. See the AUTHORS file for names of contributors.
 
 #include "db/table_cache.h"
-
 #include "db/filename.h"
-#include "leveldb/env.h"
-#include "leveldb/table.h"
 #include "util/coding.h"
 
 namespace leveldb {
 
-struct TableAndFile {
-  RandomAccessFile* file;
-  Table* table;
-};
+
 
 static void DeleteEntry(const Slice& key, void* value) {
   TableAndFile* tf = reinterpret_cast<TableAndFile*>(value);

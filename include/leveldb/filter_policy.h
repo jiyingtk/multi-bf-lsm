@@ -57,6 +57,7 @@ class FilterPolicy {
   virtual int filterNums() const {
 	return 1;
   }
+  static size_t bits_per_key_per_filter[10];
 };
 
 // Return a new filter policy that uses a bloom filter with approximately

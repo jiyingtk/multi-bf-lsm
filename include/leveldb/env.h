@@ -131,6 +131,15 @@ class Env {
   // REQUIRES: lock was returned by a successful LockFile() call
   // REQUIRES: lock has not already been unlocked.
   virtual Status UnlockFile(FileLock* lock) = 0;
+  // Priority for scheduling job in thread pool
+  enum Priority { BOTTOM, LOW, HIGH, TOTAL };
+
+  // Priority for requesting bytes in rate limiter scheduler
+  enum IOPriority {
+    IO_LOW = 0,
+    IO_HIGH = 1,
+    IO_TOTAL = 2
+  };
 
   // Arrange to run "(*function)(arg)" once in a background thread.
   //

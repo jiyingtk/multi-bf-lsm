@@ -7,7 +7,9 @@
 #include "leveldb/slice.h"
 #include "util/hash.h"
 #include <list>
-#include <boost/concept_check.hpp>
+#include <thread>
+#include "leveldb/threadpool.h"
+#include "util/threadpool_imp.h"
 namespace leveldb {
 
 namespace {
@@ -111,14 +113,28 @@ class MultiFilter:public FilterPolicy{
 private:
 	std::list<ChildBloomFilterPolicy*> filters;
 	size_t bits_per_key_;
+	ThreadPoolImpl thread_pool_;
 public:
+	struct CreateFilterArg{
+	  ChildBloomFilterPolicy *ch;
+	  const Slice *keys;
+	  int n;
+	  std::string *dst;
+	};
+	static void CreateFilter(void *arg){
+	    CreateFilterArg cfa = *(reinterpret_cast<CreateFilterArg*>(arg));
+	    delete  reinterpret_cast<CreateFilterArg*>(arg);
+	    cfa.ch->CreateFilter(cfa.keys,cfa.n,cfa.dst);
+	}
 	explicit MultiFilter(int bits_per_key_per_filter[],int bits_per_key):bits_per_key_(bits_per_key){
 	    int i;
 	    for(i = 0 ; bits_per_key_per_filter[i]!=0 ; i++ ){
 		ChildBloomFilterPolicy* ch_filter = new ChildBloomFilterPolicy(bits_per_key_per_filter[i],i);
 		filters.push_back(ch_filter);
+		bits_per_key_per_filter_[i] = bits_per_key_per_filter[i];
 	    }
 	    printf("filters size:%ld\n",filters.size());
+	    thread_pool_.SetBackgroundThreads(std::min(filters.size(),std::thread::hardware_concurrency()));
 	}
 	
 	virtual void CreateFilter(const Slice * keys,int n, std::string *dst) const{
@@ -129,9 +145,16 @@ public:
 	    }
 	}
 	virtual void CreateFilter(const Slice *keys,int n,std::list<std::string> &dsts) const {
+	    CreateFilterArg *cfa;
 	    auto dsts_iter = dsts.begin();
 	    for(std::list<ChildBloomFilterPolicy*>::const_iterator iter = filters.begin() ; iter != filters.end() ; iter++){
 		(*iter)->CreateFilter(keys,n,&(*dsts_iter));
+		cfa = new CreateFilterArg;
+		cfa->ch = *iter;
+		cfa->keys = keys;
+		cfa->n = n;
+		cfa->dst = dsts;
+		thread_pool_.Schedule(&MultiFilter::CreateFilter,cfa);
 		dsts_iter++;
 	    }
 	}
@@ -164,8 +187,7 @@ public:
 	    fprintf(stderr,"Multi_bloom_filter destructor is called");
 	}
 };
-
-}
+} //anonymous namespace
 
 const FilterPolicy* NewBloomFilterPolicy(int bits_per_key_per_filter[],int bits_per_key) {
   return new MultiFilter(bits_per_key_per_filter,bits_per_key);

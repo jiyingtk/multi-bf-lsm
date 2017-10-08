@@ -175,26 +175,31 @@ void Table::ReadFilter(const Slice& filter_handle_value) {
   }
 }
  //TODO: read n block sequentially
-void Table::AddFilters(int n)
+size_t Table::AddFilters(int n)
 {
+    size_t delta = 0;
     if(rep_->filter == NULL){
 	return;
     }
     int curr_filter_num = rep_->filter->getCurrFiltersNum();
     while(n--&&curr_filter_num < rep_->filter_handles.size()){  // avoid overhead of filters
+        delta += FilterPolicy::bits_per_key_per_filter[curr_filter_num];
 	ReadFilter(rep_->filter_handles[curr_filter_num++]); 
     }
+    return delta;
 }
 
-void Table::RemoveFilters(int n)
+size_t Table::RemoveFilters(int n)
 {
     int curr_filter_num = rep_->filter->getCurrFiltersNum();
     rep_->filter->RemoveFilters(n);
+    size_t delta = 0;
     while(n--&& curr_filter_num > 0){
 	    delete [] (rep_->filter_datas.back());
 	    rep_->filter_datas.pop_back();
 	    BlockHandle filter_handle;
 	    Slice v = rep_->filter_handles[--curr_filter_num];
+	    delta += FilterPolicy::bits_per_key_per_filter[curr_filter_num];
 	    if(!filter_handle.DecodeFrom(&v).ok()){
 		assert(0);
 		return ;
@@ -202,7 +207,19 @@ void Table::RemoveFilters(int n)
 	    filter_mem_space -= (filter_handle.size()+kBlockTrailerSize) ;
 	    filter_num--;
     }
+    return delta;
 }
+
+size_t Table::AdjustFilters(int n)
+{
+    if(n < rep_->filter->getCurrFiltersNum()){
+       return -RemoveFilters(rep_->filter->getCurrFiltersNum() - n);
+    }else if(n > rep_->filter->getCurrFiltersNum()){
+	return AddFilters(n - rep_->filter->getCurrFiltersNum());
+    }
+}
+
+
 
 size_t Table::getCurrFiltersSize(){
     int curr_filter_num = rep_->filter->getCurrFiltersNum();
