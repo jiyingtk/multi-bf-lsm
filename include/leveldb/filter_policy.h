@@ -75,7 +75,8 @@ class FilterPolicy {
 // FilterPolicy (like NewBloomFilterPolicy) that does not ignore
 // trailing spaces in keys.
 extern const FilterPolicy* NewBloomFilterPolicy(int bits_per_key_per_filter[],int bits_per_key);
-
+extern const FilterPolicy *NewBloomFilterPolicy(int *);
+extern const FilterPolicy *NewBloomFilterPolicy(int );
 }
 
 #endif  // STORAGE_LEVELDB_INCLUDE_FILTER_POLICY_H_

@@ -193,7 +193,13 @@ ThreadPoolImpl MultiFilter::thread_pool_;
 
 size_t * leveldb::FilterPolicy::bits_per_key_per_filter_ = nullptr;
 const FilterPolicy* NewBloomFilterPolicy(int bits_per_key_per_filter[],int bits_per_key) {
-  return new MultiFilter(bits_per_key_per_filter,bits_per_key);
+	return new MultiFilter(bits_per_key_per_filter,bits_per_key);
+}
+const FilterPolicy *NewBloomFilterPolicy(int *){
+	return NULL;
+}
+const FilterPolicy *NewBloomFilterPolicy(int){
+	return NULL;
 }
 
 }  // namespace leveldb
