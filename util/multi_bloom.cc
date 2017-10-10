@@ -8,6 +8,9 @@
 #include "util/hash.h"
 #include <list>
 #include <thread>
+#include <mutex>
+#include <condition_variable>
+#include <atomic>
 #include "leveldb/threadpool.h"
 #include "util/threadpool_imp.h"
 namespace leveldb {
@@ -114,6 +117,10 @@ private:
 	std::list<ChildBloomFilterPolicy*> filters;
 	size_t bits_per_key_;
 	static ThreadPoolImpl thread_pool_;
+	static std::mutex mutex_;
+	static std::condition_variable  filter_signal_;
+	static int curr_completed_filter_num_;
+	static int filter_num_;
 public:
 	struct CreateFilterArg{
 	  ChildBloomFilterPolicy *ch;
@@ -125,6 +132,11 @@ public:
 	    CreateFilterArg cfa = *(reinterpret_cast<CreateFilterArg*>(arg));
 	    delete  reinterpret_cast<CreateFilterArg*>(arg);
 	    cfa.ch->CreateFilter(cfa.keys,cfa.n,cfa.dst);
+	    std::unique_lock<std::mutex> lock(mutex_);
+	    ++curr_completed_filter_num_;
+	    if(curr_completed_filter_num_ == filter_num_){
+		filter_signal_.notify_all();
+	    }
 	}
 	explicit MultiFilter(int bits_per_key_per_filter[],int bits_per_key):bits_per_key_(bits_per_key){
 	    int i;
@@ -134,6 +146,7 @@ public:
 		filters.push_back(ch_filter);
 		bits_per_key_per_filter_[i] = bits_per_key_per_filter[i];
 	    }
+	    filter_num_ = i;
 	    printf("filters size:%ld\n",filters.size());
 	    thread_pool_.SetBackgroundThreads(std::min(filters.size(),static_cast<size_t>(std::thread::hardware_concurrency())));
 	}
@@ -158,6 +171,11 @@ public:
 		thread_pool_.Schedule(&MultiFilter::CreateFilter,cfa,nullptr,nullptr);
 		dsts_iter++;
 	    }
+	    std::unique_lock<std::mutex> lock(mutex_);
+	    while(curr_completed_filter_num_ != filter_num_){
+		filter_signal_.wait(lock);
+	    }
+	    curr_completed_filter_num_ = 0;
 	}
 	virtual bool KeyMayMatch(const Slice& key, const Slice& bloom_filter) const{}
 	
@@ -189,6 +207,10 @@ public:
 	}
 };
 ThreadPoolImpl MultiFilter::thread_pool_;
+std::condition_variable MultiFilter::filter_signal_;
+std::mutex MultiFilter::mutex_;
+int  MultiFilter::curr_completed_filter_num_ = 0;
+int MultiFilter::filter_num_ = 0;
 } //anonymous namespace
 
 size_t * leveldb::FilterPolicy::bits_per_key_per_filter_ = nullptr;

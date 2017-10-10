@@ -30,8 +30,9 @@ typedef struct OptionExp{
     bool seek_compaction_;
     bool adjust_bloom_filter_;
     int lrus_num_;
+    double filter_capacity_ratio;
     std::shared_ptr<Statistics> stats_;
-    OptionExp():seek_compaction_(false),adjust_bloom_filter_(false),stats_(nullptr){};
+    OptionExp():seek_compaction_(false),adjust_bloom_filter_(false),stats_(nullptr),filter_capacity_ratio(1.0){};
 }OptionExp;
 // Options to control the behavior of a database (passed to DB::Open)
 struct Options {
