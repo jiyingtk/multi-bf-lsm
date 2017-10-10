@@ -28,7 +28,7 @@ class Cache;
 // Create a new cache with a fixed size capacity.  This implementation
 // of Cache uses a least-recently-used eviction policy.
 extern Cache* NewLRUCache(size_t capacity);
-
+extern Cache* NewMultiQueue(size_t capacity,int lrus_num);
 class Cache {
  public:
   Cache() { }
@@ -51,13 +51,17 @@ class Cache {
   // value will be passed to "deleter".
   virtual Handle* Insert(const Slice& key, void* value, size_t charge,
                          void (*deleter)(const Slice& key, void* value)) = 0;
-
+  virtual Handle* Insert(const Slice& key, void* value, size_t charge,
+                         void (*deleter)(const Slice& key, void* value),bool type) {
+				//Insert(key,value,charge,deleter); do nothing
+  }
   // If the cache has no mapping for "key", returns NULL.
   //
   // Else return a handle that corresponds to the mapping.  The caller
   // must call this->Release(handle) when the returned mapping is no
   // longer needed.
   virtual Handle* Lookup(const Slice& key) = 0;
+  virtual Handle* Lookup(const Slice& key,bool Get) {}
 
   // Release a mapping returned by a previous Lookup().
   // REQUIRES: handle must not have been released yet.

@@ -6,7 +6,7 @@
 
 #ifndef STORAGE_LEVELDB_PORT_PORT_POSIX_H_
 #define STORAGE_LEVELDB_PORT_PORT_POSIX_H_
-
+#define LEVELDB_PRIszt "zu"
 #undef PLATFORM_IS_LITTLE_ENDIAN
 #if defined(OS_MACOSX)
   #include <machine/endian.h>
@@ -44,6 +44,7 @@
 #endif
 #include <stdint.h>
 #include <string>
+#include <thread>
 #include "port/atomic_pointer.h"
 
 #ifndef PLATFORM_IS_LITTLE_ENDIAN

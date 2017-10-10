@@ -27,6 +27,7 @@ namespace{
     uint32_t refs;      // References, including cache reference, if present.
     uint32_t hash;      // Hash of key(); used for fast sharding and comparisons
     uint64_t fre_count;   //frequency count 
+    uint64_t expire_time; //expire_time = current_time_ + life_time_
     uint16_t queue_id;   // queue id
     bool type;			//"true” represents  tableandfile
     char key_data[1];   // Beginning of key
@@ -186,12 +187,13 @@ class HandleTable {   // a list store LRUQueueHandle's address , don't care queu
 // }
 
 
-class MultiQueue{
+class MultiQueue:public Cache{
     int lrus_num_;
     size_t *charges_;
+    std::atomic<uint64_t> last_id_;
     mutable leveldb::SpinMutex mutex_;  //for whole MultiQueue e.g. Lookup
-    mutable port::Mutex in_use_mutex_; // in_use_'s mutex;
-    mutable port::Mutex *lru_mutexs_;  //  [0,lru_num-1] for lrus_
+    mutable leveldb::SpinMutex in_use_mutex_; // in_use_'s mutex;
+    mutable leveldb::SpinMutex *lru_mutexs_;  //  [0,lru_num-1] for lrus_
     // Dummy head of in-use list.
     LRUQueueHandle in_use_;
     //Dummy heads of LRU list.
@@ -199,44 +201,56 @@ class MultiQueue{
     HandleTable table_;
     size_t capacity_;
     size_t usage_;
-    MultiQueue(size_t capacity,int lrus_num = 1,size_t *charges = NULL);
+    uint64_t current_time_;
+    uint64_t life_time_;
+public:
+    MultiQueue(size_t capacity,int lrus_num = 1);
     ~MultiQueue();
     void Ref(LRUQueueHandle *e,bool addFreCount=false);
     void Unref(LRUQueueHandle* e) ;
     void LRU_Remove(LRUQueueHandle* e);
     void LRU_Append(LRUQueueHandle* list, LRUQueueHandle* e);
-    Cache::Handle* Lookup(const Slice& key, uint32_t hash);
+    Cache::Handle* Lookup(const Slice& key, uint32_t hash,bool Get);
+    Cache::Handle* Lookup(const Slice& key);
+    Cache::Handle* Lookup(const Slice& key,bool Get);
     void Release(Cache::Handle* handle);
+    virtual Handle* Insert(const Slice& key, void* value, size_t charge,
+                         void (*deleter)(const Slice& key, void* value)) ;
+    virtual Handle* Insert(const Slice& key, void* value, size_t charge,
+                         void (*deleter)(const Slice& key, void* value),bool type) ;
     
+    virtual void *Value(Handle *handle);
+    virtual void Erase(const Slice &key);
+    virtual uint64_t NewId();
+    virtual size_t TotalCharge() const;
     Cache::Handle* Insert(const Slice& key, uint32_t hash, void* value, size_t charge,
-      void (*deleter)(const Slice& key, void* value),bool type=false) ;  
+      void (*deleter)(const Slice& key, void* value),bool type) ;  
       
      bool FinishErase(LRUQueueHandle* e);  
      void Erase(const Slice& key, uint32_t hash);
      void Prune(){} //do nothing
-     
+     void ShrinkUsage();
      int Queue_Num(int fre_count);
+     static inline uint32_t HashSlice(const Slice& s) {
+	    return Hash(s.data(), s.size(), 0);
+     }
 };
 
-MultiQueue::MultiQueue(size_t capacity,int lrus_num,size_t *charges):capacity_(capacity),lrus_num_(lrus_num)
+MultiQueue::MultiQueue(size_t capacity,int lrus_num):capacity_(capacity),lrus_num_(lrus_num)
 {
     //TODO: declare outside  class  in_use and lrus parent must be Initialized,avoid lock crush
       in_use_.next = &in_use_;
       in_use_.prev = &in_use_;
       in_use_.queue_id = lrus_num;
       lrus_ = new LRUQueueHandle[lrus_num];
-      lru_mutexs_ = new Port::Mutex[lrus_num];
-      charges_ = new size_t[lrus_num];
+      lru_mutexs_ = new leveldb::SpinMutex[lrus_num];
       for(int i = 0 ; i  < lrus_num ; ++i){
 	lrus_[i].next = &lrus_[i];
 	lrus_[i].prev = &lrus_[i];
 	lrus_[i].queue_id = i;
-	if(charges != NULL && *charges){
-	    charges_[i] = charges[i];
-	}else{
-	  charges_[i] = 0;
-	}
       }
+      current_time_ = 0;
+      life_time_ = 100;
       
 }
 MultiQueue::~MultiQueue()
@@ -261,7 +275,7 @@ int MultiQueue::Queue_Num(int fre_count)
     if(fre_count < BASE_NUM){
 	return 0;
     }
-    return std::min(lrus_num_-1,log2(fre_count));
+    return std::min(lrus_num_-1,static_cast<int>(log2(fre_count - BASE_NUM)));
 }
 
 
@@ -269,12 +283,15 @@ void MultiQueue::Ref(LRUQueueHandle* e,bool addFreCount)
 {
       if (e->refs == 1 && e->in_cache) {  // If on lru_ list, move to in_use_ list.
 	  LRU_Remove(e);
-	  MutexLock l(&in_use_mutex_);
+	  in_use_mutex_.lock();
 	  LRU_Append(&in_use_, e);
+	  in_use_mutex_.unlock();
 	}
 	e->refs++;
 	if(addFreCount){
-	  ++e->fre_count;
+	    ++e->fre_count;
+	    ++current_time_;
+	    e->expire_time = current_time_ + life_time_;
 	}
 }
 
@@ -291,12 +308,14 @@ void MultiQueue::Unref(LRUQueueHandle* e)
 	    //TODO: mutex   note: avoid deadlock with origin list mutex
 	    int qn = Queue_Num(e->fre_count);
 	    if(qn != e->queue_id && e->type){
-	      leveldb::TableAndFile *tf = reinterpret_cast<leveldb::TableAndFile>(e->value);
+	      leveldb::TableAndFile *tf = reinterpret_cast<leveldb::TableAndFile *>(e->value);
 	      size_t delta_charge = tf->table->AdjustFilters(qn+1);
 	      e->charge += delta_charge;
+	      usage_ += delta_charge;
+	      ShrinkUsage();
 	    }
-	    MutexLock l(lru_mutexs_[qn]);
-	    LRU_Append(&lrus_[qn], e);   //TODO: append to lru list according to queue_num
+	    SpinMutexLock l(lru_mutexs_+qn);
+	    LRU_Append(&lrus_[qn], e);   
 	    
 	  }
 }
@@ -314,32 +333,126 @@ void MultiQueue::LRU_Append(LRUQueueHandle* list, LRUQueueHandle* e)
 	   e->prev = list->prev;
 	   e->prev->next = e;
 	   e->next->prev = e;
-	   //if append to in_use , no need to remember queue_id,thus in_use_mutex used indepen
+	   //if append to in_use , no need to remember queue_id,thus in_use_mutex used independently
 	   e->queue_id = list->queue_id == lrus_num_ ? e->queue_id : list->queue_id; 
 }
 
-Cache::Handle* MultiQueue::Lookup(const Slice& key, uint32_t hash)
+Cache::Handle* MultiQueue::Lookup(const Slice& key, uint32_t hash,bool Get)
 {
    mutex_.lock();
    LRUQueueHandle* e = table_.Lookup(key, hash);
    mutex_.unlock();
    if (e != NULL) {
       if(e->in_cache && e->refs == 1){
-	MutexLock l1(lru_mutexs_[e->queue_id]);
-	Ref(e);
+	SpinMutexLock l1(lru_mutexs_ + e->queue_id);
+	Ref(e,Get);
       }else{
-	MutexLock l1(in_use_mutex_);
-	Ref(e);
+	in_use_mutex_.lock();
+	Ref(e,Get);
+	in_use_mutex_.unlock();
       }
     }
     return reinterpret_cast<Cache::Handle*>(e);
 }
 
+Cache::Handle *MultiQueue::Lookup(const Slice& key,bool Get){
+      const uint32_t hash = HashSlice(key);
+       return  Lookup(key, hash,Get);
+}
+
+Cache::Handle *MultiQueue::Lookup(const Slice& key){
+      const uint32_t hash = HashSlice(key);
+      return  Lookup(key, hash,false);
+}
 void MultiQueue::Release(Cache::Handle* handle) {
   auto lru_queue_handle = reinterpret_cast<LRUQueueHandle*>(handle);
-  MutexLock(lru_mutexs_[lru_queue_handle->queue_id]);
+  SpinMutexLock(lru_mutexs_ + lru_queue_handle->queue_id);
   Unref(lru_queue_handle);
 }
+
+void MultiQueue::ShrinkUsage()
+{
+    int k = lrus_num_ - 1;
+    while (usage_ > capacity_ && k > 0) {
+	if(lrus_[k].next != &lrus_[k]){
+	    LRUQueueHandle* old = lrus_[k].next;
+	    assert(old->refs == 1);
+	    if(old->expire_time < current_time_){
+		 if(old->type){
+		    leveldb::TableAndFile *tf = reinterpret_cast<leveldb::TableAndFile *>(old->value);
+		    size_t delta_charge = tf->table->RemoveFilters(1);
+		    old->charge -= delta_charge;
+		    usage_ -= delta_charge;
+		}
+		SpinMutexLock lr(lru_mutexs_ + k);
+		LRU_Remove(old);
+		SpinMutexLock la(lru_mutexs_ + k-1);
+		LRU_Append(&lrus_[k-1],old);
+	    }
+	}
+	k--;
+    }
+    if(usage_ > capacity_){
+	if(lrus_[0].next != &lrus_[0]){
+	    LRUQueueHandle *old = lrus_[0].next;
+	    assert(old->refs == 1);
+	    if(old->expire_time < current_time_){
+		mutex_.lock();
+		SpinMutexLock l0(lru_mutexs_);
+		bool erased = FinishErase(table_.Remove(old->key(), old->hash));
+		mutex_.unlock();
+		if (!erased) {  // to avoid unused variable when compiled NDEBUG
+		    assert(erased);
+		}
+	    }
+	}
+    }
+    while (usage_ > capacity_){
+	    for(k = 1 ; k < lrus_num_  && usage_ > capacity_; k++){
+		if(lrus_[k].next != &lrus_[k]){
+		    LRUQueueHandle* old = lrus_[k].next;
+		    assert(old->refs == 1);
+		    if(old->type){
+			leveldb::TableAndFile *tf = reinterpret_cast<leveldb::TableAndFile *>(old->value);
+			size_t delta_charge = tf->table->RemoveFilters(1);
+			old->charge -= delta_charge;
+			usage_ -= delta_charge;
+		    }
+		    SpinMutexLock lr(lru_mutexs_ + k);
+		    LRU_Remove(old);
+		    SpinMutexLock la(lru_mutexs_ + k-1);
+		    LRU_Append(&lrus_[k-1],old);
+		}
+	    }
+	     if(usage_ > capacity_){
+		if(lrus_[0].next != &lrus_[0]){
+		    LRUQueueHandle *old = lrus_[0].next;
+		    assert(old->refs == 1);
+		    if(old->expire_time < current_time_){
+			mutex_.lock();
+			SpinMutexLock lr(lru_mutexs_);
+			bool erased = FinishErase(table_.Remove(old->key(), old->hash));
+			mutex_.unlock();
+			if (!erased) {  // to avoid unused variable when compiled NDEBUG
+			    assert(erased);
+			}
+		    }
+		}
+	     }
+    }
+}
+
+Cache::Handle* MultiQueue::Insert(const Slice& key, void* value, size_t charge, void (*deleter)(const Slice& key, void* value)){
+    const uint32_t hash = HashSlice(key);
+    return Insert(key,hash,value,charge,deleter,false);
+}
+
+Cache::Handle* MultiQueue::Insert(const Slice& key, void* value, size_t charge, void (*deleter)(const Slice& key, void* value), bool type)
+{
+    const uint32_t hash = HashSlice(key);
+    return Insert(key, hash, value,charge, deleter, type);
+}
+
 
 Cache::Handle* MultiQueue::Insert(const Slice& key, uint32_t hash, void* value, size_t charge, void (*deleter)(const Slice& key, void* value),bool type)
 {
@@ -363,25 +476,22 @@ Cache::Handle* MultiQueue::Insert(const Slice& key, uint32_t hash, void* value, 
     e->refs++;  // for the cache's reference.
     e->fre_count++; //for the first access
     e->in_cache = true;
-    MutexLock l(&in_use_mutex_);
+    in_use_mutex_.lock();
     LRU_Append(&in_use_, e);
+    in_use_mutex_.unlock();
+    
     usage_ += charge;
     mutex_.lock();
     auto redun_handle =  table_.Insert(e);
     mutex_.unlock();
     if(redun_handle != NULL){
-      MutexLock l2(lru_mutexs_[redun_handle->queue_id]);
+      SpinMutexLock l2(lru_mutexs_ + redun_handle->queue_id);
       FinishErase(redun_handle);
     }
   } // else don't cache.  (Tests use capacity_==0 to turn off caching.)
-
-  /*while (usage_ > capacity_ && lru_.next != &lru_) {
-    LRUHandle* old = lru_.next;
-    assert(old->refs == 1);
-    bool erased = FinishErase(table_.Remove(old->key(), old->hash));
-    if (!erased) {  // to avoid unused variable when compiled NDEBUG
-      assert(erased);
-    }
+  
+  ShrinkUsage();
+  /*
   }*/
   //TODO:adjustUsage(); 
   // according to e->type do something in adjustUsage , if e is tableandfile , adjustfilter should return charge.
@@ -406,15 +516,40 @@ void MultiQueue::Erase(const Slice& key, uint32_t hash)
     auto obsolete_handle = table_.Remove(key,hash);
     mutex_.unlock();
     if(obsolete_handle != NULL){
-      MutexLock l1(lru_mutexs_[obsolete_handle->queue_id]);
+      SpinMutexLock l1(lru_mutexs_ + obsolete_handle->queue_id);
       FinishErase(obsolete_handle);
     }
    
 }
 
+void MultiQueue::Erase(const Slice& key)
+{
+     const uint32_t hash = HashSlice(key);
+     Erase(key,hash);
+}
+
+uint64_t MultiQueue::NewId()
+{
+    return ++(last_id_);
+}
+
+size_t MultiQueue::TotalCharge() const
+{
+    return usage_;
+}
+
+void* MultiQueue::Value(Cache::Handle* handle)
+{
+    return reinterpret_cast<LRUQueueHandle*>(handle)->value;
+}
+
+
 
 };
 
+Cache* NewMultiQueue(size_t capacity,int lrus_num){
+    return new MultiQueue(capacity,lrus_num);
+}
 
 };
 

@@ -70,6 +70,22 @@ class SpinMutex {
   std::atomic<bool> locked_;
 };
 
+
+class SCOPED_LOCKABLE SpinMutexLock {
+ public:
+  explicit SpinMutexLock(SpinMutex *mu) EXCLUSIVE_LOCK_FUNCTION(mu)
+      : mu_(mu)  {
+    this->mu_->lock();
+  }
+  ~SpinMutexLock() UNLOCK_FUNCTION() { this->mu_->unlock(); }
+
+ private:
+  SpinMutex *const mu_;
+  // No copying allowed
+  SpinMutexLock(const SpinMutexLock&);
+  void operator=(const SpinMutexLock&);
+};
+
 }  // namespace leveldb
 
 

@@ -29,6 +29,7 @@ enum CompressionType {
 typedef struct OptionExp{
     bool seek_compaction_;
     bool adjust_bloom_filter_;
+    int lrus_num_;
     std::shared_ptr<Statistics> stats_;
     OptionExp():seek_compaction_(false),adjust_bloom_filter_(false),stats_(nullptr){};
 }OptionExp;

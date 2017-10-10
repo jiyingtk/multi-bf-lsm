@@ -179,11 +179,11 @@ size_t Table::AddFilters(int n)
 {
     size_t delta = 0;
     if(rep_->filter == NULL){
-	return;
+	return 0;
     }
     int curr_filter_num = rep_->filter->getCurrFiltersNum();
     while(n--&&curr_filter_num < rep_->filter_handles.size()){  // avoid overhead of filters
-        delta += FilterPolicy::bits_per_key_per_filter[curr_filter_num];
+        delta += FilterPolicy::bits_per_key_per_filter_[curr_filter_num];
 	ReadFilter(rep_->filter_handles[curr_filter_num++]); 
     }
     return delta;
@@ -199,10 +199,10 @@ size_t Table::RemoveFilters(int n)
 	    rep_->filter_datas.pop_back();
 	    BlockHandle filter_handle;
 	    Slice v = rep_->filter_handles[--curr_filter_num];
-	    delta += FilterPolicy::bits_per_key_per_filter[curr_filter_num];
+	    delta += FilterPolicy::bits_per_key_per_filter_[curr_filter_num];
 	    if(!filter_handle.DecodeFrom(&v).ok()){
 		assert(0);
-		return ;
+		return 0;
 	    }
 	    filter_mem_space -= (filter_handle.size()+kBlockTrailerSize) ;
 	    filter_num--;

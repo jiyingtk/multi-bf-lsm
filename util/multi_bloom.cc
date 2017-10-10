@@ -113,7 +113,7 @@ class MultiFilter:public FilterPolicy{
 private:
 	std::list<ChildBloomFilterPolicy*> filters;
 	size_t bits_per_key_;
-	ThreadPoolImpl thread_pool_;
+	static ThreadPoolImpl thread_pool_;
 public:
 	struct CreateFilterArg{
 	  ChildBloomFilterPolicy *ch;
@@ -128,13 +128,14 @@ public:
 	}
 	explicit MultiFilter(int bits_per_key_per_filter[],int bits_per_key):bits_per_key_(bits_per_key){
 	    int i;
+	    bits_per_key_per_filter_ = new size_t[10];
 	    for(i = 0 ; bits_per_key_per_filter[i]!=0 ; i++ ){
 		ChildBloomFilterPolicy* ch_filter = new ChildBloomFilterPolicy(bits_per_key_per_filter[i],i);
 		filters.push_back(ch_filter);
 		bits_per_key_per_filter_[i] = bits_per_key_per_filter[i];
 	    }
 	    printf("filters size:%ld\n",filters.size());
-	    thread_pool_.SetBackgroundThreads(std::min(filters.size(),std::thread::hardware_concurrency()));
+	    thread_pool_.SetBackgroundThreads(std::min(filters.size(),static_cast<size_t>(std::thread::hardware_concurrency())));
 	}
 	
 	virtual void CreateFilter(const Slice * keys,int n, std::string *dst) const{
@@ -148,13 +149,13 @@ public:
 	    CreateFilterArg *cfa;
 	    auto dsts_iter = dsts.begin();
 	    for(std::list<ChildBloomFilterPolicy*>::const_iterator iter = filters.begin() ; iter != filters.end() ; iter++){
-		(*iter)->CreateFilter(keys,n,&(*dsts_iter));
+		//(*iter)->CreateFilter(keys,n,&(*dsts_iter));
 		cfa = new CreateFilterArg;
 		cfa->ch = *iter;
 		cfa->keys = keys;
 		cfa->n = n;
-		cfa->dst = dsts;
-		thread_pool_.Schedule(&MultiFilter::CreateFilter,cfa);
+		cfa->dst = &(*dsts_iter);
+		thread_pool_.Schedule(&MultiFilter::CreateFilter,cfa,nullptr,nullptr);
 		dsts_iter++;
 	    }
 	}
@@ -187,8 +188,10 @@ public:
 	    fprintf(stderr,"Multi_bloom_filter destructor is called");
 	}
 };
+ThreadPoolImpl MultiFilter::thread_pool_;
 } //anonymous namespace
 
+size_t * leveldb::FilterPolicy::bits_per_key_per_filter_ = nullptr;
 const FilterPolicy* NewBloomFilterPolicy(int bits_per_key_per_filter[],int bits_per_key) {
   return new MultiFilter(bits_per_key_per_filter,bits_per_key);
 }

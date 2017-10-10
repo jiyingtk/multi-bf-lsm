@@ -9,7 +9,7 @@
 
 #include "util/threadpool_imp.h"
 
-#include "monitoring/thread_status_util.h"
+
 #include "port/port.h"
 
 #ifndef OS_WIN
@@ -27,7 +27,7 @@
 #include <stdlib.h>
 #include <thread>
 #include <vector>
-
+#include<deque>
 namespace leveldb {
 
 void ThreadPoolImpl::PthreadCall(const char* label, int result) {
@@ -297,7 +297,7 @@ void ThreadPoolImpl::Impl::StartBGThreads() {
 #if __GLIBC_PREREQ(2, 12)
     auto th_handle = p_t.native_handle();
     char name_buf[16];
-    snprintf(name_buf, sizeof name_buf, "rocksdb:bg%" ROCKSDB_PRIszt,
+    snprintf(name_buf, sizeof name_buf, "rocksdb:bg%" LEVELDB_PRIszt,
              bgthreads_.size());
     name_buf[sizeof name_buf - 1] = '\0';
     pthread_setname_np(th_handle, name_buf);
