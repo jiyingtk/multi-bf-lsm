@@ -1481,7 +1481,7 @@ void VersionSet::adjustFilter()
     for(int level = 0 ; level < config::kNumLevels ; level++){
 	for(int i = 0 ; i < curr_files[level].size() ; i++){
 	    if(curr_files[level][i]->access_time >= 180){
-		table_cache_->adjustFilters(curr_files[level][i]->number,curr_files[level][i]->file_size,7);
+		table_cache_->adjustFilters(curr_files[level][i]->number,curr_files[level][i]->file_size,4);
 		adjustType[0]++;
 	    }else if(curr_files[level][i]->access_time >= 60 && curr_files[level][i]->access_time <180){
 		table_cache_->adjustFilters(curr_files[level][i]->number,curr_files[level][i]->file_size,1);

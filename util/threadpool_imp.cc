@@ -138,7 +138,7 @@ ThreadPoolImpl::Impl::Impl()
 }
 
 inline
-ThreadPoolImpl::Impl::~Impl() { assert(bgthreads_.size() == 0U); }
+ThreadPoolImpl::Impl::~Impl() { JoinThreads(false); assert(bgthreads_.size() == 0U); }
 
 void ThreadPoolImpl::Impl::JoinThreads(bool wait_for_jobs_to_complete) {
 

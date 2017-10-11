@@ -1463,12 +1463,11 @@ bool DBImpl::GetProperty(const Slice& property, std::string* value) {
         value->append(buf);
 	stats_sum += stats_[level].micros;
       }
-      snprintf(buf,sizeof(buf),"create filters time / compaction time = %.5lf%% write filters time / compaction time = %.5lf%%\n",
-	       statis_->GetTickerHistogram(Tickers::CREATE_FILTER_TIME)*1.0/stats_sum,
-	       statis_->GetTickerHistogram(Tickers::WRITE_FILTER_TIME)*1.0/stats_sum
-	      );
-      value->append(buf);
     }
+    snprintf(buf,sizeof(buf),"create filters time / compaction time = %.5lf%% write filters time / compaction time = %.5lf%%\n",
+	       statis_->GetTickerHistogram(Tickers::CREATE_FILTER_TIME)*1.0/stats_sum,
+	       statis_->GetTickerHistogram(Tickers::WRITE_FILTER_TIME)*1.0/stats_sum);
+    value->append(buf);
     value->append(printStatistics());
     snprintf(buf,sizeof(buf),"filter mem space overhead:%llu filter_num:%llu \n",filter_mem_space,filter_num);
     value->append(buf);

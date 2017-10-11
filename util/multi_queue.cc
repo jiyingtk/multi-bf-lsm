@@ -272,7 +272,7 @@ MultiQueue::~MultiQueue()
 
 int MultiQueue::Queue_Num(int fre_count)
 {
-    if(fre_count < BASE_NUM){
+    if(fre_count <= BASE_NUM){
 	return 0;
     }
     return std::min(lrus_num_-1,static_cast<int>(log2(fre_count - BASE_NUM)));
