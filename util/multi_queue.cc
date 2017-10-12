@@ -428,14 +428,12 @@ void MultiQueue::ShrinkUsage()
 		if(lrus_[0].next != &lrus_[0]){
 		    LRUQueueHandle *old = lrus_[0].next;
 		    assert(old->refs == 1);
-		    if(old->expire_time < current_time_){
-			mutex_.lock();
-			SpinMutexLock lr(lru_mutexs_);
-			bool erased = FinishErase(table_.Remove(old->key(), old->hash));
-			mutex_.unlock();
-			if (!erased) {  // to avoid unused variable when compiled NDEBUG
-			    assert(erased);
-			}
+		    mutex_.lock();
+		    SpinMutexLock lr(lru_mutexs_);
+		    bool erased = FinishErase(table_.Remove(old->key(), old->hash));
+		    mutex_.unlock();
+		    if (!erased) {  // to avoid unused variable when compiled NDEBUG
+		      assert(erased);
 		    }
 		}
 	     }
