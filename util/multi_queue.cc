@@ -202,7 +202,7 @@ class MultiQueue:public Cache{
     size_t capacity_;
     size_t usage_;
     uint64_t current_time_;
-    uint64_t life_time_;
+    uint64_t life_time_;  //TODO: may be static
 public:
     MultiQueue(size_t capacity,int lrus_num = 1);
     ~MultiQueue();
