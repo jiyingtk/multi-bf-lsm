@@ -223,6 +223,7 @@ public:
     virtual void Erase(const Slice &key);
     virtual uint64_t NewId();
     virtual size_t TotalCharge() const;
+    //charge must >= 0
     Cache::Handle* Insert(const Slice& key, uint32_t hash, void* value, size_t charge,
       void (*deleter)(const Slice& key, void* value),bool type) ;  
       
@@ -230,7 +231,9 @@ public:
      void Erase(const Slice& key, uint32_t hash);
      void Prune(){} //do nothing
      void ShrinkUsage();
-     int Queue_Num(int fre_count);
+     int Queue_Num(uint64_t fre_count);
+     uint64_t Num_Queue(int queue_id);
+     std::string LRU_Status();
      static inline uint32_t HashSlice(const Slice& s) {
 	    return Hash(s.data(), s.size(), 0);
      }
@@ -253,24 +256,48 @@ MultiQueue::MultiQueue(size_t capacity,int lrus_num):capacity_(capacity),lrus_nu
       life_time_ = 100;
       
 }
+
+std::string MultiQueue::LRU_Status()
+{
+    mutex_.lock();
+    int count = 0;
+    char buf[300];
+    std::string value;
+    for(int i = 0 ; i < lrus_num_ ;  i++){
+	count = 0;
+	lru_mutexs_[i].lock();
+	for (LRUQueueHandle* e = lrus_[i].next; e != &lrus_[i]; ) {
+	    count++;
+	    LRUQueueHandle* next = e->next;
+	    e = next;
+	}
+	lru_mutexs_[i].unlock();
+	snprintf(buf,sizeof(buf),"lru %d count %d \n",i,count);
+	value.append(buf);
+    }
+    mutex_.unlock();
+    return value;
+}
+
 MultiQueue::~MultiQueue()
 {
   assert(in_use_.next == &in_use_);  // Error if caller has an unreleased handle
   for(int i = 0 ; i < lrus_num_ ;  i++){
     for (LRUQueueHandle* e = lrus_[i].next; e != &lrus_[i]; ) {
-      LRUQueueHandle* next = e->next;
-      assert(e->in_cache);
-      e->in_cache = false;
-      assert(e->refs == 1);  // Invariant of lru_ list.
-      Unref(e);
-      e = next;
+	LRUQueueHandle* next = e->next;
+	assert(e->in_cache);
+	e->in_cache = false;
+	assert(e->refs == 1);  // Invariant of lru_ list.
+	Unref(e);
+	e = next;
     }
   }
   delete []lrus_;
   delete []lru_mutexs_;
 }
 
-int MultiQueue::Queue_Num(int fre_count)
+
+int MultiQueue::Queue_Num(uint64_t fre_count)
 {
     if(fre_count <= BASE_NUM){
 	return 0;
@@ -278,6 +305,14 @@ int MultiQueue::Queue_Num(int fre_count)
     return std::min(lrus_num_-1,static_cast<int>(log2(fre_count - BASE_NUM)));
 }
 
+
+uint64_t MultiQueue::Num_Queue(int queue_id)
+{
+    if(queue_id == 0){
+	return 0;
+    }
+    return 2 << queue_id + BASE_NUM;
+}
 
 void MultiQueue::Ref(LRUQueueHandle* e,bool addFreCount)
 {
@@ -309,7 +344,7 @@ void MultiQueue::Unref(LRUQueueHandle* e)
 	    int qn = Queue_Num(e->fre_count);
 	    if(qn != e->queue_id && e->type){
 	      leveldb::TableAndFile *tf = reinterpret_cast<leveldb::TableAndFile *>(e->value);
-	      size_t delta_charge = tf->table->AdjustFilters(qn+1);
+	      int64_t delta_charge = tf->table->AdjustFilters(qn+1);
 	      e->charge += delta_charge;
 	      usage_ += delta_charge;
 	      ShrinkUsage();
@@ -377,6 +412,7 @@ void MultiQueue::ShrinkUsage()
 	if(lrus_[k].next != &lrus_[k]){
 	    LRUQueueHandle* old = lrus_[k].next;
 	    assert(old->refs == 1);
+	    //TODO: old->fre_count = queue_id
 	    if(old->expire_time < current_time_){
 		 if(old->type){
 		    leveldb::TableAndFile *tf = reinterpret_cast<leveldb::TableAndFile *>(old->value);

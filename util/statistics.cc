@@ -63,6 +63,9 @@ std::string Statistics::ToString(uint32_t begin_type, uint32_t end_type)
 	std::string res;
 	res.reserve(20000);
 	for(i = begin_type ; i <= end_type ; i++){
+	    if(histograms_[i].average == 0){
+		continue;
+	    }
        	    histograms_[i].min = (histograms_[i].min == std::numeric_limits<double>::max() ? -1 : histograms_[i].min);
 	    histograms_[i].average = histograms_[i].average/tickers_[i];
 	    snprintf(buf,sizeof(buf),"%s min:%.3lf ave:%.3lf max:%.3lf count:%lu\n",TickersNameMap[i].second.c_str(),histograms_[i].min,histograms_[i].average,histograms_[i].max,tickers_[i]);

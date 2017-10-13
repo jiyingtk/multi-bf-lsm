@@ -146,4 +146,10 @@ size_t TableCache::GetTableCurrFiltersSize(uint64_t file_number,uint64_t file_si
     }
 }
 
+std::string TableCache::LRU_Status()
+{
+    return cache_->LRU_Status();
+}
+
+
 }  // namespace leveldb

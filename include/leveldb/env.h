@@ -20,7 +20,7 @@
 #include "leveldb/status.h"
 
 namespace leveldb {
-
+extern bool directIO_of_RandomAccess ;
 class FileLock;
 class Logger;
 class RandomAccessFile;

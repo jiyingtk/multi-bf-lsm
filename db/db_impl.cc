@@ -147,6 +147,7 @@ DBImpl::DBImpl(const Options& raw_options, const std::string& dbname)
 
   versions_ = new VersionSet(dbname_, &options_, table_cache_,
                              &internal_comparator_);
+  leveldb::directIO_of_RandomAccess = options_.opEp_.no_cache_io_;
 }
 
 void DBImpl::untilCompactionEnds()
@@ -1464,13 +1465,28 @@ bool DBImpl::GetProperty(const Slice& property, std::string* value) {
 	stats_sum += stats_[level].micros;
       }
     }
-    snprintf(buf,sizeof(buf),"create filters time / compaction time = %.5lf%% write filters time / compaction time = %.5lf%%\n",
-	       statis_->GetTickerHistogram(Tickers::CREATE_FILTER_TIME)*1.0/stats_sum,
-	       statis_->GetTickerHistogram(Tickers::WRITE_FILTER_TIME)*1.0/stats_sum);
-    value->append(buf);
-    value->append(printStatistics());
     snprintf(buf,sizeof(buf),"filter mem space overhead:%llu filter_num:%llu \n",filter_mem_space,filter_num);
     value->append(buf);
+    if(statis_){
+	if(stats_sum != 0){
+	    snprintf(buf,sizeof(buf),"create filters time / compaction time = %.3lf%% write filters time / compaction time = %.3lf%%\n",
+		    statis_->GetTickerHistogram(Tickers::CREATE_FILTER_TIME)*1.0/stats_sum*100,
+		    statis_->GetTickerHistogram(Tickers::WRITE_FILTER_TIME)*1.0/stats_sum*100);
+	    value->append(buf);
+	}
+	if(statis_->getTickerCount(Tickers::ADD_FILTER_TIME) != 0){
+	     snprintf(buf,sizeof(buf),"Remove filter count: %lu time: %lu \n",
+		      statis_->getTickerCount(Tickers::REMOVE_FILTER_TIME),
+		      statis_->GetTickerHistogram(Tickers::REMOVE_FILTER_TIME));
+	     value->append(buf);
+	     snprintf(buf,sizeof(buf),"Add filter count: %lu time: %lu \n",
+		      statis_->getTickerCount(Tickers::ADD_FILTER_TIME),
+		      statis_->GetTickerHistogram(Tickers::ADD_FILTER_TIME));
+	      value->append(buf);
+	}
+	value->append(table_cache_->LRU_Status());
+	value->append(printStatistics());
+    }
     return true;
   } else if (in == "sstables") {
     *value = versions_->current()->DebugString();

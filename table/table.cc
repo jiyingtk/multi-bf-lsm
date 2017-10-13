@@ -210,13 +210,18 @@ size_t Table::RemoveFilters(int n)
     return delta;
 }
 
-size_t Table::AdjustFilters(int n)
+int64_t Table::AdjustFilters(int n)
 {
+    int64_t delta = 0;
+    uint64_t start_micros = Env::Default()->NowMicros();
     if(n < rep_->filter->getCurrFiltersNum()){
-       return -RemoveFilters(rep_->filter->getCurrFiltersNum() - n);
+	delta = -static_cast<int64_t>(RemoveFilters(rep_->filter->getCurrFiltersNum() - n));
+	MeasureTime(Statistics::GetStatistics().get(),Tickers::REMOVE_FILTER_TIME,Env::Default()->NowMicros() - start_micros);
     }else if(n > rep_->filter->getCurrFiltersNum()){
-	return AddFilters(n - rep_->filter->getCurrFiltersNum());
+	delta =  AddFilters(n - rep_->filter->getCurrFiltersNum());
+	MeasureTime(Statistics::GetStatistics().get(),Tickers::ADD_FILTER_TIME,Env::Default()->NowMicros() - start_micros);
     }
+    return delta;
 }
 
 

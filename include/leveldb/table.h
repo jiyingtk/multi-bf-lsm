@@ -54,7 +54,7 @@ class Table {
   // E.g., the approximate offset of the last key in the table will
   // be close to the file length.
   uint64_t ApproximateOffsetOf(const Slice& key) const;
-   size_t AdjustFilters(int n);
+   int64_t AdjustFilters(int n);
    size_t AddFilters(int n);
    size_t RemoveFilters(int n);
    size_t getCurrFiltersSize();

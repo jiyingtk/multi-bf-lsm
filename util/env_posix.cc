@@ -28,7 +28,7 @@
 #include "util/env_posix_test_helper.h"
 
 namespace leveldb {
-
+bool directIO_of_RandomAccess = false;
 namespace {
 
 static int open_read_only_file_limit = -1;
@@ -371,7 +371,8 @@ class PosixEnv : public Env {
         mmap_limit_.Release();
       }
     } else {
-	if(posix_fadvise(fd,0,0, POSIX_FADV_DONTNEED) != 0) {   // no cache
+	//directio
+	if(directIO_of_RandomAccess&&posix_fadvise(fd,0,0, POSIX_FADV_DONTNEED) != 0) {   // no cache
 	   s = PosixError(fname, errno);
  	}
       *result = new PosixRandomAccessFile(fname, fd, &fd_limit_);

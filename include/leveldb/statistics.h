@@ -25,6 +25,8 @@ namespace leveldb{
 	ACCESS_L6_TIME,
 	CREATE_FILTER_TIME,
 	WRITE_FILTER_TIME,
+	ADD_FILTER_TIME,
+	REMOVE_FILTER_TIME,
 	TICKER_ENUM_MAX
  };  
 
@@ -47,7 +49,9 @@ namespace leveldb{
      {ACCESS_L5_TIME,"leveldb.access.l5.time"},
      {ACCESS_L6_TIME,"leveldb.access.l6.time"},
      {CREATE_FILTER_TIME,"leveldb.create.filter.time"},
-     {WRITE_FILTER_TIME,"leveldb.write.filter.time"}
+     {WRITE_FILTER_TIME,"leveldb.write.filter.time"},
+     {ADD_FILTER_TIME,"leveldb.add.filter.time"},
+     {REMOVE_FILTER_TIME,"leveldb.remove.filter.time"}
 };
 
 struct HistogramData{
