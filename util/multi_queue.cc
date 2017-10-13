@@ -416,7 +416,9 @@ void MultiQueue::ShrinkUsage()
 	    if(old->expire_time < current_time_){
 		 if(old->type){
 		    leveldb::TableAndFile *tf = reinterpret_cast<leveldb::TableAndFile *>(old->value);
+		    uint64_t start_micros = Env::Default()->NowMicros();
 		    size_t delta_charge = tf->table->RemoveFilters(1);
+		    MeasureTime(Statistics::GetStatistics().get(),Tickers::REMOVE_FILTER_TIME,Env::Default()->NowMicros() - start_micros);
 		    old->charge -= delta_charge;
 		    usage_ -= delta_charge;
 		}
@@ -435,7 +437,9 @@ void MultiQueue::ShrinkUsage()
 	    if(old->expire_time < current_time_){
 		mutex_.lock();
 		SpinMutexLock l0(lru_mutexs_);
+		uint64_t start_micros = Env::Default()->NowMicros();
 		bool erased = FinishErase(table_.Remove(old->key(), old->hash));
+		MeasureTime(Statistics::GetStatistics().get(),Tickers::REMOVE_FILTER_TIME,Env::Default()->NowMicros() - start_micros);
 		mutex_.unlock();
 		if (!erased) {  // to avoid unused variable when compiled NDEBUG
 		    assert(erased);
@@ -450,7 +454,9 @@ void MultiQueue::ShrinkUsage()
 		    assert(old->refs == 1);
 		    if(old->type){
 			leveldb::TableAndFile *tf = reinterpret_cast<leveldb::TableAndFile *>(old->value);
+			uint64_t start_micros = Env::Default()->NowMicros();
 			size_t delta_charge = tf->table->RemoveFilters(1);
+			MeasureTime(Statistics::GetStatistics().get(),Tickers::REMOVE_FILTER_TIME,Env::Default()->NowMicros() - start_micros);
 			old->charge -= delta_charge;
 			usage_ -= delta_charge;
 		    }
@@ -466,7 +472,9 @@ void MultiQueue::ShrinkUsage()
 		    assert(old->refs == 1);
 		    mutex_.lock();
 		    SpinMutexLock lr(lru_mutexs_);
+		    uint64_t start_micros = Env::Default()->NowMicros();
 		    bool erased = FinishErase(table_.Remove(old->key(), old->hash));
+		    MeasureTime(Statistics::GetStatistics().get(),Tickers::REMOVE_FILTER_TIME,Env::Default()->NowMicros() - start_micros);
 		    mutex_.unlock();
 		    if (!erased) {  // to avoid unused variable when compiled NDEBUG
 		      assert(erased);
