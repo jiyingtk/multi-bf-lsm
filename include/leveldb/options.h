@@ -6,7 +6,7 @@
 #define STORAGE_LEVELDB_INCLUDE_OPTIONS_H_
 
 #include <stddef.h>
-
+#include"leveldb/statistics.h"
 namespace leveldb {
 
 class Cache;
@@ -27,6 +27,12 @@ enum CompressionType {
   kSnappyCompression = 0x1
 };
 
+
+typedef struct OptionExp{
+      bool seek_compaction_;
+      std::shared_ptr<Statistics> stats_;
+      OptionExp():seek_compaction_(false),stats_(nullptr){};
+}OptionExp;
 // Options to control the behavior of a database (passed to DB::Open)
 struct Options {
   // -------------------
@@ -152,7 +158,7 @@ struct Options {
   //
   // Default: NULL
   const FilterPolicy* filter_policy;
-
+  struct OptionExp opEp_;
   // Create an Options object with default values for all fields.
   Options();
 };
@@ -175,11 +181,11 @@ struct ReadOptions {
   // snapshot of the state at the beginning of this read operation.
   // Default: NULL
   const Snapshot* snapshot;
-
+  mutable unsigned short read_file_nums;
   ReadOptions()
       : verify_checksums(false),
         fill_cache(true),
-        snapshot(NULL) {
+        snapshot(NULL),read_file_nums(0) {
   }
 };
 

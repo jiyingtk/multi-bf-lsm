@@ -63,7 +63,7 @@ class DBImpl : public DB {
   // Samples are taken approximately once every config::kReadBytesPeriod
   // bytes.
   void RecordReadSample(Slice key);
-
+  std::string printStatistics();
  private:
   friend class DB;
   struct CompactionState;
@@ -157,7 +157,7 @@ class DBImpl : public DB {
 
   // Has a background compaction been scheduled or is running?
   bool bg_compaction_scheduled_;
-
+  Statistics *statis_;
   // Information for a manual compaction
   struct ManualCompaction {
     int level;
