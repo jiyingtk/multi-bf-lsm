@@ -34,8 +34,9 @@
 #include "util/mutexlock.h"
 #include "leveldb/statistics.h"
 #include "util/stop_watch.h"
+unsigned long long filter_mem_space = 0;
+unsigned long long filter_num = 0;
 namespace leveldb {
-
 const int kNumNonTableCacheFiles = 10;
 
 // Information kept for every waiting writer
@@ -1434,6 +1435,8 @@ bool DBImpl::GetProperty(const Slice& property, std::string* value) {
       }
     }
     value->append(printStatistics());
+    snprintf(buf,sizeof(buf),"filter mem space overhead:%llu filter num:%llu \n",filter_mem_space,filter_num);
+    value->append(buf);
     return true;
   } else if (in == "sstables") {
     *value = versions_->current()->DebugString();

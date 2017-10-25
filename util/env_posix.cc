@@ -355,7 +355,7 @@ class PosixEnv : public Env {
     int fd = open(fname.c_str(), O_RDONLY);
     if (fd < 0) {
       s = PosixError(fname, errno);
-    } else if (mmap_limit_.Acquire()) {
+    } else if (false && mmap_limit_.Acquire()) { //disable mmap
       uint64_t size;
       s = GetFileSize(fname, &size);
       if (s.ok()) {

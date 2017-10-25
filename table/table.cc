@@ -14,7 +14,8 @@
 #include "table/format.h"
 #include "table/two_level_iterator.h"
 #include "util/coding.h"
-
+extern unsigned long long filter_mem_space;
+extern unsigned long long filter_num;
 namespace leveldb {
 
 struct Table::Rep {
@@ -22,6 +23,8 @@ struct Table::Rep {
     delete filter;
     delete [] filter_data;
     delete index_block;
+    filter_mem_space -= filter_size;
+    filter_num--;
   }
 
   Options options;
@@ -30,7 +33,7 @@ struct Table::Rep {
   uint64_t cache_id;
   FilterBlockReader* filter;
   const char* filter_data;
-
+  size_t filter_size;
   BlockHandle metaindex_handle;  // Handle to metaindex_block: saved from footer
   Block* index_block;
 };
@@ -79,6 +82,7 @@ Status Table::Open(const Options& options,
     rep->cache_id = (options.block_cache ? options.block_cache->NewId() : 0);
     rep->filter_data = NULL;
     rep->filter = NULL;
+    rep->filter_size = 0;
     *table = new Table(rep);
     (*table)->ReadMeta(footer);
   } else {
@@ -136,6 +140,9 @@ void Table::ReadFilter(const Slice& filter_handle_value) {
   }
   if (block.heap_allocated) {
     rep_->filter_data = block.data.data();     // Will need to delete later
+    filter_mem_space += block.data.size();
+    rep_->filter_size = block.data.size();
+    filter_num++;
   }
   rep_->filter = new FilterBlockReader(rep_->options.filter_policy, block.data);
 }
