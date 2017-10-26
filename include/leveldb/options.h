@@ -28,12 +28,14 @@ enum CompressionType {
 };
 typedef struct OptionExp{
     bool seek_compaction_;
-    bool adjust_bloom_filter_;
     bool no_cache_io_;
     int lrus_num_;
+    int base_num;
+    uint64_t life_time;
     double filter_capacity_ratio;
+    bool findAllTable;
     std::shared_ptr<Statistics> stats_;
-    OptionExp():no_cache_io_(false),seek_compaction_(false),adjust_bloom_filter_(false),stats_(nullptr),filter_capacity_ratio(1.0){};
+    OptionExp():no_cache_io_(false),seek_compaction_(false),stats_(nullptr),filter_capacity_ratio(1.0),base_num(64),life_time(50),findAllTable(false){};
 }OptionExp;
 // Options to control the behavior of a database (passed to DB::Open)
 struct Options {

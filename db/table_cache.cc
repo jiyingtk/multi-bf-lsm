@@ -29,7 +29,7 @@ TableCache::TableCache(const std::string& dbname,
     : env_(options->env),
       dbname_(dbname),
       options_(options),
-      cache_(NewMultiQueue(entries,options->opEp_.lrus_num_)) {
+      cache_(NewMultiQueue(entries,options->opEp_.lrus_num_,options->opEp_.base_num,options->opEp_.life_time)) {
 }
 
 TableCache::~TableCache() {

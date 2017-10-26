@@ -12,7 +12,7 @@
 #include "util/mutexlock.h"
 #include "db/table_cache.h"
 namespace leveldb {
-const int BASE_NUM = 64;
+
 namespace{
     struct LRUQueueCache;
     struct LRUQueueHandle {
@@ -202,9 +202,10 @@ class MultiQueue:public Cache{
     size_t capacity_;
     size_t usage_;
     uint64_t current_time_;
-    uint64_t life_time_;  //TODO: may be static
+    uint64_t life_time_;  
+    int base_num_ ;
 public:
-    MultiQueue(size_t capacity,int lrus_num = 1);
+    MultiQueue(size_t capacity,int lrus_num = 1,int base_num=64,uint64_t life_time=50);
     ~MultiQueue();
     void Ref(LRUQueueHandle *e,bool addFreCount=false);
     void Unref(LRUQueueHandle* e) ;
@@ -239,7 +240,7 @@ public:
      }
 };
 
-MultiQueue::MultiQueue(size_t capacity,int lrus_num):capacity_(capacity),lrus_num_(lrus_num)
+MultiQueue::MultiQueue(size_t capacity,int lrus_num,int base_num,uint64_t life_time):capacity_(capacity),lrus_num_(lrus_num),base_num_(base_num),life_time_(life_time)
 {
     //TODO: declare outside  class  in_use and lrus parent must be Initialized,avoid lock crush
       in_use_.next = &in_use_;
@@ -253,8 +254,6 @@ MultiQueue::MultiQueue(size_t capacity,int lrus_num):capacity_(capacity),lrus_nu
 	lrus_[i].queue_id = i;
       }
       current_time_ = 0;
-      life_time_ = 100;
-      
 }
 
 std::string MultiQueue::LRU_Status()
@@ -299,10 +298,10 @@ MultiQueue::~MultiQueue()
 
 int MultiQueue::Queue_Num(uint64_t fre_count)
 {
-    if(fre_count <= BASE_NUM){
+    if(fre_count <= base_num_){
 	return 0;
     }
-    return std::min(lrus_num_-1,static_cast<int>(log2(fre_count - BASE_NUM)));
+    return std::min(lrus_num_-1,static_cast<int>(log2(fre_count - base_num_)));
 }
 
 
@@ -311,7 +310,7 @@ uint64_t MultiQueue::Num_Queue(int queue_id)
     if(queue_id == 0){
 	return 0;
     }
-    return 2 << queue_id + BASE_NUM;
+    return 2 << queue_id + base_num_;
 }
 
 void MultiQueue::Ref(LRUQueueHandle* e,bool addFreCount)
@@ -418,7 +417,7 @@ void MultiQueue::ShrinkUsage()
 		    leveldb::TableAndFile *tf = reinterpret_cast<leveldb::TableAndFile *>(old->value);
 		    uint64_t start_micros = Env::Default()->NowMicros();
 		    size_t delta_charge = tf->table->RemoveFilters(1);
-		    MeasureTime(Statistics::GetStatistics().get(),Tickers::REMOVE_FILTER_TIME,Env::Default()->NowMicros() - start_micros);
+		    MeasureTime(Statistics::GetStatistics().get(),Tickers::REMOVE_EXPIRED_FILTER_TIME_0+k,Env::Default()->NowMicros() - start_micros);
 		    old->charge -= delta_charge;
 		    usage_ -= delta_charge;
 		}
@@ -439,7 +438,7 @@ void MultiQueue::ShrinkUsage()
 		SpinMutexLock l0(lru_mutexs_);
 		uint64_t start_micros = Env::Default()->NowMicros();
 		bool erased = FinishErase(table_.Remove(old->key(), old->hash));
-		MeasureTime(Statistics::GetStatistics().get(),Tickers::REMOVE_FILTER_TIME,Env::Default()->NowMicros() - start_micros);
+		MeasureTime(Statistics::GetStatistics().get(),Tickers::REMOVE_EXPIRED_FILTER_TIME_0,Env::Default()->NowMicros() - start_micros);
 		mutex_.unlock();
 		if (!erased) {  // to avoid unused variable when compiled NDEBUG
 		    assert(erased);
@@ -456,7 +455,7 @@ void MultiQueue::ShrinkUsage()
 			leveldb::TableAndFile *tf = reinterpret_cast<leveldb::TableAndFile *>(old->value);
 			uint64_t start_micros = Env::Default()->NowMicros();
 			size_t delta_charge = tf->table->RemoveFilters(1);
-			MeasureTime(Statistics::GetStatistics().get(),Tickers::REMOVE_FILTER_TIME,Env::Default()->NowMicros() - start_micros);
+			MeasureTime(Statistics::GetStatistics().get(),Tickers::REMOVE_HEAD_FILTER_TIME_0+k,Env::Default()->NowMicros() - start_micros);
 			old->charge -= delta_charge;
 			usage_ -= delta_charge;
 		    }
@@ -474,7 +473,7 @@ void MultiQueue::ShrinkUsage()
 		    SpinMutexLock lr(lru_mutexs_);
 		    uint64_t start_micros = Env::Default()->NowMicros();
 		    bool erased = FinishErase(table_.Remove(old->key(), old->hash));
-		    MeasureTime(Statistics::GetStatistics().get(),Tickers::REMOVE_FILTER_TIME,Env::Default()->NowMicros() - start_micros);
+		    MeasureTime(Statistics::GetStatistics().get(),Tickers::REMOVE_HEAD_FILTER_TIME_0,Env::Default()->NowMicros() - start_micros);
 		    mutex_.unlock();
 		    if (!erased) {  // to avoid unused variable when compiled NDEBUG
 		      assert(erased);
@@ -589,8 +588,8 @@ void* MultiQueue::Value(Cache::Handle* handle)
 
 };
 
-Cache* NewMultiQueue(size_t capacity,int lrus_num){
-    return new MultiQueue(capacity,lrus_num);
+Cache* NewMultiQueue(size_t capacity,int lrus_num,int base_num,uint64_t life_time){
+    return new MultiQueue(capacity,lrus_num,base_num,life_time);
 }
 
 };

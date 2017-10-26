@@ -170,10 +170,12 @@ void DBImpl::untilCompactionEnds()
     }else{
       fprintf(stderr,"no compaction!\n");
     }
+    std::cout<<"\n--------------above are untilCompactionEnds output--------------\n"<<std::endl;
     std::string stat_str;
-    this->GetProperty("leveldb.stats",&stat_str);
-    stat_str.append("\n--------------above are untilCompactionEnds output--------------\n");
-    std::cout<<stat_str<<std::endl;
+    if(count  > 3){
+	this->GetProperty("leveldb.stats",&stat_str);
+	std::cout<<stat_str<<std::endl;
+    }
 }
 
 DBImpl::~DBImpl() {
@@ -1475,10 +1477,27 @@ bool DBImpl::GetProperty(const Slice& property, std::string* value) {
 	    value->append(buf);
 	}
 	if(statis_->getTickerCount(Tickers::ADD_FILTER_TIME) != 0){
-	     snprintf(buf,sizeof(buf),"Remove filter count: %lu time: %lu \n",
-		      statis_->getTickerCount(Tickers::REMOVE_FILTER_TIME),
-		      statis_->GetTickerHistogram(Tickers::REMOVE_FILTER_TIME));
-	     value->append(buf);
+	    int i;
+	    value->append(" Remove Expired Filter \n");
+	     for(i = Tickers::REMOVE_EXPIRED_FILTER_TIME_0 ; i <= Tickers::REMOVE_EXPIRED_FILTER_TIME_6  ; i ++){
+		if(statis_->getTickerCount(i) == 0){
+		    continue;
+		}
+		snprintf(buf,sizeof(buf),"Remove LRU%d expired filter count: %lu time: %lu \n", i - Tickers::REMOVE_EXPIRED_FILTER_TIME_0,
+			statis_->getTickerCount(i),
+			statis_->GetTickerHistogram(i));
+		value->append(buf);
+	     }
+	     value->append(" Remove Head Filter \n");
+	     for(i = Tickers::REMOVE_HEAD_FILTER_TIME_0 ; i <= Tickers::REMOVE_HEAD_FILTER_TIME_6  ; i ++){
+		if(statis_->getTickerCount(i) == 0){
+		    continue;
+		}
+		snprintf(buf,sizeof(buf),"Remove LRU%d head filter count: %lu time: %lu \n", i - Tickers::REMOVE_HEAD_FILTER_TIME_0,
+			statis_->getTickerCount(i),
+			statis_->GetTickerHistogram(i));
+		value->append(buf);
+	     }
 	     snprintf(buf,sizeof(buf),"Add filter count: %lu time: %lu \n",
 		      statis_->getTickerCount(Tickers::ADD_FILTER_TIME),
 		      statis_->GetTickerHistogram(Tickers::ADD_FILTER_TIME));
@@ -1622,7 +1641,9 @@ Status DB::Open(const Options& options, const std::string& dbname,
   if (s.ok()) {
     assert(impl->mem_ != NULL);
     impl->mutex_.Lock();
-    impl->versions_->findAllTables();
+    if(options.opEp_.findAllTable){
+	impl->versions_->findAllTables();
+    }
     impl->mutex_.Unlock();
     *dbptr = impl;
   } else {

@@ -27,6 +27,20 @@ namespace leveldb{
 	WRITE_FILTER_TIME,
 	ADD_FILTER_TIME,
 	REMOVE_FILTER_TIME,
+	REMOVE_EXPIRED_FILTER_TIME_0,
+	REMOVE_EXPIRED_FILTER_TIME_1,
+	REMOVE_EXPIRED_FILTER_TIME_2,
+	REMOVE_EXPIRED_FILTER_TIME_3,
+	REMOVE_EXPIRED_FILTER_TIME_4,
+	REMOVE_EXPIRED_FILTER_TIME_5,
+	REMOVE_EXPIRED_FILTER_TIME_6,
+	REMOVE_HEAD_FILTER_TIME_0,
+	REMOVE_HEAD_FILTER_TIME_1,
+	REMOVE_HEAD_FILTER_TIME_2,
+	REMOVE_HEAD_FILTER_TIME_3,
+	REMOVE_HEAD_FILTER_TIME_4,
+	REMOVE_HEAD_FILTER_TIME_5,
+	REMOVE_HEAD_FILTER_TIME_6,
 	TICKER_ENUM_MAX
  };  
 
@@ -51,7 +65,20 @@ namespace leveldb{
      {CREATE_FILTER_TIME,"leveldb.create.filter.time"},
      {WRITE_FILTER_TIME,"leveldb.write.filter.time"},
      {ADD_FILTER_TIME,"leveldb.add.filter.time"},
-     {REMOVE_FILTER_TIME,"leveldb.remove.filter.time"}
+     {REMOVE_EXPIRED_FILTER_TIME_0,"leveldb.remove.expired.filter.time0"},
+     {REMOVE_EXPIRED_FILTER_TIME_1,"leveldb.remove.expired.filter.time1"},
+     {REMOVE_EXPIRED_FILTER_TIME_2,"leveldb.remove.expired.filter.time2"},
+     {REMOVE_EXPIRED_FILTER_TIME_3,"leveldb.remove.expired.filter.time3"},
+     {REMOVE_EXPIRED_FILTER_TIME_4,"leveldb.remove.expired.filter.time4"},
+     {REMOVE_EXPIRED_FILTER_TIME_5,"leveldb.remove.expired.filter.time5"},
+     {REMOVE_EXPIRED_FILTER_TIME_6,"leveldb.remove.expired.filter.time6"},
+     {REMOVE_HEAD_FILTER_TIME_0,"leveldb.remove.head.filter.time0"},
+     {REMOVE_HEAD_FILTER_TIME_1,"leveldb.remove.head.filter.time1"},
+     {REMOVE_HEAD_FILTER_TIME_2,"leveldb.remove.head.filter.time2"},
+     {REMOVE_HEAD_FILTER_TIME_3,"leveldb.remove.head.filter.time3"},
+     {REMOVE_HEAD_FILTER_TIME_4,"leveldb.remove.head.filter.time4"},
+     {REMOVE_HEAD_FILTER_TIME_5,"leveldb.remove.head.filter.time5"},
+     {REMOVE_HEAD_FILTER_TIME_6,"leveldb.remove.head.filter.time6"}
 };
 
 struct HistogramData{
