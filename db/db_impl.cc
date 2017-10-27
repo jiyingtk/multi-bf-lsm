@@ -34,6 +34,8 @@
 #include "util/mutexlock.h"
 #include "leveldb/statistics.h"
 #include "util/stop_watch.h"
+#include <iostream>
+#include <unistd.h>
 unsigned long long filter_mem_space = 0;
 unsigned long long filter_num = 0;
 namespace leveldb {
@@ -148,8 +150,37 @@ DBImpl::DBImpl(const Options& raw_options, const std::string& dbname)
                              &internal_comparator_);
 }
 
+void DBImpl::untilCompactionEnds()
+ {
+    std::string preValue,afterValue;
+    int count = 0;
+    const int countMAX = 24000;
+    this->GetProperty("leveldb.num-files",&afterValue);
+    // std::cout<<afterValue<<std::endl;
+    //std::cout<<preValue<<std::endl;
+    while(preValue.compare(afterValue) != 0 && count < countMAX){
+      preValue = afterValue;
+      sleep(120);
+      this->GetProperty("leveldb.num-files",&afterValue);
+      count++;
+    }
+    std::cout<<"--- untilCompactionEnds will output ------------"<<std::endl;
+    if(count == countMAX){
+      fprintf(stderr,"Compaction is still running!\n");
+    }else{
+      fprintf(stderr,"no compaction!\n");
+    }
+    std::cout<<"\n--------------above are untilCompactionEnds output--------------\n"<<std::endl;
+    std::string stat_str;
+    if(count  > 3){
+	this->GetProperty("leveldb.stats",&stat_str);
+	std::cout<<stat_str<<std::endl;
+    }
+}
+
 DBImpl::~DBImpl() {
   // Wait for background work to finish
+  untilCompactionEnds();
   mutex_.Lock();
   shutting_down_.Release_Store(this);  // Any non-NULL value is ok
   while (bg_compaction_scheduled_) {
@@ -1441,7 +1472,14 @@ bool DBImpl::GetProperty(const Slice& property, std::string* value) {
   } else if (in == "sstables") {
     *value = versions_->current()->DebugString();
     return true;
-  } else if (in == "approximate-memory-usage") {
+  }else if(in == "num-files"){
+      for(int level = 0  ; level < config::kNumLevels ; level++){
+	char buf[100];
+	snprintf(buf, sizeof(buf), "%d",versions_->NumLevelFiles(static_cast<int>(level)));
+	value->append(buf);
+      }
+      return true;
+   }else if (in == "approximate-memory-usage") {
     size_t total_usage = options_.block_cache->TotalCharge();
     if (mem_) {
       total_usage += mem_->ApproximateMemoryUsage();
