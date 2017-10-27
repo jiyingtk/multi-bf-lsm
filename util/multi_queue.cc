@@ -296,14 +296,14 @@ MultiQueue::~MultiQueue()
   delete []lrus_;
   delete []lru_mutexs_;
 }
-
+#define ln4 1.38629436
 
 int MultiQueue::Queue_Num(uint64_t fre_count)
 {
     if(fre_count <= base_num_){
 	return 0;
     }
-    return std::min(lrus_num_-1,static_cast<int>(log2(fre_count - base_num_)));
+    return std::min(lrus_num_-1,static_cast<int>(log(fre_count)/1.38629436) - 1);
 }
 
 
