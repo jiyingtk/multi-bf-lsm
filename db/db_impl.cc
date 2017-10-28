@@ -1475,6 +1475,11 @@ bool DBImpl::GetProperty(const Slice& property, std::string* value) {
 		    statis_->GetTickerHistogram(Tickers::CREATE_FILTER_TIME)*1.0/stats_sum*100,
 		    statis_->GetTickerHistogram(Tickers::WRITE_FILTER_TIME)*1.0/stats_sum*100);
 	    value->append(buf);
+	    if(statis_->getTickerCount(Tickers::CREATE_FILTER_TIME) != 0){
+		snprintf(buf,sizeof(buf),"average create filters time  = %.3lf\n",
+			statis_->GetTickerHistogram(Tickers::CREATE_FILTER_TIME)*1.0/statis_->getTickerCount(Tickers::CREATE_FILTER_TIME));
+	    }
+	    value->append(buf);    
 	}
 	if(statis_->getTickerCount(Tickers::ADD_FILTER_TIME) != 0){
 	    int i;
