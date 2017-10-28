@@ -5,12 +5,13 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <math.h>  
-
+#include <iostream>
 #include "leveldb/cache.h"
 #include "port/port.h"
 #include "util/hash.h"
 #include "util/mutexlock.h"
 #include "db/table_cache.h"
+using namespace std;
 namespace leveldb {
 
 namespace{
@@ -254,6 +255,7 @@ MultiQueue::MultiQueue(size_t capacity,int lrus_num,int base_num,uint64_t life_t
 	lrus_[i].queue_id = i;
       }
       current_time_ = 0;
+      cout<<"Multi-Queue Capacity:"<<capacity_<<endl;
 }
 
 std::string MultiQueue::LRU_Status()
@@ -294,14 +296,14 @@ MultiQueue::~MultiQueue()
   delete []lrus_;
   delete []lru_mutexs_;
 }
-
+#define ln4 1.38629436
 
 int MultiQueue::Queue_Num(uint64_t fre_count)
 {
     if(fre_count <= base_num_){
 	return 0;
     }
-    return std::min(lrus_num_-1,static_cast<int>(log2(fre_count - base_num_)));
+    return std::min(lrus_num_-1,static_cast<int>(log(fre_count)/1.38629436) - 1);
 }
 
 
@@ -406,8 +408,26 @@ void MultiQueue::Release(Cache::Handle* handle) {
 
 void MultiQueue::ShrinkUsage()
 {
-    int k = lrus_num_ - 1;
-    while (usage_ > capacity_ && k > 0) {
+    int k = 1;
+    if(usage_ > capacity_){
+	if(lrus_[0].next != &lrus_[0]){
+	    LRUQueueHandle *old = lrus_[0].next;
+	    assert(old->refs == 1);
+	    if(old->expire_time < current_time_){
+		mutex_.lock();
+		SpinMutexLock l0(lru_mutexs_);
+		uint64_t start_micros = Env::Default()->NowMicros();
+		bool erased = FinishErase(table_.Remove(old->key(), old->hash));
+		MeasureTime(Statistics::GetStatistics().get(),Tickers::REMOVE_EXPIRED_FILTER_TIME_0,Env::Default()->NowMicros() - start_micros);
+		mutex_.unlock();
+		if (!erased) {  // to avoid unused variable when compiled NDEBUG
+		    assert(erased);
+		}
+	    }
+	}
+    }
+
+    while (usage_ > capacity_ && k < lrus_num_) {
 	if(lrus_[k].next != &lrus_[k]){
 	    LRUQueueHandle* old = lrus_[k].next;
 	    assert(old->refs == 1);
@@ -427,27 +447,10 @@ void MultiQueue::ShrinkUsage()
 		LRU_Append(&lrus_[k-1],old);
 	    }
 	}
-	k--;
-    }
-    if(usage_ > capacity_){
-	if(lrus_[0].next != &lrus_[0]){
-	    LRUQueueHandle *old = lrus_[0].next;
-	    assert(old->refs == 1);
-	    if(old->expire_time < current_time_){
-		mutex_.lock();
-		SpinMutexLock l0(lru_mutexs_);
-		uint64_t start_micros = Env::Default()->NowMicros();
-		bool erased = FinishErase(table_.Remove(old->key(), old->hash));
-		MeasureTime(Statistics::GetStatistics().get(),Tickers::REMOVE_EXPIRED_FILTER_TIME_0,Env::Default()->NowMicros() - start_micros);
-		mutex_.unlock();
-		if (!erased) {  // to avoid unused variable when compiled NDEBUG
-		    assert(erased);
-		}
-	    }
-	}
+	k++;
     }
     while (usage_ > capacity_){
-	    for(k = 1 ; k < lrus_num_  && usage_ > capacity_; k++){
+	    for(k = lrus_num_ - 1 ; k > 0  && usage_ > capacity_; k--){
 		if(lrus_[k].next != &lrus_[k]){
 		    LRUQueueHandle* old = lrus_[k].next;
 		    assert(old->refs == 1);
