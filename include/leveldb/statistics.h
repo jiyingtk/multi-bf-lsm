@@ -41,6 +41,8 @@ namespace leveldb{
 	REMOVE_HEAD_FILTER_TIME_4,
 	REMOVE_HEAD_FILTER_TIME_5,
 	REMOVE_HEAD_FILTER_TIME_6,
+	FILTER_LOCK_TIME,
+	FILTER_WAIT_TIME,
 	TICKER_ENUM_MAX
  };  
 
@@ -78,7 +80,9 @@ namespace leveldb{
      {REMOVE_HEAD_FILTER_TIME_3,"leveldb.remove.head.filter.time3"},
      {REMOVE_HEAD_FILTER_TIME_4,"leveldb.remove.head.filter.time4"},
      {REMOVE_HEAD_FILTER_TIME_5,"leveldb.remove.head.filter.time5"},
-     {REMOVE_HEAD_FILTER_TIME_6,"leveldb.remove.head.filter.time6"}
+     {REMOVE_HEAD_FILTER_TIME_6,"leveldb.remove.head.filter.time6"},
+     {FILTER_LOCK_TIME,"leveldb.filter.lock.time"},
+     {FILTER_WAIT_TIME,"leveldb.filter.wait.time"}
 };
 
 struct HistogramData{

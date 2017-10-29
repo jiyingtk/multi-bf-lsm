@@ -3,7 +3,7 @@
 // found in the LICENSE file. See the AUTHORS file for names of contributors.
 
 #include "leveldb/filter_policy.h"
-
+#include <stdio.h>
 #include "leveldb/slice.h"
 #include "util/hash.h"
 #include <list>
@@ -11,8 +11,10 @@
 #include <mutex>
 #include <condition_variable>
 #include <atomic>
+#include "leveldb/env.h"
 #include "leveldb/threadpool.h"
 #include "util/threadpool_imp.h"
+#include "leveldb/statistics.h"
 namespace leveldb {
 
 namespace {
@@ -111,44 +113,65 @@ class ChildBloomFilterPolicy : public FilterPolicy {
       return 1;
 }
 };
-
+struct CreateFilterArg{
+	  ChildBloomFilterPolicy *ch;
+	  std::string *dst;
+};
 class MultiFilter:public FilterPolicy{
 private:
 	std::list<ChildBloomFilterPolicy*> filters;
 	size_t bits_per_key_;
-	static ThreadPoolImpl thread_pool_;
-	static std::mutex mutex_;
-	static std::condition_variable  filter_signal_;
-	static int curr_completed_filter_num_;
+	static pthread_mutex_t filter_mutex_;
+	static pthread_cond_t filter_cond_;
+	static pthread_t pids_[8];
+	static std::atomic<int> curr_completed_filter_num_;
 	static int filter_num_;
+	static bool filled_[8];
+	static const Slice *keys_;
+	static int n_;
 public:
-	struct CreateFilterArg{
-	  ChildBloomFilterPolicy *ch;
-	  const Slice *keys;
-	  int n;
-	  std::string *dst;
-	};
-	static void CreateFilter(void *arg){
-	    CreateFilterArg cfa = *(reinterpret_cast<CreateFilterArg*>(arg));
-	    delete  reinterpret_cast<CreateFilterArg*>(arg);
-	    cfa.ch->CreateFilter(cfa.keys,cfa.n,cfa.dst);
-	    std::unique_lock<std::mutex> lock(mutex_);
-	    ++curr_completed_filter_num_;
-	    if(curr_completed_filter_num_ == filter_num_){
-		filter_signal_.notify_all();
+	
+	static CreateFilterArg *cfas;
+	static void* CreateFilter_T(void *arg){
+	    int id = *(int*)(arg);
+	    delete (int *)(arg);
+	    CreateFilterArg *cfa = cfas+id;
+	    while(true){
+		pthread_mutex_lock(&filter_mutex_);
+		while(!filled_[id]){
+		    pthread_cond_wait(&filter_cond_,&filter_mutex_);
+		}
+		pthread_mutex_unlock(&filter_mutex_);
+		cfa->ch->CreateFilter(keys_,n_,cfa->dst);
+		++curr_completed_filter_num_;
+		filled_[id] = false;
 	    }
 	}
 	explicit MultiFilter(int bits_per_key_per_filter[],int bits_per_key):bits_per_key_(bits_per_key){
 	    int i;
 	    bits_per_key_per_filter_ = new size_t[10];
+	    char name_buf[24];
 	    for(i = 0 ; bits_per_key_per_filter[i]!=0 ; i++ ){
 		ChildBloomFilterPolicy* ch_filter = new ChildBloomFilterPolicy(bits_per_key_per_filter[i],i);
 		filters.push_back(ch_filter);
 		bits_per_key_per_filter_[i] = bits_per_key_per_filter[i];
+		filled_[i] = false;
 	    }
 	    filter_num_ = i;
 	    printf("filters size:%ld\n",filters.size());
-	    thread_pool_.SetBackgroundThreads(std::min(filters.size(),static_cast<size_t>(std::thread::hardware_concurrency())));
+	    cfas = new CreateFilterArg[filters.size()];
+	    i = 0;
+	    for(std::list<ChildBloomFilterPolicy*>::const_iterator iter = filters.begin() ; iter != filters.end() ; iter++){
+		int *temp_id = new int(i);
+		if(pthread_create(pids_+i,NULL,MultiFilter::CreateFilter_T,(void*)(temp_id))!=0){
+		    perror("create thread ");
+		}
+		snprintf(name_buf, sizeof name_buf, "filter:bg%d" ,i);
+		name_buf[sizeof name_buf - 1] = '\0';
+		pthread_setname_np(pids_[i], name_buf);
+		cfas[i++].ch =*iter;
+	    }
+	    
 	}
 	
 	virtual void CreateFilter(const Slice * keys,int n, std::string *dst) const{
@@ -159,22 +182,21 @@ public:
 	    }
 	}
 	virtual void CreateFilter(const Slice *keys,int n,std::list<std::string> &dsts) const {
-	    CreateFilterArg *cfa;
-	    auto dsts_iter = dsts.begin();
-	    for(std::list<ChildBloomFilterPolicy*>::const_iterator iter = filters.begin() ; iter != filters.end() ; iter++){
-		//(*iter)->CreateFilter(keys,n,&(*dsts_iter));
-		cfa = new CreateFilterArg;
-		cfa->ch = *iter;
-		cfa->keys = keys;
-		cfa->n = n;
+	    CreateFilterArg *cfa = cfas;
+	    keys_ = keys;
+	    n_ = n;
+	    int i = 0;
+	    for(auto dsts_iter = dsts.begin() ; dsts_iter != dsts.end() ; ++dsts_iter){
 		cfa->dst = &(*dsts_iter);
-		thread_pool_.Schedule(&MultiFilter::CreateFilter,cfa,nullptr,nullptr);
-		dsts_iter++;
+		filled_[i++] = true;
+		cfa++;
 	    }
-	    std::unique_lock<std::mutex> lock(mutex_);
-	    while(curr_completed_filter_num_ != filter_num_){
-		filter_signal_.wait(lock);
-	    }
+	    uint64_t start_micros = Env::Default()->NowMicros();
+	    pthread_cond_broadcast(&filter_cond_);
+	    MeasureTime(Statistics::GetStatistics().get(),Tickers::FILTER_LOCK_TIME,Env::Default()->NowMicros() - start_micros);
+	    start_micros = Env::Default()->NowMicros();
+	    while(curr_completed_filter_num_ != filter_num_);
+	    MeasureTime(Statistics::GetStatistics().get(),Tickers::FILTER_WAIT_TIME,Env::Default()->NowMicros() - start_micros);
 	    curr_completed_filter_num_ = 0;
 	}
 	virtual bool KeyMayMatch(const Slice& key, const Slice& bloom_filter) const{}
@@ -206,11 +228,18 @@ public:
 	    fprintf(stderr,"Multi_bloom_filter destructor is called");
 	}
 };
-ThreadPoolImpl MultiFilter::thread_pool_;
-std::condition_variable MultiFilter::filter_signal_;
-std::mutex MultiFilter::mutex_;
-int  MultiFilter::curr_completed_filter_num_ = 0;
+
+
+
+std::atomic<int>  MultiFilter::curr_completed_filter_num_ (0);
 int MultiFilter::filter_num_ = 0;
+pthread_mutex_t MultiFilter::filter_mutex_(PTHREAD_MUTEX_INITIALIZER);
+pthread_cond_t MultiFilter::filter_cond_(PTHREAD_COND_INITIALIZER);
+bool  MultiFilter::filled_[8];
+pthread_t MultiFilter::pids_[8];
+CreateFilterArg* MultiFilter::cfas(NULL);
+int MultiFilter::n_(0);
+const Slice *MultiFilter::keys_(NULL);
 } //anonymous namespace
 
 size_t * leveldb::FilterPolicy::bits_per_key_per_filter_ = nullptr;
