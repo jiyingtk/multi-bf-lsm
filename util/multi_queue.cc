@@ -303,7 +303,7 @@ int MultiQueue::Queue_Num(uint64_t fre_count)
     if(fre_count <= base_num_){
 	return 0;
     }
-    return std::min(lrus_num_-1,static_cast<int>(log(fre_count)/1.38629436) - 1);
+    return std::min(lrus_num_-1,static_cast<int>(log(fre_count)/ln4) - 1);
 }
 
 
