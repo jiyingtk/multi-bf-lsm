@@ -514,6 +514,7 @@ Cache::Handle* MultiQueue::Insert(const Slice& key, uint32_t hash, void* value, 
   e->type = type;
   e->fre_count = 0;
   e->queue_id = 0;   //new entry always have 1 filter and in lru list 0
+  e->expire_time = current_time_ + life_time_;
   memcpy(e->key_data, key.data(), key.size());
 
   if (capacity_ > 0) {
