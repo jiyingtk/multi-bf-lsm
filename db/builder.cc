@@ -54,7 +54,9 @@ Status BuildTable(const std::string& dbname,
 
     // Finish and check for file errors
     if (s.ok()) {
-      s = file->Sync();
+	uint64_t start_micros = Env::Default()->NowMicros();
+	s = file->Sync();
+	MeasureTime(Statistics::GetStatistics().get(),Tickers::SYNC_TIME,Env::Default()->NowMicros() - start_micros);
     }
     if (s.ok()) {
       s = file->Close();

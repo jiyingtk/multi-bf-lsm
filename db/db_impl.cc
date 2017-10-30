@@ -869,7 +869,9 @@ Status DBImpl::FinishCompactionOutputFile(CompactionState* compact,
 
   // Finish and check for file errors
   if (s.ok()) {
+    uint64_t start_micros = Env::Default()->NowMicros();     
     s = compact->outfile->Sync();
+    MeasureTime(Statistics::GetStatistics().get(),Tickers::SYNC_TIME,Env::Default()->NowMicros() - start_micros);
   }
   if (s.ok()) {
     s = compact->outfile->Close();
@@ -1481,8 +1483,12 @@ bool DBImpl::GetProperty(const Slice& property, std::string* value) {
 			statis_->GetTickerHistogram(Tickers::FILTER_LOCK_TIME)*1.0/statis_->getTickerCount(Tickers::FILTER_LOCK_TIME),
 			statis_->GetTickerHistogram(Tickers::FILTER_WAIT_TIME)*1.0/statis_->getTickerCount(Tickers::FILTER_WAIT_TIME)
 			);
+		value->append(buf);    
+		snprintf(buf,sizeof(buf),"average sync time  = %.3lf sync count = %lu \n",
+			statis_->GetTickerHistogram(Tickers::SYNC_TIME)*1.0/statis_->getTickerCount(Tickers::SYNC_TIME)
+			,statis_->getTickerCount(Tickers::SYNC_TIME));
+		value->append(buf);    
 	    }
-	    value->append(buf);    
 	}
 	if(statis_->getTickerCount(Tickers::ADD_FILTER_TIME) != 0){
 	    int i;

@@ -18,8 +18,21 @@
 namespace leveldb {
 
 namespace {
-static uint32_t BloomHash(const Slice& key) {
-  return Hash(key.data(), key.size(), 0xbc9f1d34);
+static uint32_t BloomHash(const Slice& key,int id) {
+   switch(id){
+        case 0:
+	return Hash(key.data(), key.size(), 0xbc9f1d34);
+	case 1:
+	return Hash(key.data(), key.size(), 0xc9f1d34b);
+	case 2:
+	return Hash(key.data(), key.size(), 0x9f1d34bc);  
+	case 3:
+	return Hash(key.data(), key.size(), 0xf1d34bc9);  
+	case 4:
+	return Hash(key.data(), key.size(), 0x1d34bc9f);  
+	case 5:
+	return Hash(key.data(), key.size(), 0xd34bc9f1);  
+   }
 }
 
 class ChildBloomFilterPolicy : public FilterPolicy {
@@ -58,14 +71,11 @@ class ChildBloomFilterPolicy : public FilterPolicy {
     for (int i = 0; i < n; i++) {
       // Use double-hashing to generate a sequence of hash values.
       // See analysis in [Kirsch,Mitzenmacher 2006].
-      uint32_t h = BloomHash(keys[i]);
+      uint32_t h = BloomHash(keys[i],id_);
       const uint32_t delta = (h >> 17) | (h << 15);  // Rotate right 17 bits
-      for (size_t j = 0; j < k_*(id_+1); j++) {
+      for (size_t j = 0; j < k_; j++) {
         const uint32_t bitpos = h % bits;
 	 h += delta;
-	 if(j < id_*k_){
-	    continue;
-	 }
 	 array[bitpos/8] |= (1 << (bitpos % 8));
       }
     }
@@ -95,16 +105,12 @@ class ChildBloomFilterPolicy : public FilterPolicy {
       return true;
     }
 
-    uint32_t h = BloomHash(key);
+    uint32_t h = BloomHash(key,id_);
     const uint32_t delta = (h >> 17) | (h << 15);  // Rotate right 17 bits
-    for (size_t j = 0; j < k*(id_+1); j++) {
+    for (size_t j = 0; j < k; j++) {
       const uint32_t bitpos = h % bits;
       h += delta;
-      if(j < id_*k){
-	  continue;
-      }
       if ((array[bitpos/8] & (1 << (bitpos % 8))) == 0) return false;
-      
     }
     return true;
   }
@@ -123,6 +129,8 @@ private:
 	size_t bits_per_key_;
 	static pthread_mutex_t filter_mutex_;
 	static pthread_cond_t filter_cond_;
+	static pthread_mutex_t filter_num_mutex_;
+	static pthread_cond_t filter_num_cond_;
 	static pthread_t pids_[8];
 	static std::atomic<int> curr_completed_filter_num_;
 	static int filter_num_;
@@ -144,6 +152,9 @@ public:
 		pthread_mutex_unlock(&filter_mutex_);
 		cfa->ch->CreateFilter(keys_,n_,cfa->dst);
 		++curr_completed_filter_num_;
+		if(curr_completed_filter_num_ == filter_num_){
+		    pthread_cond_signal(&filter_num_cond_);
+		}
 		filled_[id] = false;
 	    }
 	}
@@ -195,7 +206,11 @@ public:
 	    pthread_cond_broadcast(&filter_cond_);
 	    MeasureTime(Statistics::GetStatistics().get(),Tickers::FILTER_LOCK_TIME,Env::Default()->NowMicros() - start_micros);
 	    start_micros = Env::Default()->NowMicros();
-	    while(curr_completed_filter_num_ != filter_num_);
+	    pthread_mutex_lock(&filter_num_mutex_);
+	    while(curr_completed_filter_num_ != filter_num_){
+		 pthread_cond_wait(&filter_num_cond_,&filter_num_mutex_);
+	    }
+	    pthread_mutex_unlock(&filter_num_mutex_);
 	    MeasureTime(Statistics::GetStatistics().get(),Tickers::FILTER_WAIT_TIME,Env::Default()->NowMicros() - start_micros);
 	    curr_completed_filter_num_ = 0;
 	}
@@ -235,6 +250,8 @@ std::atomic<int>  MultiFilter::curr_completed_filter_num_ (0);
 int MultiFilter::filter_num_ = 0;
 pthread_mutex_t MultiFilter::filter_mutex_(PTHREAD_MUTEX_INITIALIZER);
 pthread_cond_t MultiFilter::filter_cond_(PTHREAD_COND_INITIALIZER);
+pthread_mutex_t MultiFilter::filter_num_mutex_(PTHREAD_MUTEX_INITIALIZER);
+pthread_cond_t MultiFilter::filter_num_cond_(PTHREAD_COND_INITIALIZER);
 bool  MultiFilter::filled_[8];
 pthread_t MultiFilter::pids_[8];
 CreateFilterArg* MultiFilter::cfas(NULL);
