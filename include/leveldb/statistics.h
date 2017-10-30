@@ -23,6 +23,10 @@ namespace leveldb{
 	ACCESS_L4_TIME,
 	ACCESS_L5_TIME,
 	ACCESS_L6_TIME,
+	CREATE_FILTER_TIME,
+	WRITE_FILTER_TIME,
+	ADD_FILTER_TIME,
+	SYNC_TIME,
 	TICKER_ENUM_MAX
  };  
 
@@ -43,7 +47,11 @@ namespace leveldb{
      {ACCESS_L3_TIME,"leveldb.access.l3.time"},
      {ACCESS_L4_TIME,"leveldb.access.l4.time"},
      {ACCESS_L5_TIME,"leveldb.access.l5.time"},
-     {ACCESS_L6_TIME,"leveldb.access.l6.time"}
+     {ACCESS_L6_TIME,"leveldb.access.l6.time"},
+     {CREATE_FILTER_TIME,"leveldb.create.filter.time"},
+     {WRITE_FILTER_TIME,"leveldb.write.filter.time"},
+     {ADD_FILTER_TIME,"leveldb.add.filter.time"},
+     {SYNC_TIME,"leveldb.sync.time"}
 };
 
 struct HistogramData{
@@ -63,9 +71,17 @@ public:
 	virtual std::string ToString(uint32_t begin_type = READ_0_TIME,uint32_t end_type= READ_7_TIME);
 	virtual void reset();
 	virtual void init();
+	virtual uint64_t GetTickerHistogram(uint32_t tickerType) const;
+	static std::shared_ptr<Statistics>  GetStatistics(){
+	    return statis_;
+	}
+	static void SetStatisitics(std::shared_ptr<Statistics> sp){
+	  statis_ = sp;
+	}
 private:
 	uint64_t tickers_[TICKER_ENUM_MAX];
 	HistogramData histograms_[TICKER_ENUM_MAX];
+	static std::shared_ptr<Statistics> statis_;
 };
 
 std::shared_ptr<Statistics> CreateDBStatistics();

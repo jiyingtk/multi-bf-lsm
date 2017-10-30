@@ -869,7 +869,9 @@ Status DBImpl::FinishCompactionOutputFile(CompactionState* compact,
 
   // Finish and check for file errors
   if (s.ok()) {
+    uint64_t start_micros = Env::Default()->NowMicros();
     s = compact->outfile->Sync();
+    MeasureTime(Statistics::GetStatistics().get(),Tickers::SYNC_TIME,Env::Default()->NowMicros() - start_micros);
   }
   if (s.ok()) {
     s = compact->outfile->Close();
@@ -1465,9 +1467,19 @@ bool DBImpl::GetProperty(const Slice& property, std::string* value) {
         value->append(buf);
       }
     }
-    value->append(printStatistics());
     snprintf(buf,sizeof(buf),"filter mem space overhead:%llu filter num:%llu \n",filter_mem_space,filter_num);
     value->append(buf);
+    if(statis_){
+	 if(statis_->getTickerCount(Tickers::CREATE_FILTER_TIME) != 0){
+		snprintf(buf,sizeof(buf),"average create filters time  = %.3lf create filter count:%lu \naverage sync SSTable time = %.3lf sync SSTable count: %lu\n",
+			statis_->GetTickerHistogram(Tickers::CREATE_FILTER_TIME)*1.0/statis_->getTickerCount(Tickers::CREATE_FILTER_TIME),statis_->getTickerCount(Tickers::CREATE_FILTER_TIME),
+			statis_->GetTickerHistogram(Tickers::SYNC_TIME)*1.0/statis_->getTickerCount(Tickers::SYNC_TIME),statis_->getTickerCount(Tickers::SYNC_TIME)
+			);
+	    }
+	    value->append(buf);    
+	    
+    }
+     value->append(printStatistics());
     return true;
   } else if (in == "sstables") {
     *value = versions_->current()->DebugString();

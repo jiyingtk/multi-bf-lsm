@@ -3,7 +3,8 @@
 // found in the LICENSE file. See the AUTHORS file for names of contributors.
 
 #include "table/filter_block.h"
-
+#include "leveldb/env.h"
+#include "leveldb/statistics.h"
 #include "leveldb/filter_policy.h"
 #include "util/coding.h"
 
@@ -68,8 +69,9 @@ void FilterBlockBuilder::GenerateFilter() {
 
   // Generate filter for current set of keys and append to result_.
   filter_offsets_.push_back(result_.size());
+  uint64_t start_micros = Env::Default()->NowMicros();
   policy_->CreateFilter(&tmp_keys_[0], static_cast<int>(num_keys), &result_);
-
+  MeasureTime(Statistics::GetStatistics().get(),Tickers::CREATE_FILTER_TIME,Env::Default()->NowMicros() - start_micros);
   tmp_keys_.clear();
   keys_.clear();
   start_.clear();

@@ -11,7 +11,7 @@ void Statistics::init(){
 	tickers_[i] = 0;
     }
 }
-
+std::shared_ptr<Statistics> Statistics::statis_ = nullptr;
 Statistics::Statistics(){
   init();
 }
@@ -50,6 +50,12 @@ inline void Statistics::setTickerCount(uint32_t tickerType, uint64_t count)
     tickers_[tickerType] = count;
 }
 
+inline uint64_t Statistics::GetTickerHistogram(uint32_t tickerType) const
+{
+     assert(tickerType < TICKER_ENUM_MAX);
+     return histograms_[tickerType].average;
+}
+
 std::string Statistics::ToString(uint32_t begin_type, uint32_t end_type)
 {
 	int i;
@@ -57,6 +63,9 @@ std::string Statistics::ToString(uint32_t begin_type, uint32_t end_type)
 	std::string res;
 	res.reserve(20000);
 	for(i = begin_type ; i <= end_type ; i++){
+	    if(histograms_[i].average == 0){
+		continue;
+	    }
        	    histograms_[i].min = (histograms_[i].min == std::numeric_limits<double>::max() ? -1 : histograms_[i].min);
 	    histograms_[i].average = histograms_[i].average/tickers_[i];
 	    snprintf(buf,sizeof(buf),"%s min:%.3lf ave:%.3lf max:%.3lf count:%lu\n",TickersNameMap[i].second.c_str(),histograms_[i].min,histograms_[i].average,histograms_[i].max,tickers_[i]);
@@ -69,7 +78,9 @@ std::string Statistics::ToString(uint32_t begin_type, uint32_t end_type)
 
 
 std::shared_ptr<Statistics> CreateDBStatistics(){
-	return std::make_shared<Statistics>();
+	auto sp = std::make_shared<Statistics>();
+	Statistics::SetStatisitics(sp);
+	return sp;
 }
 
 void MeasureTime(Statistics * statistics,uint32_t histogram_type,uint64_t value){
