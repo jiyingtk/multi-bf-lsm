@@ -44,6 +44,8 @@ namespace leveldb{
 	FILTER_LOCK_TIME,
 	FILTER_WAIT_TIME,
 	SYNC_TIME,
+	CHILD_CREATE_FILTER_TIME,
+	CHILD_FILTER_OTHER_TIME,
 	TICKER_ENUM_MAX
  };  
 
@@ -84,6 +86,8 @@ namespace leveldb{
      {REMOVE_HEAD_FILTER_TIME_6,"leveldb.remove.head.filter.time6"},
      {FILTER_LOCK_TIME,"leveldb.filter.lock.time"},
      {FILTER_WAIT_TIME,"leveldb.filter.wait.time"},
+     {CHILD_CREATE_FILTER_TIME,"leveldb.child.create.filter.time"},
+     {CHILD_FILTER_OTHER_TIME,"leveldb.child.filter.other.time"},
      {SYNC_TIME,"leveldb.sync.time"}
 };
 
