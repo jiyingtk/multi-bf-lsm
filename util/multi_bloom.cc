@@ -146,7 +146,7 @@ public:
 	    CreateFilterArg *cfa = cfas+id;
 	    while(true){
 		//pthread_mutex_lock(&filter_mutex_);
-		while(!filled_[id]);/*{
+	      while(!filled_[id].load(std::memory_order_acquire));/*{
 		    pthread_cond_wait(&filter_cond_,&filter_mutex_);
 		}*/
 		//pthread_mutex_unlock(&filter_mutex_);
@@ -200,7 +200,7 @@ public:
 	    int i = 0;
 	    for(auto dsts_iter = dsts.begin() ; dsts_iter != dsts.end() ; ++dsts_iter){
 		cfa->dst = &(*dsts_iter);
-		filled_[i++].store(true,std::memory_order_relaxed);
+		filled_[i++].store(true,std::memory_order_release);
 		cfa++;
 	    }
 	    uint64_t start_micros = Env::Default()->NowMicros();
