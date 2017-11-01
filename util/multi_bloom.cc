@@ -23,15 +23,15 @@ static uint32_t BloomHash(const Slice& key,int id) {
         case 0:
 	return Hash(key.data(), key.size(), 0xbc9f1d34);
 	case 1:
-	return Hash(key.data(), key.size(), 0xc9f1d34b);
+	return Hash(key.data(), key.size(), 0x34f1d34b);
 	case 2:
-	return Hash(key.data(), key.size(), 0x9f1d34bc);  
+	return Hash(key.data(), key.size(), 0x251d34bc);  
 	case 3:
-	return Hash(key.data(), key.size(), 0xf1d34bc9);  
+	return Hash(key.data(), key.size(), 0x01d34bc9);  
 	case 4:
-	return Hash(key.data(), key.size(), 0x1d34bc9f);  
+	return Hash(key.data(), key.size(), 0x1934bc9f);  
 	case 5:
-	return Hash(key.data(), key.size(), 0xd34bc9f1);  
+	return Hash(key.data(), key.size(), 0x934bc9f1);  
    }
 }
 
@@ -137,25 +137,29 @@ private:
 	static std::atomic<bool> filled_[8];
 	static const Slice *keys_;
 	static int n_;
+	static bool end_thread;
 public:
 	
 	static CreateFilterArg *cfas;
 	static void* CreateFilter_T(void *arg){
 	    int id = *(int*)(arg);
 	    delete (int *)(arg);
-	    CreateFilterArg *cfa = cfas+id;
+	    CreateFilterArg *temp_cfa = cfas+id;
 	    while(true){
 		//pthread_mutex_lock(&filter_mutex_);
-	      while(!filled_[id].load(std::memory_order_acquire));/*{
+	      while(!filled_[id].load(std::memory_order_acquire)&&!end_thread);/*{
 		    pthread_cond_wait(&filter_cond_,&filter_mutex_);
 		}*/
 		//pthread_mutex_unlock(&filter_mutex_);
+		if(end_thread){
+		    break;
+		}
 		uint64_t start_micros = Env::Default()->NowMicros();
-		cfa->ch->CreateFilter(keys_,n_,cfa->dst);
+		cfas[id].ch->CreateFilter(keys_,n_,cfas[id].dst);
 		MeasureTime(Statistics::GetStatistics().get(),Tickers::CHILD_CREATE_FILTER_TIME,Env::Default()->NowMicros() - start_micros);
 		start_micros = Env::Default()->NowMicros();
 		++curr_completed_filter_num_;
-		filled_[id].store(false,std::memory_order_release); 
+		filled_[id].store(false,std::memory_order_seq_cst); 
 		MeasureTime(Statistics::GetStatistics().get(),Tickers::CHILD_FILTER_OTHER_TIME,Env::Default()->NowMicros() - start_micros);
 	    }
 	}
@@ -163,12 +167,14 @@ public:
 	    int i;
 	    bits_per_key_per_filter_ = new size_t[10];
 	    char name_buf[24];
+	    end_thread = false;
 	    for(i = 0 ; bits_per_key_per_filter[i]!=0 ; i++ ){
 		ChildBloomFilterPolicy* ch_filter = new ChildBloomFilterPolicy(bits_per_key_per_filter[i],i);
 		filters.push_back(ch_filter);
 		bits_per_key_per_filter_[i] = bits_per_key_per_filter[i];
-		filled_[i].store(false,std::memory_order_release); 
+		filled_[i].store(false,std::memory_order_seq_cst); 
 	    }
+	    curr_completed_filter_num_.store(0,std::memory_order_seq_cst);
 	    filter_num_ = i;
 	    printf("filters size:%ld\n",filters.size());
 	    cfas = new CreateFilterArg[filters.size()];
@@ -200,7 +206,7 @@ public:
 	    int i = 0;
 	    for(auto dsts_iter = dsts.begin() ; dsts_iter != dsts.end() ; ++dsts_iter){
 		cfa->dst = &(*dsts_iter);
-		filled_[i++].store(true,std::memory_order_release);
+		filled_[i++].store(true,std::memory_order_seq_cst);
 		cfa++;
 	    }
 	    uint64_t start_micros = Env::Default()->NowMicros();
@@ -209,7 +215,7 @@ public:
 	    start_micros = Env::Default()->NowMicros();
 	    while(curr_completed_filter_num_ != filter_num_);
 	    MeasureTime(Statistics::GetStatistics().get(),Tickers::FILTER_WAIT_TIME,Env::Default()->NowMicros() - start_micros);
-	    curr_completed_filter_num_.store(0,std::memory_order_release) ;
+	    curr_completed_filter_num_.store(0,std::memory_order_seq_cst) ;
 	}
 	virtual bool KeyMayMatch(const Slice& key, const Slice& bloom_filter) const{}
 	
@@ -233,9 +239,12 @@ public:
 	}
 	
 	virtual ~MultiFilter(){
+	    int i = 0;
+	    end_thread = true;
 	    for(auto iter = filters.begin() ; !filters.empty(); ){
 		delete *iter;
 		iter = filters.erase(iter);
+		pthread_join(pids_[i++],NULL);
 	    }
 	    fprintf(stderr,"Multi_bloom_filter destructor is called");
 	}
@@ -254,6 +263,7 @@ pthread_t MultiFilter::pids_[8];
 CreateFilterArg* MultiFilter::cfas(NULL);
 int MultiFilter::n_(0);
 const Slice *MultiFilter::keys_(NULL);
+bool MultiFilter::end_thread(false);
 } //anonymous namespace
 
 size_t * leveldb::FilterPolicy::bits_per_key_per_filter_ = nullptr;

@@ -17,16 +17,16 @@ static Slice Key(int i, char* buffer) {
   EncodeFixed32(buffer, i);
   return Slice(buffer, sizeof(uint32_t));
 }
-  int bits_per_key_per_filter[]={3,5,0};
+  int bits_per_key_per_filter[]={4,4,4,4,0};
 const int filter_len = sizeof(bits_per_key_per_filter)/sizeof(int) - 1;
 class BloomTest {
  private:
   const FilterPolicy* policy_;
-  std::string filters_[filter_len];
+  std::list<std::string> *filters_;
   std::vector<std::string> keys_;
   
  public:
-  BloomTest() : policy_(NewBloomFilterPolicy(bits_per_key_per_filter,8)) { }
+  BloomTest() : policy_(NewBloomFilterPolicy(bits_per_key_per_filter,8)),filters_(NULL) { Reset(); }
 
   ~BloomTest() {
     delete policy_;
@@ -34,8 +34,9 @@ class BloomTest {
 
   void Reset() {
     keys_.clear();
+    filters_ = new std::list<std::string>();
     for(int i = 0 ; i  < filter_len ; i++){
-	filters_[i].clear();
+	filters_->push_back(std::string(""));
     }
   }
 
@@ -48,28 +49,26 @@ class BloomTest {
     for (size_t i = 0; i < keys_.size(); i++) {
       key_slices.push_back(Slice(keys_[i]));
     }
-    for(int i = 0 ; i  < filter_len ; i++){
-	filters_[i].clear();
-    }
+    
    policy_->CreateFilter(&key_slices[0], static_cast<int>(key_slices.size()),
-                          filters_);
+                          *filters_);
     keys_.clear();
     if (kVerbose >= 2) DumpFilter();
   }
 
   size_t FilterSize() const {
      size_t sum = 0;
-    for(int i = 0 ; i < filter_len ; i++){
-	sum += filters_[i].size();
+    for(auto iter = filters_->begin()  ; iter != filters_->end() ; iter++){
+	sum += iter->size();
     }
     return sum;
   }
 
   void DumpFilter() {
     fprintf(stderr, "F(");
-    for(size_t k = 0 ; k < filter_len ; k++){
-	for (size_t i = 0; i+1 < filters_[k].size(); i++) {
-	    const unsigned int c = static_cast<unsigned int>(filters_[k][i]);
+    for(auto iter = filters_->begin()  ; iter != filters_->end() ; iter++){
+	for (size_t i = 0; i+1 < iter->size(); i++) {
+	    const unsigned int c = static_cast<unsigned int>((*iter)[i]);
 	    for (int j = 0; j < 8; j++) {
 		fprintf(stderr, "%c", (c & (1 <<j)) ? '1' : '.');
 	    }
@@ -83,8 +82,8 @@ class BloomTest {
       Build();
     }
     std::list<Slice> tmp_filters;
-    for(int i = 0 ; i < filter_len ; i++){
-	tmp_filters.push_back(filters_[i]);
+    for(auto iter = filters_->begin()  ; iter != filters_->end() ; iter++){
+	tmp_filters.push_back(*iter);
     }
     return policy_->KeyMayMatchFilters(s, tmp_filters);
   }
@@ -107,6 +106,7 @@ TEST(BloomTest, EmptyFilter) {
 }
 
 TEST(BloomTest, Small) {
+   Reset();
   Add("hello");
   Add("world");
   ASSERT_TRUE(Matches("hello"));
@@ -135,7 +135,7 @@ TEST(BloomTest, VaryingLengths) {
   int mediocre_filters = 0;
   int good_filters = 0;
 
-  for (int length = 1; length <= 10000; length = NextLength(length)) {
+  for (int length = 1000; length <= 24000; length = NextLength(length)) {
     Reset();
     for (int i = 0; i < length; i++) {
       Add(Key(i, buffer));
