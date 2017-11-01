@@ -215,6 +215,8 @@ public:
     Cache::Handle* Lookup(const Slice& key, uint32_t hash,bool Get);
     Cache::Handle* Lookup(const Slice& key);
     Cache::Handle* Lookup(const Slice& key,bool Get);
+    uint64_t LookupFreCount(const Slice &key);
+    void SetFreCount(const Slice &key,uint64_t freCount);
     void Release(Cache::Handle* handle);
     virtual Handle* Insert(const Slice& key, void* value, size_t charge,
                          void (*deleter)(const Slice& key, void* value)) ;
@@ -389,6 +391,37 @@ Cache::Handle* MultiQueue::Lookup(const Slice& key, uint32_t hash,bool Get)
       }
     }
     return reinterpret_cast<Cache::Handle*>(e);
+}
+
+uint64_t MultiQueue::LookupFreCount(const Slice& key)
+{
+    const uint32_t hash = HashSlice(key);
+    mutex_.lock();
+    LRUQueueHandle* e = table_.Lookup(key, hash);
+    mutex_.unlock();
+    if (e != NULL) {
+	return e->fre_count;
+    }
+    return 0;
+}
+
+void MultiQueue::SetFreCount(const Slice &key,uint64_t freCount){
+     const uint32_t hash = HashSlice(key);
+     mutex_.lock();
+     LRUQueueHandle* e = table_.Lookup(key, hash);
+     mutex_.unlock();
+     if (e != NULL) {
+	e->fre_count = freCount;
+	int qn = Queue_Num(e->fre_count);
+	if(qn != e->queue_id && e->type){
+	      leveldb::TableAndFile *tf = reinterpret_cast<leveldb::TableAndFile *>(e->value);
+	      int64_t delta_charge = tf->table->AdjustFilters(qn+1);
+	      e->charge += delta_charge;
+	      usage_ += delta_charge;
+	      ShrinkUsage();
+	}
+     }
+     return 0;
 }
 
 Cache::Handle *MultiQueue::Lookup(const Slice& key,bool Get){
