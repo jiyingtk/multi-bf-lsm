@@ -23,15 +23,15 @@ static uint32_t BloomHash(const Slice& key,int id) {
         case 0:
 	return Hash(key.data(), key.size(), 0xbc9f1d34);
 	case 1:
-	return Hash(key.data(), key.size(), 0xc9f1d34b);
+	return Hash(key.data(), key.size(), 0x640b87c9);
 	case 2:
-	return Hash(key.data(), key.size(), 0x9f1d34bc);  
+	return Hash(key.data(), key.size(), 0xa13738e3);  
 	case 3:
-	return Hash(key.data(), key.size(), 0xf1d34bc9);  
+	return Hash(key.data(), key.size(), 0xb727bacb);  
 	case 4:
-	return Hash(key.data(), key.size(), 0x1d34bc9f);  
+	return Hash(key.data(), key.size(), 0xf8f810c6);  
 	case 5:
-	return Hash(key.data(), key.size(), 0xd34bc9f1);  
+	return Hash(key.data(), key.size(), 0x7f5cb422);  
    }
 }
 

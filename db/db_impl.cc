@@ -801,14 +801,13 @@ void DBImpl::BackgroundCompaction() {
     manual_compaction_ = NULL;
   }
 }
-
-void DBImpl::CleanupCompaction(CompactionState* compact) {
-  mutex_.AssertHeld();
+void DBImpl::KeepFreCount(CompactionState *compact){
   uint64_t sum_fre_count = 0,bundle_fre_count = 0;
   uint64_t old_bags[16],new_bags[24];
   int which = 0,num_bags;
   int i;
   num_bags = compact->compaction->num_input_files(0);
+  mutex_.Unlock();
   for (i = 0; i < num_bags; i++) {
       sum_fre_count += table_cache_->LookupFreCount(compact->compaction->input(0, i)->number);
   }
@@ -836,8 +835,12 @@ void DBImpl::CleanupCompaction(CompactionState* compact) {
 	table_cache_->SetFreCount(iter->number,new_fre_count);
 	iter++;
    }
-   
+   mutex_.Lock();
+}
+void DBImpl::CleanupCompaction(CompactionState* compact) {
+  mutex_.AssertHeld();
   
+  KeepFreCount(compact);
   if (compact->builder != NULL) {
     // May happen if we get a shutdown call in the middle of compaction
     compact->builder->Abandon();

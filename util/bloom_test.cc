@@ -17,7 +17,7 @@ static Slice Key(int i, char* buffer) {
   EncodeFixed32(buffer, i);
   return Slice(buffer, sizeof(uint32_t));
 }
-  int bits_per_key_per_filter[]={3,5,0};
+  int bits_per_key_per_filter[]={4,4,4,4,0};
 const int filter_len = sizeof(bits_per_key_per_filter)/sizeof(int) - 1;
 class BloomTest {
  private:
@@ -135,7 +135,7 @@ TEST(BloomTest, VaryingLengths) {
   int mediocre_filters = 0;
   int good_filters = 0;
 
-  for (int length = 1; length <= 10000; length = NextLength(length)) {
+  for (int length = 1000; length <= 24000; length = NextLength(length)) {
     Reset();
     for (int i = 0; i < length; i++) {
       Add(Key(i, buffer));

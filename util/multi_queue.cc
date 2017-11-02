@@ -414,14 +414,20 @@ void MultiQueue::SetFreCount(const Slice &key,uint64_t freCount){
 	e->fre_count = freCount;
 	int qn = Queue_Num(e->fre_count);
 	if(qn != e->queue_id && e->type){
+	      lru_mutexs_[e->queue_id].lock();
+	      LRU_Remove(e);  
+	      lru_mutexs_[e->queue_id].unlock();
 	      leveldb::TableAndFile *tf = reinterpret_cast<leveldb::TableAndFile *>(e->value);
 	      int64_t delta_charge = tf->table->AdjustFilters(qn+1);
 	      e->charge += delta_charge;
 	      usage_ += delta_charge;
 	      ShrinkUsage();
+	      SpinMutexLock l(lru_mutexs_+qn);
+	      LRU_Append(&lrus_[qn], e);   
 	}
+	
      }
-     return 0;
+ 
 }
 
 Cache::Handle *MultiQueue::Lookup(const Slice& key,bool Get){

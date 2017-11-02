@@ -96,7 +96,7 @@ Iterator* TableCache::NewIterator(const ReadOptions& options,
   return result;
 }
 
-inline uint64_t TableCache::LookupFreCount(uint64_t file_number)
+uint64_t TableCache::LookupFreCount(uint64_t file_number)
 {
     char buf[sizeof(file_number)];
     EncodeFixed64(buf, file_number);
@@ -104,7 +104,7 @@ inline uint64_t TableCache::LookupFreCount(uint64_t file_number)
     return cache_->LookupFreCount(key);
 }
 
-inline void TableCache::SetFreCount(uint64_t file_number, uint64_t freCount)
+void TableCache::SetFreCount(uint64_t file_number, uint64_t freCount)
 {
     char buf[sizeof(file_number)];
     EncodeFixed64(buf, file_number);
