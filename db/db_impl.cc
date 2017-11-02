@@ -98,7 +98,7 @@ Options SanitizeOptions(const std::string& dbname,
   Options result = src;
   result.comparator = icmp;
   result.filter_policy = (src.filter_policy != NULL) ? ipolicy : NULL;
-  ClipToRange(&result.max_open_files,    64 + kNumNonTableCacheFiles, 50000);
+  ClipToRange(&result.max_open_files,    64 + kNumNonTableCacheFiles, 60000);
   ClipToRange(&result.write_buffer_size, 64<<10,                      1<<30);
   ClipToRange(&result.max_file_size,     1<<20,                       1<<30);
   ClipToRange(&result.block_size,        1<<10,                       4<<20);
@@ -1477,7 +1477,9 @@ bool DBImpl::GetProperty(const Slice& property, std::string* value) {
 			);
 	    }
 	    value->append(buf);    
-	    
+	    snprintf(buf,sizeof(buf),"average add filter time  = %.3lf add filters count:%lu \n",
+		     statis_->GetTickerHistogram(Tickers::ADD_FILTER_TIME)*1.0/statis_->getTickerCount(Tickers::ADD_FILTER_TIME),statis_->getTickerCount(Tickers::ADD_FILTER_TIME));
+	    value->append(buf);
     }
      value->append(printStatistics());
     return true;

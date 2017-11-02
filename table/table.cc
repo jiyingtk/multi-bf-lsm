@@ -135,6 +135,7 @@ void Table::ReadFilter(const Slice& filter_handle_value) {
     opt.verify_checksums = true;
   }
   BlockContents block;
+  uint64_t start_micros = Env::Default()->NowMicros();
   if (!ReadBlock(rep_->file, opt, filter_handle, &block).ok()) {
     return;
   }
@@ -143,6 +144,7 @@ void Table::ReadFilter(const Slice& filter_handle_value) {
     filter_mem_space += block.data.size();
     rep_->filter_size = block.data.size();
     filter_num++;
+    MeasureTime(Statistics::GetStatistics().get(),Tickers::ADD_FILTER_TIME,Env::Default()->NowMicros() - start_micros);
   }
   rep_->filter = new FilterBlockReader(rep_->options.filter_policy, block.data);
 }
