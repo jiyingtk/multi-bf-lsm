@@ -160,6 +160,7 @@ void Table::ReadFilter(const Slice& filter_handle_value) {
     opt.verify_checksums = true;
   }
   BlockContents block;
+  uint64_t start_micros = Env::Default()->NowMicros();
   if (!ReadBlock(rep_->file, opt, filter_handle, &block).ok()) {
     return;
   }
@@ -167,6 +168,7 @@ void Table::ReadFilter(const Slice& filter_handle_value) {
     rep_->filter_datas.push_back(block.data.data());     // Will need to delete later
     filter_mem_space += block.data.size();
     filter_num++;
+    MeasureTime(Statistics::GetStatistics().get(),Tickers::ADD_FILTER_TIME,Env::Default()->NowMicros() - start_micros);
   }
   if(rep_->filter == NULL){
 	rep_->filter = new FilterBlockReader(rep_->options.filter_policy, block.data);
@@ -219,7 +221,6 @@ int64_t Table::AdjustFilters(int n)
 	MeasureTime(Statistics::GetStatistics().get(),Tickers::REMOVE_FILTER_TIME,Env::Default()->NowMicros() - start_micros);
     }else if(n > rep_->filter->getCurrFiltersNum()){
 	delta =  AddFilters(n - rep_->filter->getCurrFiltersNum());
-	MeasureTime(Statistics::GetStatistics().get(),Tickers::ADD_FILTER_TIME,Env::Default()->NowMicros() - start_micros);
     }
     return delta;
 }
