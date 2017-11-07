@@ -801,9 +801,50 @@ void DBImpl::BackgroundCompaction() {
     manual_compaction_ = NULL;
   }
 }
-
+void DBImpl::KeepFreCount(CompactionState *compact){
+  uint64_t sum_fre_count = 0,bundle_fre_count = 0;
+  uint64_t old_bags[16],new_bags[24];
+  int which = 0,num_bags;
+  int i;
+  num_bags = compact->compaction->num_input_files(0);
+  mutex_.Unlock();
+  for (i = 0; i < num_bags; i++) {
+      sum_fre_count += table_cache_->LookupFreCount(compact->compaction->input(0, i)->number);
+  }
+  sum_fre_count  = sum_fre_count/num_bags;
+  num_bags = compact->compaction->num_input_files(1);
+  for(i = 0 ; i < num_bags ; i++){
+	old_bags[i] = table_cache_->LookupFreCount(compact->compaction->input(1,i)->number) + sum_fre_count;
+  }
+  size_t output_size = compact->outputs.size();
+  int curr_ball_num =  output_size ,need_ball_num = num_bags , full_ball_num = output_size ;
+  int curr_id = 0;
+  uint64_t new_fre_count;
+  std::vector<leveldb::DBImpl::CompactionState::Output>::iterator iter = compact->outputs.begin();
+  for(i = 0 ; i < output_size ; i ++){
+      if(curr_ball_num >= need_ball_num){
+	   new_fre_count = old_bags[curr_id]*(need_ball_num*1.0/full_ball_num);
+      }else{
+	  new_fre_count = old_bags[curr_id]*(curr_ball_num*1.0/full_ball_num) + old_bags[curr_id + 1] *((need_ball_num - curr_ball_num)*1.0/full_ball_num);
+      }
+      curr_ball_num -= need_ball_num;
+      if(curr_ball_num <= 0 ){
+	    curr_ball_num += full_ball_num;
+	    ++curr_id;
+	}
+	table_cache_->SetFreCount(iter->number,new_fre_count);
+	iter++;
+   }
+   mutex_.Lock();
+}
 void DBImpl::CleanupCompaction(CompactionState* compact) {
   mutex_.AssertHeld();
+  
+   if(options_.opEp_.setFreCountInCompaction){
+	uint64_t start_micros = Env::Default()->NowMicros();     
+	KeepFreCount(compact);
+	MeasureTime(Statistics::GetStatistics().get(),Tickers::SET_FRE_COUNT_IN_COMPACTION_TIME,Env::Default()->NowMicros() - start_micros);
+  }
   if (compact->builder != NULL) {
     // May happen if we get a shutdown call in the middle of compaction
     compact->builder->Abandon();
@@ -1521,8 +1562,10 @@ bool DBImpl::GetProperty(const Slice& property, std::string* value) {
 		      statis_->GetTickerHistogram(Tickers::ADD_FILTER_TIME));
 	      value->append(buf);
 	}
+	value->append(statis_->ToString(Tickers::SET_FRE_COUNT_IN_COMPACTION_TIME,Tickers::SET_FRE_COUNT_IN_COMPACTION_TIME));
 	value->append(table_cache_->LRU_Status());
 	value->append(printStatistics());
+	statis_->reset();
     }
     return true;
   } else if (in == "sstables") {

@@ -32,6 +32,8 @@ static uint32_t BloomHash(const Slice& key,int id) {
 	return Hash(key.data(), key.size(), 0x1934bc9f);  
 	case 5:
 	return Hash(key.data(), key.size(), 0x934bc9f1);  
+	case 6:
+	return Hash(key.data(), key.size(), 0x4bc9f193);  
    }
 }
 

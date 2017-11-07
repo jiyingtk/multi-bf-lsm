@@ -72,7 +72,6 @@ std::string Statistics::ToString(uint32_t begin_type, uint32_t end_type)
 	    res.append(buf);
 	}
 	res.shrink_to_fit();
-	reset();
 	return res;
 }
 

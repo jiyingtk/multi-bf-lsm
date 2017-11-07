@@ -62,7 +62,8 @@ class Cache {
   // longer needed.
   virtual Handle* Lookup(const Slice& key) = 0;
   virtual Handle* Lookup(const Slice& key,bool Get) {}
-
+  virtual uint64_t LookupFreCount(const Slice & key) {}
+  virtual void SetFreCount(const Slice & key,uint64_t freCount) {}
   // Release a mapping returned by a previous Lookup().
   // REQUIRES: handle must not have been released yet.
   // REQUIRES: handle must have been returned by a method on *this.

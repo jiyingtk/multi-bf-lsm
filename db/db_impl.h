@@ -68,11 +68,12 @@ class DBImpl : public DB {
   void adjustFilter();
   void untilCompactionEnds();
   std::string printStatistics();
+  
  private:
   friend class DB;
   struct CompactionState;
   struct Writer;
-
+  void KeepFreCount(CompactionState *compact);
   Iterator* NewInternalIterator(const ReadOptions&,
                                 SequenceNumber* latest_snapshot,
                                 uint32_t* seed);

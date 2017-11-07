@@ -46,6 +46,7 @@ namespace leveldb{
 	SYNC_TIME,
 	CHILD_CREATE_FILTER_TIME,
 	CHILD_FILTER_OTHER_TIME,
+	SET_FRE_COUNT_IN_COMPACTION_TIME,
 	TICKER_ENUM_MAX
  };  
 
@@ -70,6 +71,7 @@ namespace leveldb{
      {CREATE_FILTER_TIME,"leveldb.create.filter.time"},
      {WRITE_FILTER_TIME,"leveldb.write.filter.time"},
      {ADD_FILTER_TIME,"leveldb.add.filter.time"},
+     {REMOVE_FILTER_TIME,"leveldb.remove(adj).filter.time"},
      {REMOVE_EXPIRED_FILTER_TIME_0,"leveldb.remove.expired.filter.time0"},
      {REMOVE_EXPIRED_FILTER_TIME_1,"leveldb.remove.expired.filter.time1"},
      {REMOVE_EXPIRED_FILTER_TIME_2,"leveldb.remove.expired.filter.time2"},
@@ -88,6 +90,7 @@ namespace leveldb{
      {FILTER_WAIT_TIME,"leveldb.filter.wait.time"},
      {CHILD_CREATE_FILTER_TIME,"leveldb.child.create.filter.time"},
      {CHILD_FILTER_OTHER_TIME,"leveldb.child.filter.other.time"},
+     {SET_FRE_COUNT_IN_COMPACTION_TIME,"leveldb.set.fre.count.in.compaction.time"},
      {SYNC_TIME,"leveldb.sync.time"}
 };
 

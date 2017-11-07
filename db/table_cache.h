@@ -53,6 +53,8 @@ class TableCache {
   void Evict(uint64_t file_number);
   void adjustFilters(uint64_t file_number,uint64_t file_size,int n);
   size_t GetTableCurrFiltersSize(uint64_t file_number,uint64_t file_size);
+  uint64_t LookupFreCount(uint64_t file_number);
+  void SetFreCount(uint64_t file_number,uint64_t freCount);
   std::string LRU_Status();
  private:
   Env* const env_;

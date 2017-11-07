@@ -96,6 +96,23 @@ Iterator* TableCache::NewIterator(const ReadOptions& options,
   return result;
 }
 
+uint64_t TableCache::LookupFreCount(uint64_t file_number)
+{
+    char buf[sizeof(file_number)];
+    EncodeFixed64(buf, file_number);
+    Slice key(buf, sizeof(buf));
+    return cache_->LookupFreCount(key);
+}
+
+void TableCache::SetFreCount(uint64_t file_number, uint64_t freCount)
+{
+    char buf[sizeof(file_number)];
+    EncodeFixed64(buf, file_number);
+    Slice key(buf, sizeof(buf));
+    cache_->SetFreCount(key,freCount);
+}
+
+
 Status TableCache::Get(const ReadOptions& options,
                        uint64_t file_number,
                        uint64_t file_size,
