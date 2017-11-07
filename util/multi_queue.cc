@@ -236,6 +236,9 @@ public:
      int Queue_Num(uint64_t fre_count);
      uint64_t Num_Queue(int queue_id);
      std::string LRU_Status();
+     void inline addCurrentTime(){
+	 ++current_time_;
+    }
      static inline uint32_t HashSlice(const Slice& s) {
 	    return Hash(s.data(), s.size(), 0);
      }
@@ -326,7 +329,6 @@ void MultiQueue::Ref(LRUQueueHandle* e,bool addFreCount)
 	e->refs++;
 	if(addFreCount){
 	    ++e->fre_count;
-	    ++current_time_;
 	    e->expire_time = current_time_ + life_time_;
 	}
 }

@@ -60,7 +60,7 @@ class TableCache {
   const Options* options_;
   Cache* cache_;
   friend class VersionSet;
-  //friend class Version;
+  friend class Version;
   Status FindTable(uint64_t file_number, uint64_t file_size, Cache::Handle**,bool Get=false);
 };
 
