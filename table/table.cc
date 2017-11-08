@@ -16,6 +16,7 @@
 #include "util/coding.h"
 #include<list>
 #include <boost/config/posix_features.hpp>
+
 //filter memory space overhead
 extern unsigned long long filter_mem_space;
 extern unsigned long long filter_num;
@@ -168,7 +169,8 @@ void Table::ReadFilter(const Slice& filter_handle_value) {
     rep_->filter_datas.push_back(block.data.data());     // Will need to delete later
     filter_mem_space += block.data.size();
     filter_num++;
-    MeasureTime(Statistics::GetStatistics().get(),Tickers::ADD_FILTER_TIME,Env::Default()->NowMicros() - start_micros);
+    int curr_filter_num = rep_->filter == NULL ? 0 : rep_->filter->getCurrFiltersNum();
+    MeasureTime(Statistics::GetStatistics().get(),Tickers::ADD_FILTER_TIME_0 + curr_filter_num,Env::Default()->NowMicros() - start_micros);
   }
   if(rep_->filter == NULL){
 	rep_->filter = new FilterBlockReader(rep_->options.filter_policy, block.data);
@@ -181,7 +183,7 @@ size_t Table::AddFilters(int n)
 {
     size_t delta = 0;
     if(rep_->filter == NULL){
-	return 0;
+	return 0;  //TODO rep_->filter = new FilterBlockReader(rep_->options.filter_policy, block.data);
     }
     int curr_filter_num = rep_->filter->getCurrFiltersNum();
     while(n--&&curr_filter_num < rep_->filter_handles.size()){  // avoid overhead of filters

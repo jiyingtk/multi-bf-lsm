@@ -1535,7 +1535,7 @@ bool DBImpl::GetProperty(const Slice& property, std::string* value) {
 		value->append(buf);    
 	    }
 	}
-	if(statis_->getTickerCount(Tickers::ADD_FILTER_TIME) != 0){
+	if(statis_->getTickerCount(Tickers::REMOVE_EXPIRED_FILTER_TIME_0) != 0){
 	    int i;
 	    value->append(" Remove Expired Filter \n");
 	     for(i = Tickers::REMOVE_EXPIRED_FILTER_TIME_0 ; i <= Tickers::REMOVE_EXPIRED_FILTER_TIME_6  ; i ++){
@@ -1557,10 +1557,19 @@ bool DBImpl::GetProperty(const Slice& property, std::string* value) {
 			statis_->GetTickerHistogram(i));
 		value->append(buf);
 	     }
-	     snprintf(buf,sizeof(buf),"Add filter count: %lu time: %lu \n",
-		      statis_->getTickerCount(Tickers::ADD_FILTER_TIME),
-		      statis_->GetTickerHistogram(Tickers::ADD_FILTER_TIME));
-	      value->append(buf);
+	}
+	if(statis_->getTickerCount(Tickers::ADD_FILTER_TIME_0) != 0){
+	        int i;
+		value->append(" ADD Filter Time \n");
+		for(i = Tickers::ADD_FILTER_TIME_0 ; i <= Tickers::ADD_FILTER_TIME_6  ; i ++){
+		    if(statis_->getTickerCount(i) == 0){
+			continue;
+		    }
+		    snprintf(buf,sizeof(buf),"add filter from  %d filter(s) count: %lu time: %lu \n", i - Tickers::ADD_FILTER_TIME_0,
+			statis_->getTickerCount(i),
+			statis_->GetTickerHistogram(i));
+		    value->append(buf);
+		}
 	}
 	value->append(statis_->ToString(Tickers::SET_FRE_COUNT_IN_COMPACTION_TIME,Tickers::SET_FRE_COUNT_IN_COMPACTION_TIME));
 	value->append(table_cache_->LRU_Status());
