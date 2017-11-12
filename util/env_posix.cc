@@ -700,4 +700,5 @@ Env* Env::Default() {
   return default_env;
 }
 
+Env* newEnv() { return new PosixEnv;}
 }  // namespace leveldb

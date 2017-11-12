@@ -35,8 +35,13 @@ typedef struct OptionExp{
     double filter_capacity_ratio;
     bool findAllTable;
     bool setFreCountInCompaction;
+    double force_shrink_ratio;
+    double quick_shrink_ratio;
+    double slow_shrink_ratio;
+    int log_base;
     std::shared_ptr<Statistics> stats_;
-    OptionExp():no_cache_io_(false),seek_compaction_(false),stats_(nullptr),filter_capacity_ratio(1.0),base_num(64),life_time(50),findAllTable(false),setFreCountInCompaction(false){};
+    OptionExp():no_cache_io_(false),seek_compaction_(false),stats_(nullptr),filter_capacity_ratio(1.0),base_num(64),life_time(50),findAllTable(false),setFreCountInCompaction(false),
+    force_shrink_ratio(1.1),quick_shrink_ratio(0.99),slow_shrink_ratio(0.95),log_base(3){};
 }OptionExp;
 // Options to control the behavior of a database (passed to DB::Open)
 struct Options {

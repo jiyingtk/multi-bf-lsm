@@ -53,6 +53,9 @@ namespace leveldb{
 	CHILD_CREATE_FILTER_TIME,
 	CHILD_FILTER_OTHER_TIME,
 	SET_FRE_COUNT_IN_COMPACTION_TIME,
+	SLOW_SHRINKING,
+	QUICK_SHRINKING,
+	FORCE_SHRINKING,
 	TICKER_ENUM_MAX
  };  
 
@@ -103,6 +106,9 @@ namespace leveldb{
      {CHILD_CREATE_FILTER_TIME,"leveldb.child.create.filter.time"},
      {CHILD_FILTER_OTHER_TIME,"leveldb.child.filter.other.time"},
      {SET_FRE_COUNT_IN_COMPACTION_TIME,"leveldb.set.fre.count.in.compaction.time"},
+     {SLOW_SHRINKING,"leveldb.set.fre.count.in.compaction.time"},
+     {QUICK_SHRINKING,"leveldb.set.fre.count.in.compaction.time"},
+     {FORCE_SHRINKING,"leveldb.set.fre.count.in.compaction.time"},
      {SYNC_TIME,"leveldb.sync.time"}
 };
 

@@ -356,7 +356,7 @@ class EnvWrapper : public Env {
  private:
   Env* target_;
 };
-
+Env* newEnv();
 }  // namespace leveldb
 
 #endif  // STORAGE_LEVELDB_INCLUDE_ENV_H_

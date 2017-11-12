@@ -28,7 +28,7 @@ class Cache;
 // Create a new cache with a fixed size capacity.  This implementation
 // of Cache uses a least-recently-used eviction policy.
 extern Cache* NewLRUCache(size_t capacity);
-extern Cache* NewMultiQueue(size_t capacity,int lrus_num,int base_num=64,uint64_t life_time=50);
+extern Cache* NewMultiQueue(size_t capacity,int lrus_num,int base_num=64,uint64_t life_time=50,double force_shrink_ratio=1.1,double quick_shrink_ratio=0.99,double slow_shrink_ratio=0.95,int lg_b=3);
 class Cache {
  public:
   Cache() { }

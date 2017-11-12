@@ -1537,6 +1537,13 @@ bool DBImpl::GetProperty(const Slice& property, std::string* value) {
 	}
 	if(statis_->getTickerCount(Tickers::REMOVE_EXPIRED_FILTER_TIME_0) != 0){
 	    int i;
+	    value->append("Background Shrinking:\n ");
+	    for(i = Tickers::SLOW_SHRINKING ; i <= Tickers::FORCE_SHRINKING  ; i ++){
+		snprintf(buf,sizeof(buf),"%s  count: %lu time: %lu \n",TickersNameMap[i].second.c_str(),
+			statis_->getTickerCount(i),
+			statis_->GetTickerHistogram(i));
+		value->append(buf);
+	    }
 	    value->append(" Remove Expired Filter \n");
 	     for(i = Tickers::REMOVE_EXPIRED_FILTER_TIME_0 ; i <= Tickers::REMOVE_EXPIRED_FILTER_TIME_6  ; i ++){
 		if(statis_->getTickerCount(i) == 0){
@@ -1565,9 +1572,10 @@ bool DBImpl::GetProperty(const Slice& property, std::string* value) {
 		    if(statis_->getTickerCount(i) == 0){
 			continue;
 		    }
-		    snprintf(buf,sizeof(buf),"add filter from  %d filter(s) count: %lu time: %lu \n", i - Tickers::ADD_FILTER_TIME_0,
+		    snprintf(buf,sizeof(buf),"add filter from  %d filter(s) count: %lu time: %lu  average time: %.3lf\n", i - Tickers::ADD_FILTER_TIME_0,
 			statis_->getTickerCount(i),
-			statis_->GetTickerHistogram(i));
+			statis_->GetTickerHistogram(i),
+			statis_->GetTickerHistogram(i)*1.0/statis_->getTickerCount(i));
 		    value->append(buf);
 		}
 	}
