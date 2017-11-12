@@ -296,7 +296,7 @@ std::string MultiQueue::LRU_Status()
 	    LRUQueueHandle* next = e->next;
 	    e = next;
 	}
-	snprintf(buf,sizeof(buf),"lru %d count %d \n",i,count);
+	snprintf(buf,sizeof(buf),"lru %d count %d lru_lens_count:%lu \n",i,count,lru_lens_[i]);
 	value.append(buf);
     }
     mutex_.unlock();
@@ -320,7 +320,6 @@ MultiQueue::~MultiQueue()
   }
   mutex_.unlock();
   delete []lrus_;
-  delete mq_env;
 }
 #define ln4 1.38629436
 #define ln3 1.09861229

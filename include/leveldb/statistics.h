@@ -103,13 +103,13 @@ namespace leveldb{
      {REMOVE_HEAD_FILTER_TIME_6,"leveldb.remove.head.filter.time6"},
      {FILTER_LOCK_TIME,"leveldb.filter.lock.time"},
      {FILTER_WAIT_TIME,"leveldb.filter.wait.time"},
+     {SYNC_TIME,"leveldb.sync.time"},
      {CHILD_CREATE_FILTER_TIME,"leveldb.child.create.filter.time"},
      {CHILD_FILTER_OTHER_TIME,"leveldb.child.filter.other.time"},
      {SET_FRE_COUNT_IN_COMPACTION_TIME,"leveldb.set.fre.count.in.compaction.time"},
-     {SLOW_SHRINKING,"leveldb.set.fre.count.in.compaction.time"},
-     {QUICK_SHRINKING,"leveldb.set.fre.count.in.compaction.time"},
-     {FORCE_SHRINKING,"leveldb.set.fre.count.in.compaction.time"},
-     {SYNC_TIME,"leveldb.sync.time"}
+     {SLOW_SHRINKING,"leveldb.slow.shrinking.time"},
+     {QUICK_SHRINKING,"leveldb.quick.shrinking.time"},
+     {FORCE_SHRINKING,"leveldb.force.shrinking.time"},
 };
 
 struct HistogramData{
