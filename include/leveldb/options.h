@@ -31,7 +31,8 @@ enum CompressionType {
 typedef struct OptionExp{
       bool seek_compaction_;
       std::shared_ptr<Statistics> stats_;
-      OptionExp():seek_compaction_(false),stats_(nullptr){};
+      bool no_cache_io_;
+      OptionExp():seek_compaction_(false),stats_(nullptr),no_cache_io_(false){};
 }OptionExp;
 // Options to control the behavior of a database (passed to DB::Open)
 struct Options {

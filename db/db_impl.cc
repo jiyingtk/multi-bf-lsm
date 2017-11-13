@@ -148,6 +148,7 @@ DBImpl::DBImpl(const Options& raw_options, const std::string& dbname)
 
   versions_ = new VersionSet(dbname_, &options_, table_cache_,
                              &internal_comparator_);
+  leveldb::directIO_of_RandomAccess = options_.opEp_.no_cache_io_;
 }
 
 void DBImpl::untilCompactionEnds()
