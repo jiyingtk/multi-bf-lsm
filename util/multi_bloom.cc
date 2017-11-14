@@ -15,6 +15,9 @@
 #include "leveldb/threadpool.h"
 #include "util/threadpool_imp.h"
 #include "leveldb/statistics.h"
+#define handle_error_en(en, msg) \
+  do { errno = en; perror(msg); exit(EXIT_FAILURE); } while (0)
+
 namespace leveldb {
 
 namespace {
@@ -129,14 +132,12 @@ class MultiFilter:public FilterPolicy{
 private:
 	std::list<ChildBloomFilterPolicy*> filters;
 	size_t bits_per_key_;
-	static pthread_mutex_t filter_mutex_;
-	static pthread_cond_t filter_cond_;
-	static pthread_mutex_t filter_num_mutex_;
-	static pthread_cond_t filter_num_cond_;
+	static pthread_mutex_t filter_mutexs_[10];
+	static pthread_cond_t filter_conds_[10];
 	static pthread_t pids_[8];
 	static std::atomic<int> curr_completed_filter_num_;
 	static int filter_num_;
-	static std::atomic<bool> filled_[8];
+	static int filled_[8];
 	static const Slice *keys_;
 	static int n_;
 	static bool end_thread;
@@ -148,21 +149,21 @@ public:
 	    delete (int *)(arg);
 	    CreateFilterArg *temp_cfa = cfas+id;
 	    while(true){
-		//pthread_mutex_lock(&filter_mutex_);
-	      while(!filled_[id].load(std::memory_order_acquire)&&!end_thread);/*{
-		    pthread_cond_wait(&filter_cond_,&filter_mutex_);
-		}*/
-		//pthread_mutex_unlock(&filter_mutex_);
-		if(end_thread){
-		    break;
-		}
-		uint64_t start_micros = Env::Default()->NowMicros();
-		cfas[id].ch->CreateFilter(keys_,n_,cfas[id].dst);
-		MeasureTime(Statistics::GetStatistics().get(),Tickers::CHILD_CREATE_FILTER_TIME,Env::Default()->NowMicros() - start_micros);
-		start_micros = Env::Default()->NowMicros();
-		++curr_completed_filter_num_;
-		filled_[id].store(false,std::memory_order_seq_cst); 
-		MeasureTime(Statistics::GetStatistics().get(),Tickers::CHILD_FILTER_OTHER_TIME,Env::Default()->NowMicros() - start_micros);
+	      pthread_mutex_lock(&filter_mutexs_[id]);
+	      while(!filled_[id]&&!end_thread){
+		pthread_cond_wait(&filter_conds_[id],&filter_mutexs_[id]);
+	      }
+	      filled_[id] = false;
+	      pthread_mutex_unlock(&filter_mutexs_[id]);
+	      if(end_thread){
+		break;
+	      }
+	      uint64_t start_micros = Env::Default()->NowMicros();
+	      cfas[id].ch->CreateFilter(keys_,n_,cfas[id].dst);
+	      MeasureTime(Statistics::GetStatistics().get(),Tickers::CHILD_CREATE_FILTER_TIME,Env::Default()->NowMicros() - start_micros);
+	      start_micros = Env::Default()->NowMicros();
+	      ++curr_completed_filter_num_;
+	      MeasureTime(Statistics::GetStatistics().get(),Tickers::CHILD_FILTER_OTHER_TIME,Env::Default()->NowMicros() - start_micros);
 	    }
 	}
 	explicit MultiFilter(int bits_per_key_per_filter[],int bits_per_key):bits_per_key_(bits_per_key){
@@ -174,17 +175,25 @@ public:
 		ChildBloomFilterPolicy* ch_filter = new ChildBloomFilterPolicy(bits_per_key_per_filter[i],i);
 		filters.push_back(ch_filter);
 		bits_per_key_per_filter_[i] = bits_per_key_per_filter[i];
-		filled_[i].store(false,std::memory_order_seq_cst); 
+		filled_[i]=false;
 	    }
-	    curr_completed_filter_num_.store(0,std::memory_order_seq_cst);
+	    curr_completed_filter_num_ = 0;
 	    filter_num_ = i;
 	    printf("filters size:%ld\n",filters.size());
 	    cfas = new CreateFilterArg[filters.size()];
 	    i = 0;
+	    int base_cpu_id = 8;
 	    for(std::list<ChildBloomFilterPolicy*>::const_iterator iter = filters.begin() ; iter != filters.end() ; iter++){
 		int *temp_id = new int(i);
+		cpu_set_t cpuset;
+		CPU_ZERO(&cpuset);
+		CPU_SET(base_cpu_id + i, &cpuset);
 		if(pthread_create(pids_+i,NULL,MultiFilter::CreateFilter_T,(void*)(temp_id))!=0){
 		    perror("create thread ");
+		}
+		int s = pthread_setaffinity_np(pids_[i], sizeof(cpu_set_t), &cpuset);
+		if (s != 0){
+		  handle_error_en(s, "pthread_setaffinity_np");
 		}
 		snprintf(name_buf, sizeof name_buf, "filter:bg%d" ,i);
 		name_buf[sizeof name_buf - 1] = '\0';
@@ -206,18 +215,20 @@ public:
 	    keys_ = keys;
 	    n_ = n;
 	    int i = 0;
+	    uint64_t start_micros = Env::Default()->NowMicros();
 	    for(auto dsts_iter = dsts.begin() ; dsts_iter != dsts.end() ; ++dsts_iter){
+	        pthread_mutex_lock(&filter_mutexs_[i]);
 		cfa->dst = &(*dsts_iter);
-		filled_[i++].store(true,std::memory_order_seq_cst);
+		filled_[i] = true;
+		pthread_mutex_unlock(&filter_mutexs_[i]);
+		pthread_cond_signal(&filter_conds_[i++]);
 		cfa++;
 	    }
-	    uint64_t start_micros = Env::Default()->NowMicros();
-	    //pthread_cond_broadcast(&filter_cond_);
 	    MeasureTime(Statistics::GetStatistics().get(),Tickers::FILTER_LOCK_TIME,Env::Default()->NowMicros() - start_micros);
 	    start_micros = Env::Default()->NowMicros();
 	    while(curr_completed_filter_num_ != filter_num_);
 	    MeasureTime(Statistics::GetStatistics().get(),Tickers::FILTER_WAIT_TIME,Env::Default()->NowMicros() - start_micros);
-	    curr_completed_filter_num_.store(0,std::memory_order_seq_cst) ;
+	    curr_completed_filter_num_ = 0;
 	}
 	virtual bool KeyMayMatch(const Slice& key, const Slice& bloom_filter) const{}
 	
@@ -256,11 +267,9 @@ public:
 
 std::atomic<int>  MultiFilter::curr_completed_filter_num_ (0);
 int MultiFilter::filter_num_ = 0;
-pthread_mutex_t MultiFilter::filter_mutex_(PTHREAD_MUTEX_INITIALIZER);
-pthread_cond_t MultiFilter::filter_cond_(PTHREAD_COND_INITIALIZER);
-pthread_mutex_t MultiFilter::filter_num_mutex_(PTHREAD_MUTEX_INITIALIZER);
-pthread_cond_t MultiFilter::filter_num_cond_(PTHREAD_COND_INITIALIZER);
-std::atomic<bool>  MultiFilter::filled_[8];
+pthread_mutex_t MultiFilter::filter_mutexs_[10]={PTHREAD_MUTEX_INITIALIZER,PTHREAD_MUTEX_INITIALIZER,PTHREAD_MUTEX_INITIALIZER,PTHREAD_MUTEX_INITIALIZER,PTHREAD_MUTEX_INITIALIZER,PTHREAD_MUTEX_INITIALIZER,PTHREAD_MUTEX_INITIALIZER,PTHREAD_MUTEX_INITIALIZER,PTHREAD_MUTEX_INITIALIZER,PTHREAD_MUTEX_INITIALIZER,};
+pthread_cond_t MultiFilter::filter_conds_[10]={PTHREAD_COND_INITIALIZER,PTHREAD_COND_INITIALIZER,PTHREAD_COND_INITIALIZER,PTHREAD_COND_INITIALIZER,PTHREAD_COND_INITIALIZER,PTHREAD_COND_INITIALIZER,PTHREAD_COND_INITIALIZER,PTHREAD_COND_INITIALIZER,PTHREAD_COND_INITIALIZER,PTHREAD_COND_INITIALIZER};
+int  MultiFilter::filled_[8];
 pthread_t MultiFilter::pids_[8];
 CreateFilterArg* MultiFilter::cfas(NULL);
 int MultiFilter::n_(0);

@@ -537,8 +537,11 @@ inline bool MultiQueue::ShrinkLRU(int k,int64_t remove_charge[],bool force)
 
 
 void MultiQueue::SlowShrinking(){
-    int64_t remove_charge = (usage_ - capacity_*slow_shrink_ratio)*0.1;
-    for(int i = 0 ; i < 10  && usage_ > capacity_*slow_shrink_ratio ; i++){
+    int64_t remove_charge = (usage_ - capacity_*slow_shrink_ratio);
+    if(remove_charge < 0){
+      return ;
+    }
+    for(int i = 0 ; i < 1  && usage_ > capacity_*slow_shrink_ratio ; i++){
 	    mutex_.lock();
 	    if(!ShrinkLRU(0,&remove_charge)){
 		mutex_.unlock();
@@ -555,16 +558,19 @@ void MultiQueue::QuickShrinking()
 {
 	int64_t remove_charges[8];
 	int64_t overflow_charge = usage_ - capacity_*quick_shrink_ratio;
+	if(overflow_charge < 0){
+	  return;
+	}
 	bool shrinkLRU0_flag = true;
 	for(int i = 0 ; i < lrus_num_ ; i++){
 	    remove_charges[i] = overflow_charge * (lru_lens_[i]*1.0/sum_lru_len);
 	}
-	for(int i = 0 ; i < 10  && usage_ > capacity_*quick_shrink_ratio ; i++){
+	for(int i = 0 ; i < 1  && usage_ > capacity_*quick_shrink_ratio ; i++){
 	    mutex_.lock();
 	    if(shrinkLRU0_flag){
-		shrinkLRU0_flag = ShrinkLRU(0,remove_charges);
+		shrinkLRU0_flag = ShrinkLRU(0,&overflow_charge);
 	    }
-	    ShrinkLRU(1,remove_charges);
+	    //	    ShrinkLRU(1,remove_charges);
 	    mutex_.unlock();
 	    if(shrinkLRU0_flag){
 		remove_charges[0] = remove_charges[0]*1.05;
@@ -582,8 +588,8 @@ void MultiQueue::ForceShrinking()
 	}
 	while(usage_ > capacity_ * force_shrink_ratio){
 	     mutex_.lock();
-	     ShrinkLRU(0,remove_charges,true);
-	     ShrinkLRU(1,remove_charges,true);
+	     ShrinkLRU(0,&overflow_charge,true);
+	     //	     ShrinkLRU(1,remove_charges,true);
 	     mutex_.unlock();
 	}
 }
