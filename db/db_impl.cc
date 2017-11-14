@@ -1567,6 +1567,8 @@ bool DBImpl::GetProperty(const Slice& property, std::string* value) {
 	}
 	if(statis_->getTickerCount(Tickers::ADD_FILTER_TIME_0) != 0){
 	        int i;
+		uint64_t totalAddFilterCount = 0;
+		uint64_t totalAddFilterTime = 0;
 		value->append(" ADD Filter Time \n");
 		for(i = Tickers::ADD_FILTER_TIME_0 ; i <= Tickers::ADD_FILTER_TIME_6  ; i ++){
 		    if(statis_->getTickerCount(i) == 0){
@@ -1577,7 +1579,12 @@ bool DBImpl::GetProperty(const Slice& property, std::string* value) {
 			statis_->GetTickerHistogram(i),
 			statis_->GetTickerHistogram(i)*1.0/statis_->getTickerCount(i));
 		    value->append(buf);
+		    totalAddFilterTime += statis_->GetTickerHistogram(i);
+		    totalAddFilterCount += statis_->getTickerCount(i);
 		}
+		snprintf(buf,sizeof(buf),"total add filter count: %lu time: %lu  ",totalAddFilterCount,totalAddFilterTime);
+		value->append(buf);
+
 	}
 	value->append(statis_->ToString(Tickers::SET_FRE_COUNT_IN_COMPACTION_TIME,Tickers::SET_FRE_COUNT_IN_COMPACTION_TIME));
 	value->append(table_cache_->LRU_Status());

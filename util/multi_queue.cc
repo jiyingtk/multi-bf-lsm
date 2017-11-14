@@ -278,7 +278,7 @@ MultiQueue::MultiQueue(size_t capacity,int lrus_num,int base_num,uint64_t life_t
 	base_fre_counts[i] = base_sum + 1 ;
 	base_sum = base_sum*lg_b;
       }
-      base_fre_counts[0] = base_num - 1;
+      base_fre_counts[0] = base_num / 2;
       current_time_ = 0;
       cout<<"Multi-Queue Capacity:"<<capacity_<<endl;
 }
@@ -348,9 +348,13 @@ void MultiQueue::Ref(LRUQueueHandle* e,bool addFreCount)
 	}
 	e->refs++;
 	if(addFreCount){
-	    ++e->fre_count;
-	    e->expire_time = current_time_ + life_time_;
+	    if(e->expire_time < current_time_ ){ //not expired
+		++e->fre_count;
+	    }else if(e->expire_time > current_time_){   //expired
+		e->fre_count = Num_Queue(e->queue_id);
+	    }
 	}
+	e->expire_time = current_time_ + life_time_;
 }
 
 void MultiQueue::Unref(LRUQueueHandle* e)
@@ -365,7 +369,7 @@ void MultiQueue::Unref(LRUQueueHandle* e)
 	  } else if (e->in_cache && e->refs == 1) {  // note:No longer in use; move to lru_ list.
 		LRU_Remove(e);
 		int qn = Queue_Num(e->fre_count);
-		if(qn != e->queue_id && e->type){
+		if(qn != e->queue_id && e->type){ 
 		    leveldb::TableAndFile *tf = reinterpret_cast<leveldb::TableAndFile *>(e->value);
 		    mutex_.unlock();
 		    int64_t delta_charge = tf->table->AdjustFilters(qn+1);  // not in lru list, so need to worry will be catched by ShrinkUsage
@@ -538,10 +542,12 @@ inline bool MultiQueue::ShrinkLRU(int k,int64_t remove_charge[],bool force)
 
 void MultiQueue::SlowShrinking(){
     int64_t remove_charge = (usage_ - capacity_*slow_shrink_ratio);
+    const int interval = 8;
     if(remove_charge < 0){
       return ;
     }
-    for(int i = 0 ; i < 1  && usage_ > capacity_*slow_shrink_ratio ; i++){
+    remove_charge = (remove_charge + 7) / 8;
+    for(int i = 0 ; i < interval  && usage_ > capacity_*slow_shrink_ratio ; i++){
 	    mutex_.lock();
 	    if(!ShrinkLRU(0,&remove_charge)){
 		mutex_.unlock();
@@ -558,6 +564,7 @@ void MultiQueue::QuickShrinking()
 {
 	int64_t remove_charges[8];
 	int64_t overflow_charge = usage_ - capacity_*quick_shrink_ratio;
+	int interval = 8;
 	if(overflow_charge < 0){
 	  return;
 	}
@@ -588,8 +595,8 @@ void MultiQueue::ForceShrinking()
 	}
 	while(usage_ > capacity_ * force_shrink_ratio){
 	     mutex_.lock();
-	     ShrinkLRU(0,&overflow_charge,true);
-	     //	     ShrinkLRU(1,remove_charges,true);
+	     ShrinkLRU(0,remove_charges,true);
+	     ShrinkLRU(1,remove_charges,true);
 	     mutex_.unlock();
 	}
 }
@@ -607,7 +614,8 @@ void MultiQueue::BackgroudShrinkUsage()
 	SlowShrinking();
 	MeasureTime(Statistics::GetStatistics().get(),Tickers::SLOW_SHRINKING,Env::Default()->NowMicros() - start_micros);
     }else{
-	QuickShrinking();
+	SlowShrinking();  //also call SlowShrinking
+	//QuickShrinking();
 	MeasureTime(Statistics::GetStatistics().get(),Tickers::QUICK_SHRINKING,Env::Default()->NowMicros() - start_micros);
     }
     shrinking_ = false;

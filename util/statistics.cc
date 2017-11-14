@@ -62,15 +62,21 @@ std::string Statistics::ToString(uint32_t begin_type, uint32_t end_type)
 	char buf[200];
 	std::string res;
 	res.reserve(20000);
+	uint64_t totalReadCount = 0;
+	uint64_t totalReadTime = 0;
 	for(i = begin_type ; i <= end_type ; i++){
 	    if(histograms_[i].average == 0){
 		continue;
 	    }
        	    histograms_[i].min = (histograms_[i].min == std::numeric_limits<double>::max() ? -1 : histograms_[i].min);
+	    totalReadCount += tickers_[i]*(i - begin_type);
+	    totalReadTime += histograms_[i].average;
 	    histograms_[i].average = histograms_[i].average/tickers_[i];
 	    snprintf(buf,sizeof(buf),"%s min:%.3lf ave:%.3lf max:%.3lf count:%lu\n",TickersNameMap[i].second.c_str(),histograms_[i].min,histograms_[i].average,histograms_[i].max,tickers_[i]);
 	    res.append(buf);
 	}
+	snprintf(buf,sizeof(buf),"totalAccessCount %lu totalAccessTime %lu \n",totalReadCount,totalReadTime);
+	res.append(buf);
 	res.shrink_to_fit();
 	return res;
 }
