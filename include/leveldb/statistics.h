@@ -56,6 +56,9 @@ namespace leveldb{
 	SLOW_SHRINKING,
 	QUICK_SHRINKING,
 	FORCE_SHRINKING,
+	FINDTABLE,
+	INTERNALGET,
+        RELEASE,
 	TICKER_ENUM_MAX
  };  
 
@@ -110,6 +113,9 @@ namespace leveldb{
      {SLOW_SHRINKING,"leveldb.slow.shrinking.time"},
      {QUICK_SHRINKING,"leveldb.quick.shrinking.time"},
      {FORCE_SHRINKING,"leveldb.force.shrinking.time"},
+     {FINDTABLE,"leveldb.findtable.time"},
+     {INTERNALGET,"leveldb.internalget.time"},
+     {RELEASE,"leveldb.release.time"}
 };
 
 struct HistogramData{
