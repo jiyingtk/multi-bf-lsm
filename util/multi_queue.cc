@@ -348,9 +348,9 @@ void MultiQueue::Ref(LRUQueueHandle* e,bool addFreCount)
 	}
 	e->refs++;
 	if(addFreCount){
-	    if(e->expire_time < current_time_ ){ //not expired
+	    if(e->expire_time > current_time_ ){ //not expired
 		++e->fre_count;
-	    }else if(e->expire_time > current_time_){   //expired
+	    }else if(e->expire_time < current_time_){   //expired
 		e->fre_count = Num_Queue(e->queue_id);
 	    }
 	}
