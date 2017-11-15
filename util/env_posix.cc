@@ -221,7 +221,31 @@ class PosixRandomAccessFile: public RandomAccessFile {
     }
 
     Status s;
-    ssize_t r = pread(fd, scratch, n, static_cast<off_t>(offset));
+    ssize_t r;
+    if(direct_IO_flag_){
+	size_t alignment = abuf_->alignment_;
+	size_t aligned_offset = TruncateToPageBoundary(alignment, offset);
+	size_t offset_advance = offset - aligned_offset;
+	size_t read_size = Roundup(offset + n, alignment) - aligned_offset;
+	if(read_size > abuf_->capacity_){
+	    abuf_->AllocateNewBuffer(read_size);
+	}
+	//printf("read_size:%ld , aligned_offset:%ld , buf capacity:%ld \n",read_size,aligned_offset,abuf_->capacity_);
+	r = pread(fd, abuf_->bufstart_, read_size, static_cast<off_t>(aligned_offset));
+	abuf_->Read(scratch,offset_advance,n);
+	 if (r < 0) {
+		// An error: return a non-ok status
+		s = PosixError(filename_, errno);
+	 }else{
+	     r = n;
+	}
+    }else{
+	r = pread(fd, scratch, n, static_cast<off_t>(offset));
+	if (r < 0) {
+	    // An error: return a non-ok status
+	    s = PosixError(filename_, errno);
+	}
+    }
     *result = Slice(scratch, (r < 0) ? 0 : r);
     if (r < 0) {
       // An error: return a non-ok status
