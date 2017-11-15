@@ -27,6 +27,9 @@ namespace leveldb{
 	WRITE_FILTER_TIME,
 	ADD_FILTER_TIME,
 	SYNC_TIME,
+	FINDTABLE,
+	INTERNALGET,
+	RELEASE,
 	TICKER_ENUM_MAX
  };  
 
@@ -51,7 +54,10 @@ namespace leveldb{
      {CREATE_FILTER_TIME,"leveldb.create.filter.time"},
      {WRITE_FILTER_TIME,"leveldb.write.filter.time"},
      {ADD_FILTER_TIME,"leveldb.add.filter.time"},
-     {SYNC_TIME,"leveldb.sync.time"}
+     {SYNC_TIME,"leveldb.sync.time"},
+     {FINDTABLE,"leveldb.findtable.time"},
+     {INTERNALGET,"leveldb.internalget.time"},
+     {RELEASE,"leveldb.release.time"}
 };
 
 struct HistogramData{

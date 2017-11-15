@@ -109,11 +109,17 @@ Status TableCache::Get(const ReadOptions& options,
                        void* arg,
                        void (*saver)(void*, const Slice&, const Slice&)) {
   Cache::Handle* handle = NULL;
+  uint64_t start_micros = Env::Default()->NowMicros();
   Status s = FindTable(file_number, file_size, &handle);
+  MeasureTime(Statistics::GetStatistics().get(),Tickers::FINDTABLE,Env::Default()->NowMicros() - start_micros);
   if (s.ok()) {
+    start_micros = Env::Default()->NowMicros();
     Table* t = reinterpret_cast<TableAndFile*>(cache_->Value(handle))->table;
     s = t->InternalGet(options, k, arg, saver);
+    MeasureTime(Statistics::GetStatistics().get(),Tickers::INTERNALGET,Env::Default()->NowMicros() - start_micros);
+    start_micros = Env::Default()->NowMicros();
     cache_->Release(handle);
+    MeasureTime(Statistics::GetStatistics().get(),Tickers::RELEASE,Env::Default()->NowMicros() - start_micros);
   }
   return s;
 }

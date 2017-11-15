@@ -1481,7 +1481,9 @@ bool DBImpl::GetProperty(const Slice& property, std::string* value) {
 	    snprintf(buf,sizeof(buf),"average add filter time  = %.3lf add filters count:%lu \n",
 		     statis_->GetTickerHistogram(Tickers::ADD_FILTER_TIME)*1.0/statis_->getTickerCount(Tickers::ADD_FILTER_TIME),statis_->getTickerCount(Tickers::ADD_FILTER_TIME));
 	    value->append(buf);
+	    value->append(statis_->ToString(Tickers::FINDTABLE,Tickers::RELEASE));
     }
+
      value->append(printStatistics());
     return true;
   } else if (in == "sstables") {
