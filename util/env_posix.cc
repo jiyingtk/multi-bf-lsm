@@ -19,6 +19,7 @@
 #include <deque>
 #include <limits>
 #include <set>
+#include <boost/concept_check.hpp>
 #include "leveldb/env.h"
 #include "leveldb/slice.h"
 #include "port/port.h"
@@ -28,7 +29,59 @@
 #include "util/env_posix_test_helper.h"
 
 namespace leveldb {
-bool directIO_of_RandomAccess = false;
+inline size_t TruncateToPageBoundary(size_t page_size, size_t s) {
+  s -= (s & (page_size - 1));
+  assert((s % page_size) == 0);
+  return s;
+}
+
+inline size_t Roundup(size_t x, size_t y) {
+  return ((x + y - 1) / y) * y;
+}
+class AlignedBuffer{
+public:
+    size_t capacity_;
+    size_t cursize_;
+    size_t alignment_;
+    char* bufstart_;
+    AlignedBuffer(size_t alignment)
+    : alignment_(alignment),
+      capacity_(0),
+      cursize_(0),
+      bufstart_(NULL) {
+   }
+   void Alignment(size_t alignment) {
+	assert(alignment > 0);
+	assert((alignment & (alignment - 1)) == 0);
+	alignment_ = alignment;
+   }
+   void AllocateNewBuffer(size_t requested_capacity, bool copy_data = false) {
+    void *new_buf;
+    assert(alignment_ > 0);
+    assert((alignment_ & (alignment_ - 1)) == 0);
+    if (copy_data && requested_capacity < cursize_) {
+      // If we are downsizing to a capacity that is smaller than the current
+      // data in the buffer. Ignore the request.
+      return;
+    }
+
+    size_t new_capacity = Roundup(requested_capacity, alignment_);
+    int ret = posix_memalign(&new_buf, alignment_, new_capacity);
+    char* new_bufstart = (char*)new_buf;
+    if (copy_data) {
+      memcpy(new_bufstart, bufstart_, cursize_);
+    } else {
+      cursize_ = 0;
+    }
+
+    bufstart_ = new_bufstart;
+    capacity_ = new_capacity;
+  }
+  
+  inline void Read(char *dest,size_t offset, size_t read_size){
+	memcpy(dest,bufstart_+offset,read_size);
+  }
+};
 namespace {
 
 static int open_read_only_file_limit = -1;
@@ -133,10 +186,11 @@ class PosixRandomAccessFile: public RandomAccessFile {
   bool temporary_fd_;  // If true, fd_ is -1 and we open on every read.
   int fd_;
   Limiter* limiter_;
-
+  AlignedBuffer *abuf_;
+  bool direct_IO_flag_;
  public:
-  PosixRandomAccessFile(const std::string& fname, int fd, Limiter* limiter)
-      : filename_(fname), fd_(fd), limiter_(limiter) {
+  PosixRandomAccessFile(const std::string& fname, int fd, Limiter* limiter,bool direct_IO_flag=false)
+      : filename_(fname), fd_(fd), limiter_(limiter),abuf_(new AlignedBuffer(4096)),direct_IO_flag_(direct_IO_flag) {
     temporary_fd_ = !limiter->Acquire();
     if (temporary_fd_) {
       // Open file on every access.
@@ -156,7 +210,11 @@ class PosixRandomAccessFile: public RandomAccessFile {
                       char* scratch) const {
     int fd = fd_;
     if (temporary_fd_) {
-      fd = open(filename_.c_str(), O_RDONLY);
+	int o_flag = O_RDONLY;
+	if(direct_IO_flag_){
+		o_flag = O_RDONLY|O_DIRECT;
+	}
+      fd = open(filename_.c_str(), o_flag);
       if (fd < 0) {
         return PosixError(filename_, errno);
       }
@@ -349,10 +407,15 @@ class PosixEnv : public Env {
   }
 
   virtual Status NewRandomAccessFile(const std::string& fname,
-                                     RandomAccessFile** result) {
+                                     RandomAccessFile** result,bool direct_IO_flag) {
     *result = NULL;
     Status s;
-    int fd = open(fname.c_str(), O_RDONLY);
+    int fd;
+    if(direct_IO_flag){
+	fd = open(fname.c_str(), O_RDONLY|O_DIRECT);
+    }else{
+	fd = open(fname.c_str(), O_RDONLY);
+    }
     if (fd < 0) {
       s = PosixError(fname, errno);
     } else if (false && mmap_limit_.Acquire()) { //disable mmap
@@ -371,10 +434,7 @@ class PosixEnv : public Env {
         mmap_limit_.Release();
       }
     } else {
-      if(directIO_of_RandomAccess&&posix_fadvise(fd,0,0, POSIX_FADV_DONTNEED) != 0) {   // no cache
-	s = PosixError(fname, errno);
-      }
-      *result = new PosixRandomAccessFile(fname, fd, &fd_limit_);
+      *result = new PosixRandomAccessFile(fname, fd, &fd_limit_,direct_IO_flag);
     }
     return s;
   }
