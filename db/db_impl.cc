@@ -112,7 +112,8 @@ Options SanitizeOptions(const std::string& dbname,
     }
   }
   if (result.block_cache == NULL) {
-    result.block_cache = NewLRUCache(8 << 20);
+    //result.block_cache = NewLRUCache(8 << 20);
+      result.block_cache = NULL;
   }
   return result;
 }
@@ -1587,7 +1588,7 @@ bool DBImpl::GetProperty(const Slice& property, std::string* value) {
 
 	}
 	value->append(statis_->ToString(Tickers::SET_FRE_COUNT_IN_COMPACTION_TIME,Tickers::SET_FRE_COUNT_IN_COMPACTION_TIME));
-	value->append(statis_->ToString(Tickers::FINDTABLE,Tickers::RELEASE));
+	value->append(statis_->ToString(Tickers::FINDTABLE,Tickers::BLOCK_READ_TIME));
 	value->append(table_cache_->LRU_Status());
 	value->append(printStatistics());
 	statis_->reset();

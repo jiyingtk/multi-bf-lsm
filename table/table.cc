@@ -342,14 +342,16 @@ Status Table::InternalGet(const ReadOptions& options, const Slice& k,
         !filter->KeyMayMatch(handle.offset(), k)) {
       // Not found
     } else {
-      Iterator* block_iter = BlockReader(this, options, iiter->value());
-      block_iter->Seek(k);
-      if (block_iter->Valid()) {
-        (*saver)(arg, block_iter->key(), block_iter->value());
-      }
-      s = block_iter->status();
-      options.read_file_nums++;
-      delete block_iter;
+	uint64_t start_micros = Env::Default()->NowMicros();
+	Iterator* block_iter = BlockReader(this, options, iiter->value());
+	block_iter->Seek(k);
+	if (block_iter->Valid()) {
+	    (*saver)(arg, block_iter->key(), block_iter->value());
+	}
+	 MeasureTime(Statistics::GetStatistics().get(),Tickers::BLOCK_READ_TIME,Env::Default()->NowMicros() - start_micros);
+	s = block_iter->status();
+	options.read_file_nums++;
+	delete block_iter;
     }
   }
   if (s.ok()) {
