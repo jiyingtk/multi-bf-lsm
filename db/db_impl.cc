@@ -113,7 +113,7 @@ Options SanitizeOptions(const std::string& dbname,
     }
   }
   if (result.block_cache == NULL) {
-    result.block_cache = NewLRUCache(8 << 20);
+    result.block_cache = NULL;
   }
   return result;
 }
@@ -1481,7 +1481,7 @@ bool DBImpl::GetProperty(const Slice& property, std::string* value) {
 	    snprintf(buf,sizeof(buf),"average add filter time  = %.3lf add filters count:%lu \n",
 		     statis_->GetTickerHistogram(Tickers::ADD_FILTER_TIME)*1.0/statis_->getTickerCount(Tickers::ADD_FILTER_TIME),statis_->getTickerCount(Tickers::ADD_FILTER_TIME));
 	    value->append(buf);
-	    value->append(statis_->ToString(Tickers::FINDTABLE,Tickers::RELEASE));
+	    value->append(statis_->ToString(Tickers::FINDTABLE,Tickers::BLOCK_READ_TIME));
     }
 
      value->append(printStatistics());
