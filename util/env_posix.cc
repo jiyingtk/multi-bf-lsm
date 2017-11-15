@@ -230,7 +230,7 @@ class PosixRandomAccessFile: public RandomAccessFile {
 	    abuf_->AllocateNewBuffer(read_size);
 	}
 	//printf("read_size:%ld , aligned_offset:%ld , buf capacity:%ld \n",read_size,aligned_offset,abuf_->capacity_);
-	r = pread(fd_, abuf_->bufstart_, read_size, static_cast<off_t>(aligned_offset));
+	r = pread(fd, abuf_->bufstart_, read_size, static_cast<off_t>(aligned_offset));
 	abuf_->Read(scratch,offset_advance,n);
 	 if (r < 0) {
 		// An error: return a non-ok status
@@ -239,7 +239,7 @@ class PosixRandomAccessFile: public RandomAccessFile {
 	     r = n;
 	}
     }else{
-	r = pread(fd_, scratch, n, static_cast<off_t>(offset));
+	r = pread(fd, scratch, n, static_cast<off_t>(offset));
 	if (r < 0) {
 	    // An error: return a non-ok status
 	    s = PosixError(filename_, errno);
