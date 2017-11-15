@@ -59,7 +59,7 @@ class Env {
   //
   // The returned file may be concurrently accessed by multiple threads.
   virtual Status NewRandomAccessFile(const std::string& fname,
-                                     RandomAccessFile** result,bool directIO_flag) = 0;
+                                     RandomAccessFile** result,bool directIO_flag = false) = 0;
 
   // Create an object that writes to a new file with the specified
   // name.  Deletes any existing file with the same name and creates a

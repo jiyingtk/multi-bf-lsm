@@ -10,7 +10,7 @@
 #include "util/coding.h"
 
 namespace leveldb {
-
+bool directIO_of_RandomAccess = false;
 struct TableAndFile {
   RandomAccessFile* file;
   Table* table;
@@ -53,10 +53,10 @@ Status TableCache::FindTable(uint64_t file_number, uint64_t file_size,
     std::string fname = TableFileName(dbname_, file_number);
     RandomAccessFile* file = NULL;
     Table* table = NULL;
-    s = env_->NewRandomAccessFile(fname, &file);
+    s = env_->NewRandomAccessFile(fname, &file,directIO_of_RandomAccess);
     if (!s.ok()) {
       std::string old_fname = SSTTableFileName(dbname_, file_number);
-      if (env_->NewRandomAccessFile(old_fname, &file).ok()) {
+      if (env_->NewRandomAccessFile(old_fname, &file,directIO_of_RandomAccess).ok()) {
         s = Status::OK();
       }
     }

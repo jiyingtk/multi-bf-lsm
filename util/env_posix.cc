@@ -210,7 +210,11 @@ class PosixRandomAccessFile: public RandomAccessFile {
                       char* scratch) const {
     int fd = fd_;
     if (temporary_fd_) {
-      fd = open(filename_.c_str(), O_RDONLY);
+	int o_flag = O_RDONLY;
+	if(direct_IO_flag_){
+		o_flag = O_RDONLY|O_DIRECT;
+	}
+      fd = open(filename_.c_str(), o_flag);
       if (fd < 0) {
         return PosixError(filename_, errno);
       }
@@ -403,10 +407,15 @@ class PosixEnv : public Env {
   }
 
   virtual Status NewRandomAccessFile(const std::string& fname,
-                                     RandomAccessFile** result) {
+                                     RandomAccessFile** result,bool direct_IO_flag) {
     *result = NULL;
     Status s;
-    int fd = open(fname.c_str(), O_RDONLY);
+    int fd;
+    if(direct_IO_flag){
+	fd = open(fname.c_str(), O_RDONLY|O_DIRECT);
+    }else{
+	fd = open(fname.c_str(), O_RDONLY);
+    }
     if (fd < 0) {
       s = PosixError(fname, errno);
     } else if (false && mmap_limit_.Acquire()) { //disable mmap
@@ -425,10 +434,7 @@ class PosixEnv : public Env {
         mmap_limit_.Release();
       }
     } else {
-      if(directIO_of_RandomAccess&&posix_fadvise(fd,0,0, POSIX_FADV_DONTNEED) != 0) {   // no cache
-	s = PosixError(fname, errno);
-      }
-      *result = new PosixRandomAccessFile(fname, fd, &fd_limit_);
+      *result = new PosixRandomAccessFile(fname, fd, &fd_limit_,direct_IO_flag);
     }
     return s;
   }
