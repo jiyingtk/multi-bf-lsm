@@ -67,40 +67,50 @@ Status ReadBlocks(RandomAccessFile* file,
                  const BlockHandle* handles_ptr,
                  BlockContents* results,int n) {
     int i;
-    size_t len = 0;
+    size_t lens[6],sum_lens=0;
+    char *bufs[6];
     for(i = 0 ; i <  n ; ++i){
 	results[i].data = Slice();
 	results[i].cachable = false;
 	results[i].heap_allocated = false;
-	len += handles_ptr[i].size();
+	bufs[i] = new char[handles_ptr[i].size()];
+	lens[i] = handles_ptr[i].size() + kBlockTrailerSize;
+	sum_lens += handles_ptr[i].size();
     }
-
-    char* buf = new char[len + n*kBlockTrailerSize];
-    Slice contents;
-    Status s = file->Read(handles_ptr[0].offset(), len + n*kBlockTrailerSize, &contents, buf);
+    Slice contents[6];
+    Status s = file->Reads(handles_ptr[0].offset(), sum_lens + n*kBlockTrailerSize, contents, bufs,lens,6);
     if (!s.ok()) {
-	delete[] buf;
+	 for(i = 0 ; i <  n ; ++i){
+		delete [] bufs[i];
+	 }
 	return s;
     }
-    if (contents.size() != len + n*kBlockTrailerSize) {
-	delete[] buf;
-	return Status::Corruption("truncated block read");
-    }
-    const char* data = contents.data();    // Pointer to where Read put the data
+    size_t contents_size = 0;
     for(i = 0 ; i < n ; i++){
-	len = handles_ptr[i].size();
-	 switch (data[len]) {
+	contents_size += contents[i].size();
+    }
+    if (contents_size != sum_lens + n*kBlockTrailerSize) {
+	    for(i = 0 ; i <  n ; ++i){
+		delete [] bufs[i];
+	    }
+	    return Status::Corruption("truncated block read");
+    }
+    const char* data = contents[0].data();    // Pointer to where Read put the data
+    bool cache_flag = (data == bufs[0]);
+    for(i = 0 ; i < n ; i++){
+	 data = contents[i].data();
+	 switch (data[handles_ptr[i].size()]) {
 	    case kNoCompression:
-		if (data != buf) {
+		if (!cache_flag) {
 		    // File implementation gave us pointer to some other data.
 		    // Use it directly under the assumption that it will be live
 		    // while the file is open.
-		    delete[] buf;
-		    results[i].data = Slice(data, len);
+		    delete[] bufs[i];
+		    results[i].data = Slice(data, handles_ptr[i].size());
 		    results[i].heap_allocated = false;
 		    results[i].cachable = false;  // Do not double-cache
 		} else {
-		    results[i].data = Slice(buf, len);
+		    results[i].data = Slice(bufs[i], handles_ptr[i].size());
 		    results[i].heap_allocated = true;
 		    results[i].cachable = true;
 		}
@@ -108,27 +118,29 @@ Status ReadBlocks(RandomAccessFile* file,
 		break;
 	    case kSnappyCompression: {
 		 size_t ulength = 0;
-		 if (!port::Snappy_GetUncompressedLength(data, len, &ulength)) {
-			delete[] buf;
+		 if (!port::Snappy_GetUncompressedLength(data, handles_ptr[i].size(), &ulength)) {
+			delete[] bufs[i];
 			return Status::Corruption("corrupted compressed block contents");
 		  }
 		  char* ubuf = new char[ulength];
-		  if (!port::Snappy_Uncompress(data, len, ubuf)) {
-			delete[] buf;
+		  if (!port::Snappy_Uncompress(data, handles_ptr[i].size(), ubuf)) {
+			delete[] bufs[i];
 			delete[] ubuf;
 			return Status::Corruption("corrupted compressed block contents");
 		    }
-		    delete[] buf;
+		    delete[] bufs[i];
 		    results[i].data = Slice(ubuf, ulength);
 		    results[i].heap_allocated = true;
 		    results[i].cachable = true;
 		    break;
 	    }
-	    default:
-	    delete[] buf;
+	    default:{
+		for(i = 0 ; i <  n ; ++i){
+		    delete [] bufs[i];
+		}
+	    }
 	    return Status::Corruption("bad block type");
 	}
-	data += (len+kBlockTrailerSize);
     }
     return Status::OK();
 }
