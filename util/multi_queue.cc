@@ -281,6 +281,10 @@ MultiQueue::MultiQueue(size_t capacity,int lrus_num,int base_num,uint64_t life_t
       base_fre_counts[0] = base_num / 2;
       current_time_ = 0;
       cout<<"Multi-Queue Capacity:"<<capacity_<<endl;
+      for(int i = 0 ; i  < lrus_num ; ++i){
+	cout<<"Base "<< i <<" fre count: "<<base_fre_counts[i]<<endl;
+      }
+
 }
 
 std::string MultiQueue::LRU_Status()
