@@ -134,17 +134,51 @@ void Table::ReadMeta(const Footer& footer) {
   key.append(rep_->options.filter_policy->Name());
   iter->Seek(key);
   if (iter->Valid() && iter->key() == Slice(key)) {
-    ReadFilter(iter->value());
+    //ReadFilter(iter->value());
   }else{
     fprintf(stderr,"filter iter is not valid\n");
   }
   while(iter->Valid()){
       rep_->filter_handles.push_back(iter->value());
-      // ReadFilter(iter->value());
       iter->Next();
    }
+   ReadFilters(rep_->filter_handles,rep_->options.opEp_.init_filter_nums);
   delete iter;
  // delete meta;  //reserve meta index_block
+}
+void Table::ReadFilters(std::vector< Slice >& filter_handle_values,int n)
+{
+    Slice v;
+    BlockHandle filter_handles[6];
+    for(int i = 0 ;  i <  n ; i++){
+	    v = filter_handle_values[i];
+	    if(!filter_handles[i].DecodeFrom(&v).ok()){
+		return;
+	    }
+    }
+   ReadOptions opt;
+   if (rep_->options.paranoid_checks) {
+	opt.verify_checksums = true;
+   }
+   BlockContents blocks[6];
+   uint64_t start_micros = Env::Default()->NowMicros();
+   if (!ReadBlocks(rep_->file, opt, filter_handles, blocks,n).ok()) {
+	return;
+   }
+   for(int i = 0 ; i < n ; i++){
+	if (blocks[i].heap_allocated) {
+	    rep_->filter_datas.push_back(blocks[i].data.data());     // Will need to delete later
+	    filter_mem_space += blocks[i].data.size();
+	    filter_num++;
+	    int curr_filter_num = rep_->filter == NULL ? 0 : rep_->filter->getCurrFiltersNum();
+	}
+	if(rep_->filter == NULL){
+		rep_->filter = new FilterBlockReader(rep_->options.filter_policy, blocks[i].data);
+	}else{
+		rep_->filter->AddFilter(blocks[i].data);
+	}
+   }
+   MeasureTime(Statistics::GetStatistics().get(),Tickers::ADD_FILTER_TIME_0 + n,Env::Default()->NowMicros() - start_micros);
 }
 
 void Table::ReadFilter(const Slice& filter_handle_value) {
@@ -198,6 +232,22 @@ size_t Table::RemoveFilters(int n)
     int curr_filter_num = rep_->filter->getCurrFiltersNum();
     rep_->filter->RemoveFilters(n);
     size_t delta = 0;
+    if(n == -1){
+	while(curr_filter_num >  1){
+	    delete [] (rep_->filter_datas.back());
+	    rep_->filter_datas.pop_back();
+	    BlockHandle filter_handle;
+	    Slice v = rep_->filter_handles[--curr_filter_num];
+	    delta += FilterPolicy::bits_per_key_per_filter_[curr_filter_num];
+	    if(!filter_handle.DecodeFrom(&v).ok()){
+		assert(0);
+		return 0;
+	    }
+	    filter_mem_space -= (filter_handle.size()+kBlockTrailerSize) ;
+	    filter_num--;
+	}
+	return delta;
+    }
     while(n--&& curr_filter_num > 0){
 	    delete [] (rep_->filter_datas.back());
 	    rep_->filter_datas.pop_back();
@@ -218,10 +268,11 @@ int64_t Table::AdjustFilters(int n)
 {
     int64_t delta = 0;
     uint64_t start_micros = Env::Default()->NowMicros();
-    if(n < rep_->filter->getCurrFiltersNum()){
+   /* if(n < rep_->filter->getCurrFiltersNum()){
 	delta = -static_cast<int64_t>(RemoveFilters(rep_->filter->getCurrFiltersNum() - n));
 	MeasureTime(Statistics::GetStatistics().get(),Tickers::REMOVE_FILTER_TIME,Env::Default()->NowMicros() - start_micros);
-    }else if(n > rep_->filter->getCurrFiltersNum()){
+    }else*/
+    if(n > rep_->filter->getCurrFiltersNum()){ //only add
 	delta =  AddFilters(n - rep_->filter->getCurrFiltersNum());
     }
     return delta;
