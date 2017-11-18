@@ -7,7 +7,7 @@
 
 #include <stdint.h>
 #include "leveldb/iterator.h"
-
+#include<vector>
 namespace leveldb {
 
 class Block;
@@ -77,7 +77,7 @@ class Table {
 
   void ReadMeta(const Footer& footer);
   void ReadFilter(const Slice& filter_handle_value);
-
+  void ReadFilters(std::vector<Slice> &filter_handle_values,int n);
   // No copying allowed
   Table(const Table&);
   void operator=(const Table&);

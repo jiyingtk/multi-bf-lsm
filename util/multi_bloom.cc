@@ -191,10 +191,10 @@ public:
 		if(pthread_create(pids_+i,NULL,MultiFilter::CreateFilter_T,(void*)(temp_id))!=0){
 		    perror("create thread ");
 		}
-		int s = pthread_setaffinity_np(pids_[i], sizeof(cpu_set_t), &cpuset);
-		if (s != 0){
-		  handle_error_en(s, "pthread_setaffinity_np");
-		}
+		// int s = pthread_setaffinity_np(pids_[i], sizeof(cpu_set_t), &cpuset);
+		// if (s != 0){
+		//   handle_error_en(s, "pthread_setaffinity_np");
+		// }
 		snprintf(name_buf, sizeof name_buf, "filter:bg%d" ,i);
 		name_buf[sizeof name_buf - 1] = '\0';
 		pthread_setname_np(pids_[i], name_buf);

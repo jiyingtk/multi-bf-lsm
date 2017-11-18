@@ -95,7 +95,10 @@ extern Status ReadBlock(RandomAccessFile* file,
                         const ReadOptions& options,
                         const BlockHandle& handle,
                         BlockContents* result);
-
+extern Status ReadBlocks(RandomAccessFile* file,
+                 const ReadOptions& options,
+                 const BlockHandle* handles_ptr,
+                 BlockContents* results,int n) ;
 // Implementation details follow.  Clients should ignore,
 
 inline BlockHandle::BlockHandle()

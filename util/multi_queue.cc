@@ -373,7 +373,7 @@ void MultiQueue::Unref(LRUQueueHandle* e)
 	  } else if (e->in_cache && e->refs == 1) {  // note:No longer in use; move to lru_ list.
 		LRU_Remove(e);
 		int qn = Queue_Num(e->fre_count);
-		if(qn != e->queue_id && e->type){ 
+		if(qn > e->queue_id && e->type){  //only add;
 		    leveldb::TableAndFile *tf = reinterpret_cast<leveldb::TableAndFile *>(e->value);
 		    mutex_.unlock();
 		    int64_t delta_charge = tf->table->AdjustFilters(qn+1);  // not in lru list, so need to worry will be catched by ShrinkUsage
@@ -487,17 +487,26 @@ inline bool MultiQueue::ShrinkLRU(int k,int64_t remove_charge[],bool force)
 	  while(lrus_[0].next != &lrus_[0] && removed_usage < remove_charge[0]){
 		LRUQueueHandle *old = lrus_[0].next;
 		if(force||old->expire_time < current_time_){
-		    auto old_handle = table_.Remove(old->key(), old->hash);
 		    uint64_t start_micros = Env::Default()->NowMicros();
-		    removed_usage += old_handle->charge;
-		    bool erased = FinishErase(old_handle);
+		    if(old->charge > FilterPolicy::bits_per_key_per_filter_[0]){
+			 leveldb::TableAndFile *tf = reinterpret_cast<leveldb::TableAndFile *>(old->value);
+			 size_t delta_charge = tf->table->RemoveFilters(-1); // -1 means remove to 1 filter
+			 old->charge -= delta_charge;
+			 usage_ -= delta_charge;
+			 removed_usage += delta_charge;
+			 old->fre_count = Num_Queue(0);   // also decrease fre count
+		    }else{
+			auto old_handle = table_.Remove(old->key(), old->hash);
+			removed_usage += old_handle->charge;
+			bool erased = FinishErase(old_handle);
+			if (!erased) {  // to avoid unused variable when compiled NDEBUG
+			    assert(erased);
+			}
+		    }
 		    if(force){
 			MeasureTime(Statistics::GetStatistics().get(),Tickers::REMOVE_HEAD_FILTER_TIME_0,Env::Default()->NowMicros() - start_micros);
 		    }else{
 			MeasureTime(Statistics::GetStatistics().get(),Tickers::REMOVE_EXPIRED_FILTER_TIME_0,Env::Default()->NowMicros() - start_micros);
-		    }
-		    if (!erased) {  // to avoid unused variable when compiled NDEBUG
-			assert(erased);
 		    }
 		}else{
 		    return false;

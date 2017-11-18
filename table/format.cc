@@ -62,6 +62,77 @@ Status Footer::DecodeFrom(Slice* input) {
   return result;
 }
 
+Status ReadBlocks(RandomAccessFile* file,
+                 const ReadOptions& options,
+                 const BlockHandle* handles_ptr,
+                 BlockContents* results,int n) {
+    int i;
+    size_t len = 0;
+    for(i = 0 ; i <  n ; ++i){
+	results[i].data = Slice();
+	results[i].cachable = false;
+	results[i].heap_allocated = false;
+	len += handles_ptr[i].size();
+    }
+
+    char* buf = new char[len + n*kBlockTrailerSize];
+    Slice contents;
+    Status s = file->Read(handles_ptr[0].offset(), len + n*kBlockTrailerSize, &contents, buf);
+    if (!s.ok()) {
+	delete[] buf;
+	return s;
+    }
+    if (contents.size() != len + n*kBlockTrailerSize) {
+	delete[] buf;
+	return Status::Corruption("truncated block read");
+    }
+    const char* data = contents.data();    // Pointer to where Read put the data
+    for(i = 0 ; i < n ; i++){
+	len = handles_ptr[i].size();
+	 switch (data[len]) {
+	    case kNoCompression:
+		if (data != buf) {
+		    // File implementation gave us pointer to some other data.
+		    // Use it directly under the assumption that it will be live
+		    // while the file is open.
+		    delete[] buf;
+		    results[i].data = Slice(data, len);
+		    results[i].heap_allocated = false;
+		    results[i].cachable = false;  // Do not double-cache
+		} else {
+		    results[i].data = Slice(buf, len);
+		    results[i].heap_allocated = true;
+		    results[i].cachable = true;
+		}
+		// Ok
+		break;
+	    case kSnappyCompression: {
+		 size_t ulength = 0;
+		 if (!port::Snappy_GetUncompressedLength(data, len, &ulength)) {
+			delete[] buf;
+			return Status::Corruption("corrupted compressed block contents");
+		  }
+		  char* ubuf = new char[ulength];
+		  if (!port::Snappy_Uncompress(data, len, ubuf)) {
+			delete[] buf;
+			delete[] ubuf;
+			return Status::Corruption("corrupted compressed block contents");
+		    }
+		    delete[] buf;
+		    results[i].data = Slice(ubuf, ulength);
+		    results[i].heap_allocated = true;
+		    results[i].cachable = true;
+		    break;
+	    }
+	    default:
+	    delete[] buf;
+	    return Status::Corruption("bad block type");
+	}
+	data += (len+kBlockTrailerSize);
+    }
+    return Status::OK();
+}
+
 Status ReadBlock(RandomAccessFile* file,
                  const ReadOptions& options,
                  const BlockHandle& handle,
