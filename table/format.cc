@@ -73,7 +73,7 @@ Status ReadBlocks(RandomAccessFile* file,
 	results[i].data = Slice();
 	results[i].cachable = false;
 	results[i].heap_allocated = false;
-	bufs[i] = new char[handles_ptr[i].size()];
+	bufs[i] = new char[handles_ptr[i].size() + kBlockTrailerSize];
 	lens[i] = handles_ptr[i].size() + kBlockTrailerSize;
 	sum_lens += handles_ptr[i].size();
     }
@@ -135,9 +135,7 @@ Status ReadBlocks(RandomAccessFile* file,
 		    break;
 	    }
 	    default:{
-		for(i = 0 ; i <  n ; ++i){
 		    delete [] bufs[i];
-		}
 	    }
 	    return Status::Corruption("bad block type");
 	}
