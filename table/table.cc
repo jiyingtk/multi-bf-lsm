@@ -230,9 +230,9 @@ size_t Table::AddFilters(int n)
 size_t Table::RemoveFilters(int n)
 {
     int curr_filter_num = rep_->filter->getCurrFiltersNum();
-    rep_->filter->RemoveFilters(n);
     size_t delta = 0;
     if(n == -1){
+	rep_->filter->RemoveFilters(curr_filter_num - 1);
 	while(curr_filter_num >  1){
 	    delete [] (rep_->filter_datas.back());
 	    rep_->filter_datas.pop_back();
@@ -248,6 +248,7 @@ size_t Table::RemoveFilters(int n)
 	}
 	return delta;
     }
+    rep_->filter->RemoveFilters(n);
     while(n--&& curr_filter_num > 0){
 	    delete [] (rep_->filter_datas.back());
 	    rep_->filter_datas.pop_back();
@@ -272,7 +273,7 @@ int64_t Table::AdjustFilters(int n)
 	delta = -static_cast<int64_t>(RemoveFilters(rep_->filter->getCurrFiltersNum() - n));
 	MeasureTime(Statistics::GetStatistics().get(),Tickers::REMOVE_FILTER_TIME,Env::Default()->NowMicros() - start_micros);
     }else*/
-    if(n > rep_->filter->getCurrFiltersNum()){ //only add
+    if(n > rep_->filter->getCurrFiltersNum()){ //only add when greater than
 	delta =  AddFilters(n - rep_->filter->getCurrFiltersNum());
     }
     return delta;
