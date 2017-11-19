@@ -78,7 +78,7 @@ Status ReadBlocks(RandomAccessFile* file,
 	sum_lens += handles_ptr[i].size();
     }
     Slice contents[6];
-    Status s = file->Reads(handles_ptr[0].offset(), sum_lens + n*kBlockTrailerSize, contents, bufs,lens,6);
+    Status s = file->Reads(handles_ptr[0].offset(), sum_lens + n*kBlockTrailerSize, contents, bufs,lens,n);
     if (!s.ok()) {
 	 for(i = 0 ; i <  n ; ++i){
 		delete [] bufs[i];
