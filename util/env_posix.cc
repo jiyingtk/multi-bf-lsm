@@ -50,6 +50,9 @@ public:
       cursize_(0),
       bufstart_(NULL) {
    }
+   ~AlignedBuffer(){
+	delete bufstart_;
+   }
    void Alignment(size_t alignment) {
 	assert(alignment > 0);
 	assert((alignment & (alignment - 1)) == 0);
@@ -73,7 +76,7 @@ public:
     } else {
       cursize_ = 0;
     }
-
+    delete bufstart_;
     bufstart_ = new_bufstart;
     capacity_ = new_capacity;
   }
@@ -81,7 +84,43 @@ public:
   inline void Read(char *dest,size_t offset, size_t read_size){
 	memcpy(dest,bufstart_+offset,read_size);
   }
+  
+  static inline AlignedBuffer* GetAlignedBuffer(){
+      if(!initialized){
+	    for(int i = 0 ;  i < buffer_nums ; ++i ){
+		abfs.emplace_back(new AlignedBuffer(4096));
+	    }
+	    initialized = true;
+      }
+      while(true){
+	    buffer_mutex.lock();
+	    if(!abfs.empty()){
+		AlignedBuffer *ret = abfs.back();
+		abfs.pop_back();
+		buffer_mutex.unlock();
+		return ret;
+	    }else{
+		buffer_mutex.unlock();
+		std::this_thread::yield();
+	    }
+      }
+  }
+  
+  static inline AlignedBuffer UngetAlignedBuffer(AlignedBuffer *ab){
+      buffer_mutex.lock();
+      abfs.push_back(ab);
+      buffer_mutex.unlock();
+  }
+
+  static const int buffer_nums;
+  static std::atomic<bool> initialized;
+  static std::vector<AlignedBuffer*> abfs;
+  static SpinMutex buffer_mutex;
 };
+const int AlignedBuffer::buffer_nums = 10;
+std::atomic<bool> AlignedBuffer::initialized = false;
+std::vector<AlignedBuffer*> AlignedBuffer::abfs;
+SpinMutex AlignedBuffer::buffer_mutex;
 namespace {
 
 static int open_read_only_file_limit = -1;
@@ -186,11 +225,10 @@ class PosixRandomAccessFile: public RandomAccessFile {
   bool temporary_fd_;  // If true, fd_ is -1 and we open on every read.
   int fd_;
   Limiter* limiter_;
-   AlignedBuffer *abuf_;
    bool direct_IO_flag_;
  public:
   PosixRandomAccessFile(const std::string& fname, int fd, Limiter* limiter,bool direct_IO_flag=false)
-      : filename_(fname), fd_(fd), limiter_(limiter),abuf_(new AlignedBuffer(4096)),direct_IO_flag_(direct_IO_flag) {
+      : filename_(fname), fd_(fd), limiter_(limiter),direct_IO_flag_(direct_IO_flag) {
     temporary_fd_ = !limiter->Acquire();
     if (temporary_fd_) {
       // Open file on every access.
@@ -209,6 +247,7 @@ class PosixRandomAccessFile: public RandomAccessFile {
   virtual Status Read(uint64_t offset, size_t n, Slice* result,
                       char* scratch) const {
     int fd = fd_;
+    AlignedBuffer* abuf = AlignedBuffer::GetAlignedBuffer();
     if (temporary_fd_) {
       int o_flag = O_RDONLY;
       if(direct_IO_flag_){
@@ -222,16 +261,16 @@ class PosixRandomAccessFile: public RandomAccessFile {
     Status s;
     ssize_t r;
    if(direct_IO_flag_){
-	size_t alignment = abuf_->alignment_;
+	size_t alignment = abuf->alignment_;
 	size_t aligned_offset = TruncateToPageBoundary(alignment, offset);
 	size_t offset_advance = offset - aligned_offset;
 	size_t read_size = Roundup(offset + n, alignment) - aligned_offset;
-	if(read_size > abuf_->capacity_){
-	    abuf_->AllocateNewBuffer(read_size);
+	if(read_size > abuf->capacity_){
+	    abuf->AllocateNewBuffer(read_size);
 	}
 	//printf("read_size:%ld , aligned_offset:%ld , buf capacity:%ld \n",read_size,aligned_offset,abuf_->capacity_);
-	r = pread(fd, abuf_->bufstart_, read_size, static_cast<off_t>(aligned_offset));
-	abuf_->Read(scratch,offset_advance,n);
+	r = pread(fd, abuf->bufstart_, read_size, static_cast<off_t>(aligned_offset));
+	abuf->Read(scratch,offset_advance,n);
 	 if (r < 0) {
 		// An error: return a non-ok status
 		s = PosixError(filename_, errno);
@@ -250,28 +289,30 @@ class PosixRandomAccessFile: public RandomAccessFile {
       // Close the temporary file descriptor opened earlier.
       close(fd);
     }
+    AlignedBuffer::UngetAlignedBuffer(abuf);
     return s;
   }
    virtual Status Reads(uint64_t offset, size_t n, Slice  results[],
                       char* scratch[],size_t lens[],int num) const {
     Status s;
     ssize_t r;
+    AlignedBuffer *abuf = AlignedBuffer::GetAlignedBuffer();
     if(direct_IO_flag_){
-	size_t alignment = abuf_->alignment_;
+	size_t alignment = abuf->alignment_;
 	size_t aligned_offset = TruncateToPageBoundary(alignment, offset);
 	size_t offset_advance = offset - aligned_offset;
 	size_t read_size = Roundup(offset + n, alignment) - aligned_offset;
-	if(read_size > abuf_->capacity_){
-	    abuf_->AllocateNewBuffer(read_size);
+	if(read_size > abuf->capacity_){
+	    abuf->AllocateNewBuffer(read_size);
 	}
 	//printf("read_size:%ld , aligned_offset:%ld , buf capacity:%ld \n",read_size,aligned_offset,abuf_->capacity_);
-	r = pread(fd_, abuf_->bufstart_, read_size, static_cast<off_t>(aligned_offset));
+	r = pread(fd_, abuf->bufstart_, read_size, static_cast<off_t>(aligned_offset));
 	if (r < 0) {
 	    // An error: return a non-ok status
 	    s = PosixError(filename_, errno);
 	}else{
 	    for(int i = 0 ; i < num ; i++){
-		abuf_->Read(scratch[i],offset_advance,lens[i]);
+		abuf->Read(scratch[i],offset_advance,lens[i]);
 		offset_advance += lens[i];
 		results[i] = Slice(scratch[i],lens[i]);
 	    }
@@ -287,6 +328,7 @@ class PosixRandomAccessFile: public RandomAccessFile {
 	    }
       }
     }
+    AlignedBuffer::UngetAlignedBuffer(abuf);
     return s;
   }
 };
