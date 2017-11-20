@@ -106,19 +106,31 @@ public:
       }
   }
   
-  static inline AlignedBuffer UngetAlignedBuffer(AlignedBuffer *ab){
+  static inline void UngetAlignedBuffer(AlignedBuffer *ab){
       buffer_mutex.lock();
       abfs.push_back(ab);
       buffer_mutex.unlock();
   }
-
+  static void FreeAlignedBuffers(){
+	buffer_mutex.lock();
+	while(abfs.size() != buffer_nums){
+	    buffer_mutex.unlock();
+	    std::this_thread::yield();
+	    buffer_mutex.lock();
+	}
+	for(int i = 0 ; i < buffer_nums ; i++){
+	    delete abfs.back();
+	    abfs.pop_back();
+	}
+	buffer_mutex.unlock();
+  }
   static const int buffer_nums;
   static std::atomic<bool> initialized;
   static std::vector<AlignedBuffer*> abfs;
   static SpinMutex buffer_mutex;
 };
 const int AlignedBuffer::buffer_nums = 10;
-std::atomic<bool> AlignedBuffer::initialized = false;
+std::atomic<bool> AlignedBuffer::initialized(false);
 std::vector<AlignedBuffer*> AlignedBuffer::abfs;
 SpinMutex AlignedBuffer::buffer_mutex;
 namespace {

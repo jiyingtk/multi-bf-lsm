@@ -207,6 +207,7 @@ DBImpl::~DBImpl() {
   if (owns_cache_) {
     delete options_.block_cache;
   }
+  //AlignedBuffer::FreeAlignedBuffers();
 }
 
 Status DBImpl::NewDB() {
