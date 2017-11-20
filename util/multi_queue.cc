@@ -12,6 +12,7 @@
 #include "util/mutexlock.h"
 #include "db/table_cache.h"
 using namespace std;
+bool multi_queue_shrinking = false;
 namespace leveldb {
 
 namespace{
@@ -464,10 +465,12 @@ void MultiQueue::MayBeShrinkUsage(){
     //mutex_.assertheld
     if (shrinking_) {
 	// Already scheduled
+	multi_queue_shrinking = true;
     } else if (shutting_down_) {
 	// DB is being deleted; no more background compactions
     } else if(usage_ > capacity_*slow_shrink_ratio) {
 	shrinking_ = true;
+	multi_queue_shrinking = true;
 	mq_env->Schedule(&MultiQueue::BGShrinkUsage, this);
 	mutex_.unlock();
 	while(usage_ > capacity_*force_shrink_ratio);
@@ -632,6 +635,7 @@ void MultiQueue::BackgroudShrinkUsage()
 	MeasureTime(Statistics::GetStatistics().get(),Tickers::QUICK_SHRINKING,Env::Default()->NowMicros() - start_micros);
     }
     shrinking_ = false;
+    multi_queue_shrinking = false;
 }
 
 Cache::Handle* MultiQueue::Insert(const Slice& key, void* value, size_t charge, void (*deleter)(const Slice& key, void* value)){

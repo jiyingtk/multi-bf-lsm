@@ -20,6 +20,7 @@
 //filter memory space overhead
 extern unsigned long long filter_mem_space;
 extern unsigned long long filter_num;
+extern bool multi_queue_shrinking;
 namespace leveldb {
 
 struct Table::Rep {
@@ -133,8 +134,8 @@ void Table::ReadMeta(const Footer& footer) {
   std::string key = "filter."+std::string(id);
   key.append(rep_->options.filter_policy->Name());
   iter->Seek(key);
-  if (iter->Valid() && iter->key() == Slice(key)) {
-    //ReadFilter(iter->value());
+  if (iter->Valid() && iter->key() == Slice(key) && multi_queue_shrinking) {
+	ReadFilter(iter->value());
   }else{
     fprintf(stderr,"filter iter is not valid\n");
   }
@@ -142,7 +143,9 @@ void Table::ReadMeta(const Footer& footer) {
       rep_->filter_handles.push_back(iter->value());
       iter->Next();
    }
-   ReadFilters(rep_->filter_handles,rep_->options.opEp_.init_filter_nums);
+   if(!multi_queue_shrinking){
+	ReadFilters(rep_->filter_handles,rep_->options.opEp_.init_filter_nums);
+   }
   delete iter;
  // delete meta;  //reserve meta index_block
 }
