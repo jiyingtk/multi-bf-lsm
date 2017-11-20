@@ -211,9 +211,10 @@ class MultiQueue:public Cache{
     double slow_shrink_ratio;
     double quick_shrink_ratio;
     double force_shrink_ratio;
+    double slow_ratio;
     const double log_base;
 public:
-    MultiQueue(size_t capacity,int lrus_num = 1,int base_num=64,uint64_t life_time=50,double fr=1.1,double qr=0.99,double sr=.95,int lg_b=3);
+    MultiQueue(size_t capacity,int lrus_num = 1,int base_num=64,uint64_t life_time=50,double fr=1.1,double qr=0.99,double sr=.95,int lg_b=3,double s_r=0.5);
     ~MultiQueue();
     void Ref(LRUQueueHandle *e,bool addFreCount=false);
     void Unref(LRUQueueHandle* e) ;
@@ -261,8 +262,8 @@ public:
       static Env* mq_env;
 };
 
-MultiQueue::MultiQueue(size_t capacity,int lrus_num,int base_num,uint64_t life_time,double fr,double qr,double sr,int lg_b):capacity_(capacity),lrus_num_(lrus_num),base_num_(base_num),life_time_(life_time),shrinking_(false)
-,force_shrink_ratio(fr),quick_shrink_ratio(qr),slow_shrink_ratio(sr),sum_lru_len(0),log_base(log(lg_b))
+MultiQueue::MultiQueue(size_t capacity,int lrus_num,int base_num,uint64_t life_time,double fr,double qr,double sr,int lg_b,double s_r):capacity_(capacity),lrus_num_(lrus_num),base_num_(base_num),life_time_(life_time),shrinking_(false)
+,force_shrink_ratio(fr),quick_shrink_ratio(qr),slow_shrink_ratio(sr),sum_lru_len(0),log_base(log(lg_b)),slow_ratio(sr)
 {
     //TODO: declare outside  class  in_use and lrus parent must be Initialized,avoid lock crush
       uint64_t base_sum = lg_b;
@@ -470,11 +471,12 @@ void MultiQueue::MayBeShrinkUsage(){
 	// DB is being deleted; no more background compactions
     } else if(usage_ > capacity_*slow_shrink_ratio) {
 	shrinking_ = true;
-	multi_queue_shrinking = true;
 	mq_env->Schedule(&MultiQueue::BGShrinkUsage, this);
 	mutex_.unlock();
 	while(usage_ > capacity_*force_shrink_ratio);
 	mutex_.lock();
+    } else if(usage_ > capacity_*slow_ratio){
+	multi_queue_shrinking = true;
     }
 }
 
@@ -749,9 +751,9 @@ Env* MultiQueue::mq_env;
 uint64_t MultiQueue::base_fre_counts[10]={4,10,28,82,243,730};
 
 
-Cache* NewMultiQueue(size_t capacity,int lrus_num,int base_num,uint64_t life_time,double force_shrink_ratio,double quick_shrink_ratio,double slow_shrink_ratio,int lg_b){
+Cache* NewMultiQueue(size_t capacity,int lrus_num,int base_num,uint64_t life_time,double force_shrink_ratio,double quick_shrink_ratio,double slow_shrink_ratio,int lg_b,double s_r){
     MultiQueue::mq_env = newEnv();
-    return new MultiQueue(capacity,lrus_num,base_num,life_time,force_shrink_ratio,quick_shrink_ratio,slow_shrink_ratio,lg_b);
+    return new MultiQueue(capacity,lrus_num,base_num,life_time,force_shrink_ratio,quick_shrink_ratio,slow_shrink_ratio,lg_b,s_r);
 }
 
 };
