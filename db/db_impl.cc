@@ -1574,7 +1574,7 @@ bool DBImpl::GetProperty(const Slice& property, std::string* value) {
 			statis_->GetTickerHistogram(i));
 	  value->append(buf);
 	}
-	if(statis_->getTickerCount(Tickers::ADD_FILTER_TIME_0) != 0){
+	if(statis_->getTickerCount(Tickers::ADD_FILTER_TIME_0) != 0 || statis_->getTickerCount(Tickers::ADD_FILTER_TIME_0+options_.opEp_.init_filter_nums) != 0){
 	        int i;
 		uint64_t totalAddFilterCount = 0;
 		uint64_t totalAddFilterTime = 0;

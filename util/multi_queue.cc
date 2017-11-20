@@ -498,6 +498,8 @@ inline bool MultiQueue::ShrinkLRU(int k,int64_t remove_charge[],bool force)
 			 usage_ -= delta_charge;
 			 removed_usage += delta_charge;
 			 old->fre_count = Num_Queue(0);   // also decrease fre count
+			 LRU_Remove(old);
+			 LRU_Append(&lrus_[0],old);	
 		    }else{
 			auto old_handle = table_.Remove(old->key(), old->hash);
 			removed_usage += old_handle->charge;
@@ -559,7 +561,7 @@ inline bool MultiQueue::ShrinkLRU(int k,int64_t remove_charge[],bool force)
 void MultiQueue::SlowShrinking(){
     int64_t remove_charge = (usage_ - capacity_*slow_shrink_ratio);
     const int interval = 8;
-    if(remove_charge < 0){
+    if(remove_charge <= 0){
       return ;
     }
     remove_charge = (remove_charge + 7) / 8;
@@ -635,7 +637,10 @@ void MultiQueue::BackgroudShrinkUsage()
 	MeasureTime(Statistics::GetStatistics().get(),Tickers::QUICK_SHRINKING,Env::Default()->NowMicros() - start_micros);
     }
     shrinking_ = false;
-    multi_queue_shrinking = false;
+    //    multi_queue_shrinking = false;
+    mutex_.lock();
+    MayBeShrinkUsage();
+    mutex_.unlock();
 }
 
 Cache::Handle* MultiQueue::Insert(const Slice& key, void* value, size_t charge, void (*deleter)(const Slice& key, void* value)){

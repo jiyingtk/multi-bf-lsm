@@ -134,8 +134,10 @@ void Table::ReadMeta(const Footer& footer) {
   std::string key = "filter."+std::string(id);
   key.append(rep_->options.filter_policy->Name());
   iter->Seek(key);
-  if (iter->Valid() && iter->key() == Slice(key) && multi_queue_shrinking) {
+  if (iter->Valid() && iter->key() == Slice(key)) {
+    if(multi_queue_shrinking){
 	ReadFilter(iter->value());
+    }
   }else{
     fprintf(stderr,"filter iter is not valid\n");
   }
