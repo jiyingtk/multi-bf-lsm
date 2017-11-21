@@ -15,6 +15,7 @@
 #include "leveldb/threadpool.h"
 #include "util/threadpool_imp.h"
 #include "leveldb/statistics.h"
+#include <unistd.h>
 #define handle_error_en(en, msg) \
   do { errno = en; perror(msg); exit(EXIT_FAILURE); } while (0)
 
@@ -168,6 +169,9 @@ public:
 	}
 	explicit MultiFilter(int bits_per_key_per_filter[],int bits_per_key):bits_per_key_(bits_per_key){
 	    int i;
+	    int cpu_count =  sysconf(_SC_NPROCESSORS_CONF);
+	    int base_cpu_id = 8;
+	    
 	    bits_per_key_per_filter_ = new size_t[10];
 	    char name_buf[24];
 	    end_thread = false;
@@ -182,22 +186,27 @@ public:
 	    printf("filters size:%ld\n",filters.size());
 	    cfas = new CreateFilterArg[filters.size()];
 	    i = 0;
-	    int base_cpu_id = 8;
+	
 	    for(std::list<ChildBloomFilterPolicy*>::const_iterator iter = filters.begin() ; iter != filters.end() ; iter++){
 		int *temp_id = new int(i);
 		cpu_set_t cpuset;
 		CPU_ZERO(&cpuset);
 		CPU_SET(base_cpu_id + i, &cpuset);
+		
 		if(pthread_create(pids_+i,NULL,MultiFilter::CreateFilter_T,(void*)(temp_id))!=0){
 		    perror("create thread ");
 		}
-		// int s = pthread_setaffinity_np(pids_[i], sizeof(cpu_set_t), &cpuset);
-		// if (s != 0){
-		//   handle_error_en(s, "pthread_setaffinity_np");
-		// }
 		snprintf(name_buf, sizeof name_buf, "filter:bg%d" ,i);
 		name_buf[sizeof name_buf - 1] = '\0';
 		pthread_setname_np(pids_[i], name_buf);
+		
+		if(base_cpu_id + filters.size() < cpu_count ){
+		    int s = pthread_setaffinity_np(pids_[i], sizeof(cpu_set_t), &cpuset);
+		    if (s != 0){
+			handle_error_en(s, "pthread_setaffinity_np");
+		    }
+		}
+		
 		cfas[i++].ch =*iter;
 	    }
 	    
