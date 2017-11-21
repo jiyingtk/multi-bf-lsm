@@ -68,7 +68,7 @@ Status TableCache::FindTable(uint64_t file_number, uint64_t file_size,
       tf->file = file;
       tf->table = table;
       size_t charge = 0;
-      for(int i = 0 ; i < options_->opEp_.init_filter_nums ; i ++){
+      for(int i = 0 ; i < table->getCurrFilterNum() ; i ++){
 	  charge += FilterPolicy::bits_per_key_per_filter_[i];
       }
       *handle = cache_->Insert(key, tf,charge, &DeleteEntry,true);

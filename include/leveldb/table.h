@@ -58,6 +58,7 @@ class Table {
    size_t AddFilters(int n);
    size_t RemoveFilters(int n);
    size_t getCurrFiltersSize();
+   int getCurrFilterNum();
  private:
   struct Rep;
   Rep* rep_;

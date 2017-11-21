@@ -185,6 +185,10 @@ void Table::ReadFilters(std::vector< Slice >& filter_handle_values,int n)
    }
    MeasureTime(Statistics::GetStatistics().get(),Tickers::ADD_FILTER_TIME_0 + n,Env::Default()->NowMicros() - start_micros);
 }
+int Table::getCurrFilterNum()
+{
+    return rep_->filter->getCurrFiltersNum();
+}
 
 void Table::ReadFilter(const Slice& filter_handle_value) {
   Slice v = filter_handle_value;
