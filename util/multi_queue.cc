@@ -12,7 +12,7 @@
 #include "util/mutexlock.h"
 #include "db/table_cache.h"
 using namespace std;
-bool multi_queue_shrinking = false;
+bool multi_queue_init = true;
 namespace leveldb {
 
 namespace{
@@ -30,7 +30,7 @@ namespace{
     uint32_t hash;      // Hash of key(); used for fast sharding and comparisons
     uint64_t fre_count;   //frequency count 
     uint64_t expire_time; //expire_time = current_time_ + life_time_
-    uint16_t queue_id;   // queue id
+    uint16_t queue_id;   // queue id  start from 0
     bool type;			//"true” represents  tableandfile
     char key_data[1];   // Beginning of key
 
@@ -209,12 +209,14 @@ class MultiQueue:public Cache{
     int base_num_ ;
     std::atomic<bool> shutting_down_;
     double slow_shrink_ratio;
-    double quick_shrink_ratio;
     double force_shrink_ratio;
+    double change_ratio;
     double slow_ratio;
+    double expection_;
+    std::vector<double> fps;
     const double log_base;
 public:
-    MultiQueue(size_t capacity,int lrus_num = 1,int base_num=64,uint64_t life_time=50,double fr=1.1,double qr=0.99,double sr=.95,int lg_b=3,double s_r=0.5);
+    MultiQueue(size_t capacity,int lrus_num = 1,int base_num=64,uint64_t life_time=50,double fr=1.1,double sr=.95,double cr=0.001,int lg_b=3,double s_r=0.5);
     ~MultiQueue();
     void Ref(LRUQueueHandle *e,bool addFreCount=false);
     void Unref(LRUQueueHandle* e) ;
@@ -258,12 +260,14 @@ public:
      void SlowShrinking();
      void QuickShrinking();
      void ForceShrinking();
+     void RecomputeExp(LRUQueueHandle *e);
+     double FalsePositive(LRUQueueHandle *e);
      static uint64_t base_fre_counts[10];
       static Env* mq_env;
 };
 
-MultiQueue::MultiQueue(size_t capacity,int lrus_num,int base_num,uint64_t life_time,double fr,double qr,double sr,int lg_b,double s_r):capacity_(capacity),lrus_num_(lrus_num),base_num_(base_num),life_time_(life_time),shrinking_(false)
-,force_shrink_ratio(fr),quick_shrink_ratio(qr),slow_shrink_ratio(sr),sum_lru_len(0),log_base(log(lg_b)),slow_ratio(sr)
+MultiQueue::MultiQueue(size_t capacity,int lrus_num,int base_num,uint64_t life_time,double fr,double sr,double cr,int lg_b,double s_r):capacity_(capacity),lrus_num_(lrus_num),base_num_(base_num),life_time_(life_time),shrinking_(false)
+,force_shrink_ratio(fr),slow_shrink_ratio(sr),change_ratio(cr),sum_lru_len(0),log_base(log(lg_b)),slow_ratio(sr),expection_(0)
 {
     //TODO: declare outside  class  in_use and lrus parent must be Initialized,avoid lock crush
       uint64_t base_sum = lg_b;
@@ -283,10 +287,13 @@ MultiQueue::MultiQueue(size_t capacity,int lrus_num,int base_num,uint64_t life_t
       base_fre_counts[0] = base_num / 2;
       current_time_ = 0;
       cout<<"Multi-Queue Capacity:"<<capacity_<<endl;
+      int sum_bits = 0;
       for(int i = 0 ; i  < lrus_num ; ++i){
 	cout<<"Base "<< i <<" fre count: "<<base_fre_counts[i]<<endl;
+	sum_bits += FilterPolicy::bits_per_key_per_filter_[i];
+	fps[i] = pow(0.6185,sum_bits);
       }
-
+    
 }
 
 std::string MultiQueue::LRU_Status()
@@ -343,6 +350,63 @@ inline uint64_t MultiQueue::Num_Queue(int queue_id)
     return base_fre_counts[queue_id];
 }
 
+inline double MultiQueue::FalsePositive(LRUQueueHandle* e)
+{
+	leveldb::TableAndFile *tf = reinterpret_cast<leveldb::TableAndFile *>(e->value);
+	return fps[tf->table->getCurrFilterNum() - 1];
+}
+
+void MultiQueue::RecomputeExp(LRUQueueHandle *e)
+{	
+    if(multi_queue_init || (e->queue_id + 1) == lrus_num_){
+	expection_ += FalsePositive(e);
+    }else{
+	uint64_t start_micros = Env::Default()->NowMicros();
+	double now_expection  = expection_ + FalsePositive(e) ;
+	double min_expection = now_expection,change_expection;
+	int need_bits = FilterPolicy::bits_per_key_per_filter_[e->queue_id+1];
+	int remove_bits,min_i = -1 ;
+	for(int i = 1 ; i < lrus_num_ ; i++){
+	    remove_bits = 0;
+	    change_expection =  expection_ - e->fre_count*FalsePositive(e) + e->fre_count*fps[e->queue_id+1]; //TODO: OPTIMIZE
+	    LRUQueueHandle *old = lrus_[i].next;
+	    while(old != &lrus_[i]&&remove_bits < need_bits){
+		if(old->expire_time < current_time_ ){ // expired
+		    remove_bits += FilterPolicy::bits_per_key_per_filter_[i];
+		    change_expection += (old->fre_count*fps[i-1] - old->fre_count*FalsePositive(old));
+		}else{
+		    break;
+		}
+		old = old->next;
+	    }
+	    if(remove_bits >= need_bits && change_expection < min_expection){
+		min_expection = change_expection;
+		min_i = i;
+	    }
+	}
+	if(min_i != -1 && now_expection - min_expection > now_expection*change_ratio){
+	    remove_bits = 0;
+	    LRUQueueHandle *old = lrus_[min_i].next;
+	    while(old != &lrus_[min_i]&&remove_bits < need_bits){
+		    leveldb::TableAndFile *tf = reinterpret_cast<leveldb::TableAndFile *>(old->value);
+		    remove_bits += FilterPolicy::bits_per_key_per_filter_[min_i];
+		    size_t delta_charge = tf->table->RemoveFilters(1);
+		    usage_ -=delta_charge;
+		    MeasureTime(Statistics::GetStatistics().get(),Tickers::REMOVE_EXPIRED_FILTER_TIME_0+min_i,Env::Default()->NowMicros() - start_micros);
+		     --lru_lens_[min_i];
+		    LRU_Remove(old);
+		    ++lru_lens_[min_i - 1];
+		    LRU_Append(&lrus_[min_i - 1],old);	
+		    old = old->next;
+	    }
+	    ++e->queue_id;
+	    expection_ = min_expection;
+	}else{
+	    expection_ = now_expection;
+	}
+    }
+}
+
 void MultiQueue::Ref(LRUQueueHandle* e,bool addFreCount)
 {
      //mutex_.assert_held();
@@ -355,9 +419,10 @@ void MultiQueue::Ref(LRUQueueHandle* e,bool addFreCount)
 	e->refs++;
 	if(addFreCount){
 	    if(e->expire_time > current_time_ ){ //not expired
-		++e->fre_count;
+		RecomputeExp(e);
 	    }else if(e->expire_time < current_time_){   //expired
-		e->fre_count = Num_Queue(e->queue_id);
+		e->fre_count /= 2;
+		expection_ -= e->fre_count*FalsePositive(e);
 	    }
 	}
 	e->expire_time = current_time_ + life_time_;
@@ -374,18 +439,18 @@ void MultiQueue::Unref(LRUQueueHandle* e)
 		free(e);
 	  } else if (e->in_cache && e->refs == 1) {  // note:No longer in use; move to lru_ list.
 		LRU_Remove(e);
-		int qn = Queue_Num(e->fre_count);
-		if(qn > e->queue_id && e->type){  //only add;
-		    leveldb::TableAndFile *tf = reinterpret_cast<leveldb::TableAndFile *>(e->value);
+		//int qn = Queue_Num(e->fre_count);
+		 leveldb::TableAndFile *tf = reinterpret_cast<leveldb::TableAndFile *>(e->value);
+		if(tf->table->getCurrFilterNum() < (e->queue_id+1) && e->type){  //only add;
 		    mutex_.unlock();
-		    int64_t delta_charge = tf->table->AdjustFilters(qn+1);  // not in lru list, so need to worry will be catched by ShrinkUsage
+		    int64_t delta_charge = tf->table->AdjustFilters(e->queue_id+1);  // not in lru list, so need to worry will be catched by ShrinkUsage
 		    mutex_.lock();
 		    e->charge += delta_charge;
 		    usage_ += delta_charge;
 		    MayBeShrinkUsage();   
 		 }
-		LRU_Append(&lrus_[qn], e);   
-		++lru_lens_[qn];
+		LRU_Append(&lrus_[e->queue_id], e);   
+		++lru_lens_[e->queue_id];
 		++sum_lru_len;
 	  }
 	  mutex_.unlock();
@@ -464,20 +529,11 @@ void MultiQueue::Release(Cache::Handle* handle) {
 
 void MultiQueue::MayBeShrinkUsage(){
     //mutex_.assertheld
-    if (shrinking_) {
-	// Already scheduled
-	multi_queue_shrinking = true;
-    } else if (shutting_down_) {
-	// DB is being deleted; no more background compactions
-    } else if(usage_ > capacity_*slow_shrink_ratio) {
-	shrinking_ = true;
-	mq_env->Schedule(&MultiQueue::BGShrinkUsage, this);
-	mutex_.unlock();
-	while(usage_ > capacity_*force_shrink_ratio);
-	mutex_.lock();
-    } else if(usage_ > capacity_*slow_ratio){
-	multi_queue_shrinking = true;
-    }
+   while(usage_ > capacity_){
+        multi_queue_init = false;
+        int64_t overflow_charge = usage_ - capacity_;
+	ShrinkLRU(0,&overflow_charge,true);
+   }
 }
 
 void MultiQueue::BGShrinkUsage(void *mq){
@@ -575,11 +631,11 @@ void MultiQueue::SlowShrinking(){
 	    }
 	    mutex_.unlock();
 	    remove_charge = remove_charge*1.05;
-	    for (uint32_t tries = 0; tries < 200; ++tries);
+	 //   for (uint32_t tries = 0; tries < 200; ++tries);
     }
     
 }
-
+/*
 void MultiQueue::QuickShrinking()
 {
 	int64_t remove_charges[8];
@@ -602,9 +658,9 @@ void MultiQueue::QuickShrinking()
 	    if(shrinkLRU0_flag){
 		remove_charges[0] = remove_charges[0]*1.05;
 	    }
-	    for (uint32_t tries = 0; tries < 100; ++tries);
+	 //   for (uint32_t tries = 0; tries < 100; ++tries);
 	}
-}
+}*/
 
 void MultiQueue::ForceShrinking()
 {
@@ -616,7 +672,7 @@ void MultiQueue::ForceShrinking()
 	while(usage_ > capacity_ * force_shrink_ratio){
 	     mutex_.lock();
 	     ShrinkLRU(0,remove_charges,true);
-	     ShrinkLRU(1,remove_charges,true);
+	     ShrinkLRU(1,remove_charges,true); 
 	     mutex_.unlock();
 	}
 }
@@ -630,9 +686,6 @@ void MultiQueue::BackgroudShrinkUsage()
     if(usage_ > capacity_*force_shrink_ratio){
 	ForceShrinking();
 	MeasureTime(Statistics::GetStatistics().get(),Tickers::FORCE_SHRINKING,Env::Default()->NowMicros() - start_micros);
-    }else if(usage_ < capacity_*quick_shrink_ratio){
-	SlowShrinking();
-	MeasureTime(Statistics::GetStatistics().get(),Tickers::SLOW_SHRINKING,Env::Default()->NowMicros() - start_micros);
     }else{
 	SlowShrinking();  //also call SlowShrinking
 	//QuickShrinking();
@@ -672,7 +725,8 @@ Cache::Handle* MultiQueue::Insert(const Slice& key, uint32_t hash, void* value, 
   e->refs = 1;  // for the returned handle.
   e->type = type;
   e->fre_count = 0;
-  e->queue_id = 0;   //new entry always have 1 filter and in lru list 0
+  leveldb::TableAndFile *tf = reinterpret_cast<leveldb::TableAndFile *>(e->value);
+  e->queue_id = tf->table->getCurrFilterNum() - 1;   //
   e->expire_time = current_time_ + life_time_;
   memcpy(e->key_data, key.data(), key.size());
   
@@ -751,9 +805,9 @@ Env* MultiQueue::mq_env;
 uint64_t MultiQueue::base_fre_counts[10]={4,10,28,82,243,730};
 
 
-Cache* NewMultiQueue(size_t capacity,int lrus_num,int base_num,uint64_t life_time,double force_shrink_ratio,double quick_shrink_ratio,double slow_shrink_ratio,int lg_b,double s_r){
+Cache* NewMultiQueue(size_t capacity,int lrus_num,int base_num,uint64_t life_time,double force_shrink_ratio,double slow_shrink_ratio,double change_ratio,int lg_b,double s_r){
     MultiQueue::mq_env = newEnv();
-    return new MultiQueue(capacity,lrus_num,base_num,life_time,force_shrink_ratio,quick_shrink_ratio,slow_shrink_ratio,lg_b,s_r);
+    return new MultiQueue(capacity,lrus_num,base_num,life_time,force_shrink_ratio,slow_shrink_ratio,change_ratio,lg_b,s_r);
 }
 
 };
