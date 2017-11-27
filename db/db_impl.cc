@@ -1537,15 +1537,8 @@ bool DBImpl::GetProperty(const Slice& property, std::string* value) {
 		value->append(buf);    
 	    }
 	}
-	if(statis_->getTickerCount(Tickers::REMOVE_EXPIRED_FILTER_TIME_0) != 0||statis_->getTickerCount(Tickers::REMOVE_HEAD_FILTER_TIME_0) != 0){
+	if(true){
 	    int i;
-	    value->append("Background Shrinking:\n ");
-	    for(i = Tickers::SLOW_SHRINKING ; i <= Tickers::FORCE_SHRINKING  ; i ++){
-		snprintf(buf,sizeof(buf),"%s  count: %lu time: %lu \n",TickersNameMap[i].second.c_str(),
-			statis_->getTickerCount(i),
-			statis_->GetTickerHistogram(i));
-		value->append(buf);
-	    }
 	    value->append(" Remove Expired Filter \n");
 	     for(i = Tickers::REMOVE_EXPIRED_FILTER_TIME_0 ; i <= Tickers::REMOVE_EXPIRED_FILTER_TIME_6  ; i ++){
 		if(statis_->getTickerCount(i) == 0){
