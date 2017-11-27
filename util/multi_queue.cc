@@ -291,7 +291,7 @@ MultiQueue::MultiQueue(size_t capacity,int lrus_num,int base_num,uint64_t life_t
       for(int i = 0 ; i  < lrus_num ; ++i){
 	cout<<"Base "<< i <<" fre count: "<<base_fre_counts[i]<<endl;
 	sum_bits += FilterPolicy::bits_per_key_per_filter_[i];
-	fps[i] = pow(0.6185,sum_bits);
+	fps.push_back( pow(0.6185,sum_bits) );
       }
     
 }
@@ -388,8 +388,8 @@ void MultiQueue::RecomputeExp(LRUQueueHandle *e)
 	}
 	if(min_i != -1 && now_expection - min_expection > now_expection*change_ratio){
 	    remove_bits = 0;
-	    LRUQueueHandle *old = lrus_[min_i].next;
-	    while(old != &lrus_[min_i]&&remove_bits < need_bits){
+	    while(lrus_[min_i].next != &lrus_[min_i]&&remove_bits < need_bits){
+		    LRUQueueHandle *old = lrus_[min_i].next;
 		    leveldb::TableAndFile *tf = reinterpret_cast<leveldb::TableAndFile *>(old->value);
 		    remove_bits += FilterPolicy::bits_per_key_per_filter_[min_i];
 		    size_t delta_charge = tf->table->RemoveFilters(1);
@@ -399,7 +399,6 @@ void MultiQueue::RecomputeExp(LRUQueueHandle *e)
 		    LRU_Remove(old);
 		    ++lru_lens_[min_i - 1];
 		    LRU_Append(&lrus_[min_i - 1],old);	
-		    old = old->next;
 	    }
 	    ++e->queue_id;
 	    expection_ = min_expection;
