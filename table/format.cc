@@ -153,10 +153,14 @@ Status ReadBlock(RandomAccessFile* file,
 
   // Read the block contents as well as the type/crc footer.
   // See table_builder.cc for the code that built this structure.
+  uint64_t start_micros = Env::Default()->NowMicros();
   size_t n = static_cast<size_t>(handle.size());
   char* buf = new char[n + kBlockTrailerSize];
+  MeasureTime(Statistics::GetStatistics().get(),Tickers::READ_BLOCK_NEW_TIME,Env::Default()->NowMicros() - start_micros);
   Slice contents;
+  start_micros = Env::Default()->NowMicros();
   Status s = file->Read(handle.offset(), n + kBlockTrailerSize, &contents, buf);
+  MeasureTime(Statistics::GetStatistics().get(),Tickers::READ_BLOCK_FILE_READ_TIME,Env::Default()->NowMicros() - start_micros);
   if (!s.ok()) {
     delete[] buf;
     return s;

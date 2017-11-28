@@ -267,7 +267,7 @@ public:
 };
 
 MultiQueue::MultiQueue(size_t capacity,int lrus_num,int base_num,uint64_t life_time,double fr,double sr,double cr,int lg_b,double s_r):capacity_(capacity),lrus_num_(lrus_num),base_num_(base_num),life_time_(life_time),shrinking_(false)
-  ,force_shrink_ratio(fr),slow_shrink_ratio(sr),change_ratio(cr),sum_lru_len(0),log_base(log(lg_b)),slow_ratio(sr),expection_(0),usage_(0)
+  ,force_shrink_ratio(fr),slow_shrink_ratio(sr),change_ratio(cr),sum_lru_len(0),log_base(log(lg_b)),slow_ratio(sr),expection_(0),usage_(0),shutting_down_(false)
 {
     //TODO: declare outside  class  in_use and lrus parent must be Initialized,avoid lock crush
       uint64_t base_sum = lg_b;
