@@ -1589,7 +1589,7 @@ bool DBImpl::GetProperty(const Slice& property, std::string* value) {
 
 	}
 	value->append(statis_->ToString(Tickers::SET_FRE_COUNT_IN_COMPACTION_TIME,Tickers::SET_FRE_COUNT_IN_COMPACTION_TIME));
-	value->append(statis_->ToString(Tickers::FINDTABLE,Tickers::READ_BLOCK_FILE_READ_TIME));
+	value->append(statis_->ToString(Tickers::FINDTABLE,Tickers::UNGETALIGNEDBUFFER_TIME));
 	value->append(table_cache_->LRU_Status());
 	value->append(printStatistics());
 	statis_->reset();

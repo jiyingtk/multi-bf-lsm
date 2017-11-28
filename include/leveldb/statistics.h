@@ -62,6 +62,8 @@ namespace leveldb{
 	BLOCK_READ_TIME,
 	READ_BLOCK_NEW_TIME,
 	READ_BLOCK_FILE_READ_TIME,
+	GETALIGNEDBUFFER_TIME,
+	UNGETALIGNEDBUFFER_TIME,
 	TICKER_ENUM_MAX
  };  
 
@@ -119,7 +121,9 @@ namespace leveldb{
      {FINDTABLE,"leveldb.findtable.time"},
      {INTERNALGET,"leveldb.internalget.time"},
      {RELEASE,"leveldb.release.time"},
-      {BLOCK_READ_TIME,"leveldb.block.read.time"}
+      {BLOCK_READ_TIME,"leveldb.block.read.time"},
+      {GETALIGNEDBUFFER_TIME,"leveldb.get.aligned.buffer.time"},
+      {UNGETALIGNEDBUFFER_TIME,"leveldb.unget.aligned.buffer.time"}
 };
 
 struct HistogramData{

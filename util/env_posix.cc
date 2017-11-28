@@ -26,7 +26,7 @@
 #include "util/mutexlock.h"
 #include "util/posix_logger.h"
 #include "util/env_posix_test_helper.h"
-
+#include "leveldb/statistics.h"
 namespace leveldb {
 
 inline size_t TruncateToPageBoundary(size_t page_size, size_t s) {
@@ -259,7 +259,9 @@ class PosixRandomAccessFile: public RandomAccessFile {
   virtual Status Read(uint64_t offset, size_t n, Slice* result,
                       char* scratch) const {
     int fd = fd_;
+    uint64_t start_micros = Env::Default()->NowMicros();
     AlignedBuffer* abuf = AlignedBuffer::GetAlignedBuffer();
+    MeasureTime(Statistics::GetStatistics().get(),Tickers::GETALIGNEDBUFFER_TIME,Env::Default()->NowMicros() - start_micros);
     if (temporary_fd_) {
       int o_flag = O_RDONLY;
       if(direct_IO_flag_){
@@ -301,7 +303,9 @@ class PosixRandomAccessFile: public RandomAccessFile {
       // Close the temporary file descriptor opened earlier.
       close(fd);
     }
+    start_micros = Env::Default()->NowMicros();
     AlignedBuffer::UngetAlignedBuffer(abuf);
+    MeasureTime(Statistics::GetStatistics().get(),Tickers::UNGETALIGNEDBUFFER_TIME,Env::Default()->NowMicros() - start_micros);
     return s;
   }
    virtual Status Reads(uint64_t offset, size_t n, Slice  results[],
