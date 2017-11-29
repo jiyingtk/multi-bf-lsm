@@ -121,9 +121,11 @@ namespace leveldb{
      {FINDTABLE,"leveldb.findtable.time"},
      {INTERNALGET,"leveldb.internalget.time"},
      {RELEASE,"leveldb.release.time"},
-      {BLOCK_READ_TIME,"leveldb.block.read.time"},
-      {GETALIGNEDBUFFER_TIME,"leveldb.get.aligned.buffer.time"},
-      {UNGETALIGNEDBUFFER_TIME,"leveldb.unget.aligned.buffer.time"}
+     {BLOCK_READ_TIME,"leveldb.block.read.time"},
+     {READ_BLOCK_NEW_TIME,"leveldb.block.new.time"},
+     {READ_BLOCK_FILE_READ_TIME,"leveldb.read.block.file.read.time"},
+     {GETALIGNEDBUFFER_TIME,"leveldb.get.aligned.buffer.time"},
+     {UNGETALIGNEDBUFFER_TIME,"leveldb.unget.aligned.buffer.time"}
 };
 
 struct HistogramData{
