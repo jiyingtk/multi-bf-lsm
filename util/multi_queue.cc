@@ -566,6 +566,10 @@ inline bool MultiQueue::ShrinkLRU(int k,int64_t remove_charge[],bool force)
 			expection_ -= old->fre_count*fps[k];
 			old->fre_count = Num_Queue(k-1);   // also decrease fre count
 			expection_ += old->fre_count*fps[k-1];
+			--lru_lens_[k];
+			LRU_Remove(old);
+			++lru_lens_[k-1];
+			LRU_Append(&lrus_[k-1],old);	
 		    }else{
 			auto old_handle = table_.Remove(old->key(), old->hash);
 			removed_usage += old_handle->charge;
@@ -575,10 +579,6 @@ inline bool MultiQueue::ShrinkLRU(int k,int64_t remove_charge[],bool force)
 			    assert(erased);
 			}
 		    }
-		    --lru_lens_[k];
-		    LRU_Remove(old);
-		    ++lru_lens_[k-1];
-		    LRU_Append(&lrus_[k-1],old);	
 		}else{
 		    break;
 		}
