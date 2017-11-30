@@ -183,7 +183,7 @@ Iterator* Table::BlockReader(void* arg,
   Status s = handle.DecodeFrom(&input);
   // We intentionally allow extra stuff in index_value so that we
   // can add more features in the future.
-
+  uint64_t start_micros = Env::Default()->NowMicros();
   if (s.ok()) {
     BlockContents contents;
     if (block_cache != NULL) {
@@ -194,6 +194,7 @@ Iterator* Table::BlockReader(void* arg,
       cache_handle = block_cache->Lookup(key);
       if (cache_handle != NULL) {
         block = reinterpret_cast<Block*>(block_cache->Value(cache_handle));
+	MeasureTime(Statistics::GetStatistics().get(),Tickers::BLOCKREADER_CACHE_TIME,Env::Default()->NowMicros() - start_micros);
       } else {
         s = ReadBlock(table->rep_->file, options, handle, &contents);
         if (s.ok()) {
@@ -203,9 +204,11 @@ Iterator* Table::BlockReader(void* arg,
                 key, block, block->size(), &DeleteCachedBlock);
           }
         }
+	MeasureTime(Statistics::GetStatistics().get(),Tickers::BLOCKREADER_NOCACHE_TIME,Env::Default()->NowMicros() - start_micros);
       }
     } else {
       s = ReadBlock(table->rep_->file, options, handle, &contents);
+      MeasureTime(Statistics::GetStatistics().get(),Tickers::BLOCKREADER_NOCACHE_TIME,Env::Default()->NowMicros() - start_micros);
       if (s.ok()) {
         block = new Block(contents);
       }
