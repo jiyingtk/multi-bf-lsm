@@ -397,6 +397,7 @@ Status Table::InternalGet(const ReadOptions& options, const Slice& k,
   Status s;
   Iterator* iiter = rep_->index_block->NewIterator(rep_->options.comparator);
   iiter->Seek(k);
+  uint64_t start_micros = Env::Default()->NowMicros();
   if (iiter->Valid()) {
     Slice handle_value = iiter->value();
     FilterBlockReader* filter = rep_->filter;
@@ -405,8 +406,9 @@ Status Table::InternalGet(const ReadOptions& options, const Slice& k,
         handle.DecodeFrom(&handle_value).ok() &&
         !filter->KeyMayMatch(handle.offset(), k)) {
       // Not found
+	MeasureTime(Statistics::GetStatistics().get(),Tickers::FILTER_MATCHES_TIME,Env::Default()->NowMicros() - start_micros);
     } else {
-	uint64_t start_micros = Env::Default()->NowMicros();
+	start_micros = Env::Default()->NowMicros();
 	Iterator* block_iter = BlockReader(this, options, iiter->value());
 	block_iter->Seek(k);
 	if (block_iter->Valid()) {
