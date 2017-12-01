@@ -100,7 +100,7 @@ class HandleTable {   // a list store LRUQueueHandle's address , don't care queu
   }
 
   void Resize() {
-    uint32_t new_length = 4;
+    uint32_t new_length = 131072;
     while (new_length < elems_) {
       new_length *= 2;
     }
