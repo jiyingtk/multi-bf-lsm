@@ -104,11 +104,11 @@ class FilterPolicy;
 
 
 std::atomic<bool> FilterBlockReader::start_matches[8];
-std::atomic<bool> FilterBlockReader::matches[8];
+bool FilterBlockReader::matches[8];
 std::vector<const char*> *FilterBlockReader::filter_offsets = NULL;
 std::vector<const char*> *FilterBlockReader::filter_datas = NULL;
-std::atomic<int> FilterBlockReader::filter_index(0);
-std::atomic<bool> FilterBlockReader::pthread_created(false);
+int FilterBlockReader::filter_index(0);
+bool FilterBlockReader::pthread_created(false);
 bool FilterBlockReader::end_thread(false);
 const FilterPolicy* FilterBlockReader::filter_policy(NULL);
 Slice FilterBlockReader::filter_key;
@@ -146,7 +146,7 @@ void FilterBlockReader::CreateThread(int filters_num,const leveldb::FilterPolicy
     int cpu_count =  sysconf(_SC_NPROCESSORS_CONF);
     filter_policy = policy;
     int base_cpu_id = 16;
-    for(i = 0 ; i < 8 ; i++){
+    for(i = 0 ; i < filters_num ; i++){
 	start_matches[i] = false;
 	matches[i] = true;
     }
@@ -185,6 +185,10 @@ FilterBlockReader::FilterBlockReader(const FilterPolicy* policy,
   datas_[0] = contents.data();
   offsets_[0] = datas_[0] + last_word;
   num_ = (n - 5 - last_word) / 4;
+  if(!pthread_created){
+        pthread_created = true;
+	CreateThread(policy_->filterNums(),policy_);
+  }
 }
 
 
@@ -229,10 +233,6 @@ bool FilterBlockReader::KeyMayMatch(uint64_t block_offset, const Slice& key) {
   uint64_t index = block_offset >> base_lg_;
   bool result = true;
   int i;
-  if(!pthread_created){
-	CreateThread(policy_->filterNums(),policy_);
-	pthread_created = true;
-  }
   if (index < num_) {
       filter_key = key;
       filter_datas = &datas_;

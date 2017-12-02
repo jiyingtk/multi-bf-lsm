@@ -73,11 +73,11 @@ class FilterBlockReader {
   int curr_num_of_filters_;
   void readFilters(const Slice& contents);
   static std::atomic<bool> start_matches[8];
-  static std::atomic<bool> matches[8];
+  static bool matches[8];
   static std::vector<const char*> *filter_offsets;
-    static std::vector<const char*> *filter_datas;
-  static std::atomic<int> filter_index;
-  static std::atomic<bool> pthread_created;
+  static std::vector<const char*> *filter_datas;
+  static int filter_index;
+  static bool pthread_created;
   static void CreateThread(int filters_num,const FilterPolicy *policy);
   static pthread_t pids_[8];
   static void *KeyMayMatch_Thread(void *arg);
