@@ -49,7 +49,9 @@ class FilterPolicy {
   // This method may return true or false if the key was not on the
   // list, but it should aim to return false with a high probability.
   virtual bool KeyMayMatch(const Slice& key, const Slice& filter) const = 0;
-  
+  virtual bool KeyMayMatch(const Slice& key,const Slice& filter,int id) const {
+	return true;
+  }
   virtual bool KeyMayMatchFilters(const Slice& key, const std::list<leveldb::Slice>& filters) const {
 	return true;
   }

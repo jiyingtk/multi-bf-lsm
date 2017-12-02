@@ -7,7 +7,12 @@
 #include "leveldb/filter_policy.h"
 #include "util/coding.h"
 #include <util/stop_watch.h>
-
+#include <unistd.h>
+#include<atomic>
+#ifndef handle_error_en
+#define handle_error_en(en, msg) \
+  do { errno = en; perror(msg); exit(EXIT_FAILURE); } while (0)
+#endif
 namespace leveldb {
 
 // See doc/table_format.md for an explanation of the filter block format.
@@ -95,6 +100,75 @@ void FilterBlockBuilder::GenerateFilter() {
   keys_.clear();
   start_.clear();
 }
+class FilterPolicy;
+
+
+std::atomic<bool> FilterBlockReader::start_matches[8];
+std::atomic<bool> FilterBlockReader::matches[8];
+std::vector<const char*> *FilterBlockReader::filter_offsets = NULL;
+std::vector<const char*> *FilterBlockReader::filter_datas = NULL;
+std::atomic<int> FilterBlockReader::filter_index(0);
+std::atomic<bool> FilterBlockReader::pthread_created(false);
+bool FilterBlockReader::end_thread(false);
+const FilterPolicy* FilterBlockReader::filter_policy(NULL);
+Slice FilterBlockReader::filter_key;
+pthread_t FilterBlockReader::pids_[8];
+
+void *FilterBlockReader::KeyMayMatch_Thread(void* arg)
+{
+       int id = *(int*)(arg);
+	delete (int *)(arg);
+	uint32_t start,limit;
+	while(true){
+	    while(!start_matches[id]&&!end_thread){
+		sched_yield();
+	    }
+	    if(end_thread){
+		break;
+	     }
+	    start = DecodeFixed32((*filter_offsets)[id] + filter_index*4);
+	    limit = DecodeFixed32((*filter_offsets)[id] + filter_index*4 + 4);
+	    if (start <= limit && limit <= static_cast<size_t>((*filter_offsets)[id] - (*filter_datas)[id])) {
+		Slice filter = Slice((*filter_datas)[id] + start, limit - start);
+		 matches[id] = filter_policy->KeyMayMatch(filter_key,filter,id);
+	    } else if (start == limit) {
+		matches[id] = false;
+	    }
+	    start_matches[id] = false;
+	}
+}
+
+
+void FilterBlockReader::CreateThread(int filters_num,const leveldb::FilterPolicy *policy)
+{
+    int i = 0;
+    char name_buf[24];
+    int cpu_count =  sysconf(_SC_NPROCESSORS_CONF);
+    filter_policy = policy;
+    int base_cpu_id = 16;
+    for(i = 0 ; i < 8 ; i++){
+	start_matches[i] = false;
+	matches[i] = true;
+    }
+    for(i = 0 ; i < filters_num ; i++){
+	int *temp_id = new int(i);
+	cpu_set_t cpuset;
+	CPU_ZERO(&cpuset);
+	CPU_SET(base_cpu_id + i, &cpuset);
+	if(pthread_create(pids_+i,NULL, FilterBlockReader::KeyMayMatch_Thread,(void*)(temp_id))!=0){
+		  perror("create thread ");
+	}
+	snprintf(name_buf, sizeof name_buf, "filter_match:bg%d" ,i);
+	name_buf[sizeof name_buf - 1] = '\0';
+	pthread_setname_np(pids_[i], name_buf);
+	if(base_cpu_id + filters_num < cpu_count ){
+		int s = pthread_setaffinity_np(pids_[i], sizeof(cpu_set_t), &cpuset);
+		if (s != 0){
+		    handle_error_en(s, "pthread_setaffinity_np");
+		  }
+	}
+    }
+}
 
 FilterBlockReader::FilterBlockReader(const FilterPolicy* policy,
                                      const Slice& contents)
@@ -153,23 +227,32 @@ void FilterBlockReader::RemoveFilters(int n)
 
 bool FilterBlockReader::KeyMayMatch(uint64_t block_offset, const Slice& key) {
   uint64_t index = block_offset >> base_lg_;
-  std::list<Slice> filters;
+  bool result = true;
+  int i;
+  if(!pthread_created){
+	CreateThread(policy_->filterNums(),policy_);
+	pthread_created = true;
+  }
   if (index < num_) {
-     for(int i = 0 ; i < offsets_.size() ; i++){
-	uint32_t start = DecodeFixed32(offsets_[i] + index*4);
-	uint32_t limit = DecodeFixed32(offsets_[i] + index*4 + 4);
-	if (start <= limit && limit <= static_cast<size_t>(offsets_[i] - datas_[i])) {
-	    Slice filter = Slice(datas_[i] + start, limit - start);
-	    filters.push_back(filter);
-	} else if (start == limit) {
-	    // Empty filters do not match any keys
-	    printf("empty filters\n");
-	    return false;
+      filter_key = key;
+      filter_datas = &datas_;
+      filter_offsets = &offsets_;
+      filter_index = index;
+     for( i = 0 ; i < offsets_.size() ; i++){
+	start_matches[i] = true;
+     }
+     for( i = 0 ; i < offsets_.size() ; ){
+	if(start_matches[i]){
+	    continue;
+	}else{
+	    result = result && matches[i];
+	    ++i;
 	}
      }
-     return policy_->KeyMayMatchFilters(key,filters);
+     return result;
   }
   return true;  // Errors are treated as potential matches
 }
+
 
 }
