@@ -118,6 +118,12 @@ bool InternalFilterPolicy::KeyMayMatch(const Slice& key, const Slice& f) const {
   return user_policy_->KeyMayMatch(ExtractUserKey(key), f);
 }
 
+bool InternalFilterPolicy::KeyMayMatch(const Slice& key, const Slice& filter, int id) const
+{
+    return user_policy_->KeyMayMatch(key, filter, id);
+}
+
+
 bool InternalFilterPolicy::KeyMayMatchFilters(const Slice& key, const std::list< Slice>& filters) const
 {
     return user_policy_->KeyMayMatchFilters(ExtractUserKey(key),filters);
