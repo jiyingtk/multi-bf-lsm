@@ -29,6 +29,7 @@
 #include "table/block.h"
 #include "table/merger.h"
 #include "table/two_level_iterator.h"
+#include <table/filter_block.h>
 #include "util/coding.h"
 #include "util/logging.h"
 #include "util/mutexlock.h"
@@ -207,6 +208,7 @@ DBImpl::~DBImpl() {
   if (owns_cache_) {
     delete options_.block_cache;
   }
+ // FilterBlockReader::end_thread = true;
   //AlignedBuffer::FreeAlignedBuffers();
 }
 
