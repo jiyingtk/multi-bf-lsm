@@ -16,6 +16,7 @@
 #include "leveldb/slice.h"
 #include "util/hash.h"
 #include<list>
+#include<atomic>
 namespace leveldb {
 
 class FilterPolicy;
@@ -61,6 +62,7 @@ class FilterBlockReader {
   inline int getCurrFiltersNum(){
     return curr_num_of_filters_;  
   }
+  static bool end_thread;
  private:
   const FilterPolicy* policy_;
   std::vector<const char*> datas_;    // Pointer to filter data (at block-start)
@@ -70,6 +72,17 @@ class FilterBlockReader {
   int max_num_of_filters_;
   int curr_num_of_filters_;
   void readFilters(const Slice& contents);
+  static std::atomic<bool> start_matches[8];
+  static std::atomic<bool> matches[8];
+  static std::vector<const char*> *filter_offsets;
+    static std::vector<const char*> *filter_datas;
+  static std::atomic<int> filter_index;
+  static std::atomic<bool> pthread_created;
+  static void CreateThread(int filters_num,const FilterPolicy *policy);
+  static pthread_t pids_[8];
+  static void *KeyMayMatch_Thread(void *arg);
+  static const FilterPolicy *filter_policy;
+  static Slice filter_key;
 };
 
 }

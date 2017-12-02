@@ -131,7 +131,7 @@ struct CreateFilterArg{
 };
 class MultiFilter:public FilterPolicy{
 private:
-	std::list<ChildBloomFilterPolicy*> filters;
+	std::vector<ChildBloomFilterPolicy*> filters;
 	size_t bits_per_key_;
 	static pthread_mutex_t filter_mutexs_[10];
 	static pthread_cond_t filter_conds_[10];
@@ -187,7 +187,7 @@ public:
 	    cfas = new CreateFilterArg[filters.size()];
 	    i = 0;
 	
-	    for(std::list<ChildBloomFilterPolicy*>::const_iterator iter = filters.begin() ; iter != filters.end() ; iter++){
+	    for(std::vector<ChildBloomFilterPolicy*>::const_iterator iter = filters.begin() ; iter != filters.end() ; iter++){
 		int *temp_id = new int(i);
 		cpu_set_t cpuset;
 		CPU_ZERO(&cpuset);
@@ -214,7 +214,7 @@ public:
 	
 	virtual void CreateFilter(const Slice * keys,int n, std::string *dst) const{
 	    int i = 0;
-	    for(std::list<ChildBloomFilterPolicy*>::const_iterator iter = filters.begin() ; iter != filters.end() ; iter++){
+	    for(std::vector<ChildBloomFilterPolicy*>::const_iterator iter = filters.begin() ; iter != filters.end() ; iter++){
 		(*iter)->CreateFilter(keys,n,dst+i);
 		i++;
 	    }
@@ -239,10 +239,14 @@ public:
 	    MeasureTime(Statistics::GetStatistics().get(),Tickers::FILTER_WAIT_TIME,Env::Default()->NowMicros() - start_micros);
 	    curr_completed_filter_num_ = 0;
 	}
-	virtual bool KeyMayMatch(const Slice& key, const Slice& bloom_filter) const{}
-	
+	virtual bool KeyMayMatch(const Slice& key, const Slice& bloom_filter,int id) const{
+	    return filters[id]->KeyMayMatch(key,bloom_filter);
+	}
+	virtual bool KeyMayMatch(const Slice& key, const Slice& bloom_filter) const{
+	    return true;
+	}
 	virtual bool KeyMayMatchFilters(const Slice& key, const std::list<Slice> &filter_strs) const{
-	   std::list<ChildBloomFilterPolicy*>::const_iterator filter_iter = filters.begin();
+	   std::vector<ChildBloomFilterPolicy*>::const_iterator filter_iter = filters.begin();
 	   for(std::list<Slice>::const_iterator filter_strs_iter = filter_strs.begin() ; filter_strs_iter != filter_strs.end() ; filter_strs_iter++){
 		if(!(*filter_iter)->KeyMayMatch(key,*filter_strs_iter)){
 		    return false;
