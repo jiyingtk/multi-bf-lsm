@@ -185,10 +185,6 @@ FilterBlockReader::FilterBlockReader(const FilterPolicy* policy,
   datas_[0] = contents.data();
   offsets_[0] = datas_[0] + last_word;
   num_ = (n - 5 - last_word) / 4;
-  if(!pthread_created){
-        pthread_created = true;
-	CreateThread(policy_->filterNums(),policy_);
-  }
 }
 
 
@@ -231,25 +227,21 @@ void FilterBlockReader::RemoveFilters(int n)
 
 bool FilterBlockReader::KeyMayMatch(uint64_t block_offset, const Slice& key) {
   uint64_t index = block_offset >> base_lg_;
-  bool result = true;
-  int i;
+  std::list<Slice> filters;
   if (index < num_) {
-      filter_key = key;
-      filter_datas = &datas_;
-      filter_offsets = &offsets_;
-      filter_index = index;
-     for( i = 0 ; i < offsets_.size() ; i++){
-	start_matches[i] = true;
+     for(int i = 0 ; i < offsets_.size() ; i++){
+	uint32_t start = DecodeFixed32(offsets_[i] + index*4);
+        uint32_t limit = DecodeFixed32(offsets_[i] + index*4 + 4);
+        if (start <= limit && limit <= static_cast<size_t>(offsets_[i] - datas_[i])) {
+            Slice filter = Slice(datas_[i] + start, limit - start);
+            filters.push_back(filter);
+	} else if (start == limit) {
+            // Empty filters do not match any keys                                                                                                                      
+           // printf("empty filters\n");
+            return false;
+        }
      }
-     for( i = 0 ; i < offsets_.size() ; ){
-	if(start_matches[i]){
-	    continue;
-	}else{
-	    result = result && matches[i];
-	    ++i;
-	}
-     }
-     return result;
+     return policy_->KeyMayMatchFilters(key,filters);
   }
   return true;  // Errors are treated as potential matches
 }
