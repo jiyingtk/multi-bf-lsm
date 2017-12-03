@@ -27,6 +27,8 @@
 #include "util/posix_logger.h"
 #include "util/env_posix_test_helper.h"
 #include "leveldb/statistics.h"
+#include <sys/uio.h>
+
 namespace leveldb {
 
 inline size_t TruncateToPageBoundary(size_t page_size, size_t s) {
@@ -312,8 +314,8 @@ class PosixRandomAccessFile: public RandomAccessFile {
                       char* scratch[],size_t lens[],int num) const {
     Status s;
     ssize_t r;
-    AlignedBuffer *abuf = AlignedBuffer::GetAlignedBuffer();
     if(direct_IO_flag_){
+	AlignedBuffer *abuf = AlignedBuffer::GetAlignedBuffer();
 	size_t alignment = abuf->alignment_;
 	size_t aligned_offset = TruncateToPageBoundary(alignment, offset);
 	size_t offset_advance = offset - aligned_offset;
@@ -333,18 +335,24 @@ class PosixRandomAccessFile: public RandomAccessFile {
 		results[i] = Slice(scratch[i],lens[i]);
 	    }
 	}
+	AlignedBuffer::UngetAlignedBuffer(abuf);
     }else{
-      for(int i = 0 ; i < num ; ++i){
-	    r = pread(fd_, scratch[i], lens[i], static_cast<off_t>(offset));
-	    offset += lens[i];
-	    results[i] = Slice(scratch[i], (r < 0) ? 0 : r);
-	    if (r < 0) {
+      int i;
+      static struct iovec iov[8];
+      for(i = 0 ; i < num ; ++i){
+	    iov[i].iov_base = scratch[i];
+	    iov[i].iov_len = lens[i];
+      }
+      r = preadv(fd_, iov,num, static_cast<off_t>(offset));
+      for(i = 0 ; i < num ; ++i){
+	  if (r < 0) {
 		// An error: return a non-ok status
 		s = PosixError(filename_, errno);
+		break;
 	    }
+	    results[i] = Slice(scratch[i], lens[i]);
       }
     }
-    AlignedBuffer::UngetAlignedBuffer(abuf);
     return s;
   }
 };
