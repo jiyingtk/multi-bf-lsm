@@ -98,6 +98,7 @@ class Cache {
   virtual size_t TotalCharge() const = 0;
   virtual std::string LRU_Status(){}
   virtual void addCurrentTime(){}
+  virtual uint64_t GetLRUFreCount() const{} 
  private:
   void LRU_Remove(Handle* e);
   void LRU_Append(Handle* e);

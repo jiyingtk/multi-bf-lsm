@@ -59,6 +59,7 @@ class Table {
    size_t RemoveFilters(int n);
    size_t getCurrFiltersSize();
    int getCurrFilterNum();
+   static uint64_t LRU_Fre_Count;
  private:
   struct Rep;
   Rep* rep_;
@@ -76,7 +77,7 @@ class Table {
       void (*handle_result)(void* arg, const Slice& k, const Slice& v));
 
 
-  void ReadMeta(const Footer& footer);
+  void ReadMeta(const Footer& footer,bool add_filter=true);
   void ReadFilter(const Slice& filter_handle_value);
   void ReadFilters(std::vector<Slice> &filter_handle_values,int n);
   // No copying allowed
