@@ -32,7 +32,8 @@ typedef struct OptionExp{
       bool seek_compaction_;
       std::shared_ptr<Statistics> stats_;
       bool no_cache_io_;
-      OptionExp():seek_compaction_(false),stats_(nullptr),no_cache_io_(false){};
+      int size_ratio;
+      OptionExp():seek_compaction_(false),stats_(nullptr),no_cache_io_(false),size_ratio(2){};
 }OptionExp;
 // Options to control the behavior of a database (passed to DB::Open)
 struct Options {
