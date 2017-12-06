@@ -16,6 +16,7 @@
 #include "leveldb/env.h"
 #include "leveldb/table.h"
 namespace leveldb {
+
 struct TableAndFile {
   RandomAccessFile* file;
   Table* table;
@@ -47,7 +48,7 @@ class TableCache {
              uint64_t file_size,
              const Slice& k,
              void* arg,
-             void (*handle_result)(void*, const Slice&, const Slice&));
+             void (*handle_result)(void*, const Slice&, const Slice&),uint64_t file_access_time=10);
 
   // Evict any entry for the specified file number
   void Evict(uint64_t file_number);

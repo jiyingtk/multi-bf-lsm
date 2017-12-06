@@ -103,7 +103,7 @@ Status Table::Open(const Options& options,
     rep->filter_datas.clear();
     rep->filter = NULL;
     *table = new Table(rep);
-    (*table)->ReadMeta(footer);
+    (*table)->ReadMeta(footer,options.opEp_.add_filter);
   } else {
     delete index_block;
   }
@@ -111,8 +111,8 @@ Status Table::Open(const Options& options,
   return s;
 }
 
-void Table::ReadMeta(const Footer& footer) {
-  if (rep_->options.filter_policy == NULL) {
+void Table::ReadMeta(const Footer& footer,bool add_filter) {
+  if (rep_->options.filter_policy == NULL || (!multi_queue_init&&!add_filter)) {
     return;  // Do not need any metadata
   }
 
@@ -454,5 +454,5 @@ uint64_t Table::ApproximateOffsetOf(const Slice& key) const {
   delete index_iter;
   return result;
 }
-
+uint64_t Table::LRU_Fre_Count=0;
 }  // namespace leveldb

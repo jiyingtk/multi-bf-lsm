@@ -122,9 +122,10 @@ Status TableCache::Get(const ReadOptions& options,
                        uint64_t file_size,
                        const Slice& k,
                        void* arg,
-                       void (*saver)(void*, const Slice&, const Slice&)) {
+                       void (*saver)(void*, const Slice&, const Slice&),uint64_t file_access_time) {
   Cache::Handle* handle = NULL;
   uint64_t start_micros = env_->NowMicros();
+  options_->opEp_.add_filter = file_access_time > cache_->GetLRUFreCount()?true:false;
   Status s = FindTable(file_number, file_size, &handle,true);
   MeasureTime(Statistics::GetStatistics().get(),Tickers::FINDTABLE,Env::Default()->NowMicros() - start_micros);
   if (s.ok()) {

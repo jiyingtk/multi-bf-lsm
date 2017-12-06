@@ -6,6 +6,7 @@
 #include <stdlib.h>
 #include <math.h>  
 #include <iostream>
+#include <boost/iterator/iterator_concepts.hpp>
 #include "leveldb/cache.h"
 #include "port/port.h"
 #include "util/hash.h"
@@ -237,6 +238,7 @@ public:
     virtual void Erase(const Slice &key);
     virtual uint64_t NewId();
     virtual size_t TotalCharge() const;
+    virtual uint64_t GetLRUFreCount() const;
     //charge must >= 0
     Cache::Handle* Insert(const Slice& key, uint32_t hash, void* value, size_t charge,
       void (*deleter)(const Slice& key, void* value),bool type) ;  
@@ -246,7 +248,7 @@ public:
      void Prune(){} //do nothing
      bool ShrinkLRU(int k,int64_t remove_charge[],bool force=false);  
      int Queue_Num(uint64_t fre_count);
-     uint64_t Num_Queue(int queue_id);
+     uint64_t Num_Queue(int queue_id,uint64_t fre_count);
      std::string LRU_Status();
      void inline addCurrentTime(){
 	 ++current_time_;
@@ -345,9 +347,16 @@ int MultiQueue::Queue_Num(uint64_t fre_count)
 }
 
 
-inline uint64_t MultiQueue::Num_Queue(int queue_id)
+inline uint64_t MultiQueue::Num_Queue(int queue_id,uint64_t fre_count)
 {
-    return base_fre_counts[queue_id];
+    //mutex_.assertHeld();
+    if(&lrus_[queue_id] == lrus_[queue_id].next){
+	return fre_count>>1;
+    }else{
+	LRUQueueHandle *lru_handle = lrus_[queue_id].next;
+	LRUQueueHandle *mru_handle = lrus_[queue_id].prev;
+	return (lru_handle->fre_count + mru_handle->fre_count)/2;
+    }
 }
 
 inline double MultiQueue::FalsePositive(LRUQueueHandle* e)
@@ -564,7 +573,7 @@ inline bool MultiQueue::ShrinkLRU(int k,int64_t remove_charge[],bool force)
 			usage_ -= delta_charge;
 			removed_usage += delta_charge;
 			expection_ -= old->fre_count*fps[k];
-			old->fre_count = Num_Queue(k-1);   // also decrease fre count
+			old->fre_count = Num_Queue(k-1,old->fre_count);   // also decrease fre count
 			expection_ += old->fre_count*fps[k-1];
 			--lru_lens_[k];
 			LRU_Remove(old);
@@ -609,7 +618,7 @@ inline bool MultiQueue::ShrinkLRU(int k,int64_t remove_charge[],bool force)
 			 usage_ -= delta_charge;
 			 removed_usage += delta_charge;
 			 expection_ -= old->fre_count*fps[k];
-			 old->fre_count = Num_Queue(k-1);   // also decrease fre count
+			 old->fre_count = Num_Queue(k-1,old->fre_count);   // also decrease fre count
 			 expection_ += old->fre_count*fps[k-1];
 			 --lru_lens_[k];
 			 LRU_Remove(old);
@@ -631,7 +640,16 @@ inline bool MultiQueue::ShrinkLRU(int k,int64_t remove_charge[],bool force)
     }
 }
 
-
+inline uint64_t MultiQueue::GetLRUFreCount() const{
+    int i = 0;
+    while(i < lrus_num_){
+	if(lrus_[i].next != &lrus_[i]){
+	    return lrus_[i].next->fre_count;
+	}
+	++i;
+    }
+    
+}
 void MultiQueue::SlowShrinking(){
     int64_t remove_charge = (usage_ - capacity_*slow_shrink_ratio);
     const int interval = 8;
