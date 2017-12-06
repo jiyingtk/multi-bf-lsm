@@ -25,19 +25,21 @@ namespace leveldb {
 
 struct Table::Rep {
   ~Rep() {
-    int curr_filter_num = filter->getCurrFiltersNum();
-    delete filter;
-    for(std::vector<const char *>::iterator filter_datas_iter=filter_datas.begin() ; filter_datas_iter != filter_datas.end() ; filter_datas_iter++){
-	 delete [] (*filter_datas_iter);
-	 BlockHandle filter_handle;
-	 Slice v = filter_handles[--curr_filter_num];
-	 if(!filter_handle.DecodeFrom(&v).ok()){
-		assert(0);
-		return ;
-	 }
-	 filter_mem_space -= (filter_handle.size()+kBlockTrailerSize) ;
-	 filter_num--;
-    }
+     if(filter != NULL){
+	int curr_filter_num = filter->getCurrFiltersNum();
+	delete filter;
+	for(std::vector<const char *>::iterator filter_datas_iter=filter_datas.begin() ; filter_datas_iter != filter_datas.end() ; filter_datas_iter++){
+	    delete [] (*filter_datas_iter);
+	    BlockHandle filter_handle;
+	    Slice v = filter_handles[--curr_filter_num];
+	    if(!filter_handle.DecodeFrom(&v).ok()){
+		    assert(0);
+		    return ;
+	    }
+	    filter_mem_space -= (filter_handle.size()+kBlockTrailerSize) ;
+	    filter_num--;
+	}
+     }
     filter_handles.clear();   //followers delete meta will free space in handle slice
     delete index_block;
     if(meta){
@@ -112,7 +114,7 @@ Status Table::Open(const Options& options,
 }
 
 void Table::ReadMeta(const Footer& footer,bool add_filter) {
-  if (rep_->options.filter_policy == NULL || (!multi_queue_init&&!add_filter)) {
+  if (rep_->options.filter_policy == NULL || (!multi_queue_init&&!add_filter)) { //allow add_filter in init_phase
     return;  // Do not need any metadata
   }
 
@@ -185,8 +187,11 @@ void Table::ReadFilters(std::vector< Slice >& filter_handle_values,int n)
    }
    MeasureTime(Statistics::GetStatistics().get(),Tickers::ADD_FILTER_TIME_0 + n,Env::Default()->NowMicros() - start_micros);
 }
-int Table::getCurrFilterNum()
+int  Table::getCurrFilterNum() 
 {
+    if(rep_->filter == NULL){
+	return 0;
+    }
     return rep_->filter->getCurrFiltersNum();
 }
 
@@ -238,6 +243,9 @@ size_t Table::AddFilters(int n)
 
 size_t Table::RemoveFilters(int n)
 {
+    if(rep_->filter == NULL){
+	return 0;
+    }
     int curr_filter_num = rep_->filter->getCurrFiltersNum();
     size_t delta = 0;
     if(n == -1){
@@ -291,6 +299,9 @@ int64_t Table::AdjustFilters(int n)
 
 
 size_t Table::getCurrFiltersSize(){
+    if(rep_->filter == NULL){
+	return 0;
+    }
     int curr_filter_num = rep_->filter->getCurrFiltersNum();
     size_t table_filter_size = 0;
     while(curr_filter_num--){
