@@ -1542,8 +1542,11 @@ void DBImpl::GetApproximateSizes(
 
 std::string DBImpl::printStatistics()
 {
+  
      if(statis_){
-	 return statis_->ToString();
+       std::string temp_str= statis_->ToString();
+       statis_->reset();
+       return temp_str;
     }
     return std::string();
 }
