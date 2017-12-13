@@ -114,7 +114,7 @@ Status Table::Open(const Options& options,
 }
 
 void Table::ReadMeta(const Footer& footer,bool add_filter) {
-  if (rep_->options.filter_policy == NULL || (!multi_queue_init&&!add_filter)) { //allow add_filter in init_phase
+  if (rep_->options.filter_policy == NULL) { //allow add_filter in init_phase
     return;  // Do not need any metadata
   }
 
@@ -147,7 +147,7 @@ void Table::ReadMeta(const Footer& footer,bool add_filter) {
    }
    if(multi_queue_init){
 	ReadFilters(rep_->filter_handles,rep_->options.opEp_.init_filter_nums);
-   }else{
+   }else if(add_filter){
 	ReadFilter(rep_->filter_handles[0]);
    }
   delete iter;
@@ -231,7 +231,11 @@ size_t Table::AddFilters(int n)
 {
     size_t delta = 0;
     if(rep_->filter == NULL){
-	return 0;  //TODO rep_->filter = new FilterBlockReader(rep_->options.filter_policy, block.data);
+      ReadFilters(rep_->filter_handles,n); 
+      for(int i = 0 ;  i <  n ; i++){
+	delta += FilterPolicy::bits_per_key_per_filter_[i];
+      }
+      return delta;
     }
     int curr_filter_num = rep_->filter->getCurrFiltersNum();
     while(n--&&curr_filter_num < rep_->filter_handles.size()){  // avoid overhead of filters
@@ -290,7 +294,10 @@ int64_t Table::AdjustFilters(int n)
 	delta = -static_cast<int64_t>(RemoveFilters(rep_->filter->getCurrFiltersNum() - n));
 	MeasureTime(Statistics::GetStatistics().get(),Tickers::REMOVE_FILTER_TIME,Env::Default()->NowMicros() - start_micros);
     }else*/
-    if(n > rep_->filter->getCurrFiltersNum()){ //only add when greater than
+    if(rep_->filter == NULL && n > 0){
+    	delta =  AddFilters(n);
+    }
+    else if(n > rep_->filter->getCurrFiltersNum()){ //only add when greater than
 	delta =  AddFilters(n - rep_->filter->getCurrFiltersNum());
     }
     return delta;
