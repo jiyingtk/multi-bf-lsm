@@ -337,6 +337,7 @@ MultiQueue::~MultiQueue()
 	e = next;
     }
   }
+  fprintf(stderr,"multi_queue_init is %s\n",multi_queue_init?"true":"false");
   mutex_.unlock();
   delete []lrus_;
 }
@@ -543,7 +544,7 @@ void MultiQueue::Release(Cache::Handle* handle) {
 
 void MultiQueue::MayBeShrinkUsage(){
     //mutex_.assertheld
-   if(usage_ > capacity_){
+   if(usage_ >= capacity_){
         multi_queue_init = false;
         int64_t overflow_charge = usage_ - capacity_;
 	if(!ShrinkLRU(lrus_num_-1,&overflow_charge,false)){
