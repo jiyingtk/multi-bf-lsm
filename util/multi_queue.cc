@@ -372,7 +372,7 @@ inline double MultiQueue::FalsePositive(LRUQueueHandle* e)
 
 void MultiQueue::RecomputeExp(LRUQueueHandle *e)
 {	
-    if((multi_queue_init && current_time_ < 10000) || (e->queue_id+1) == lrus_num_){
+    if((multi_queue_init && current_time_ < 100000) || (e->queue_id+1) == lrus_num_){
 	++e->fre_count;
 	expection_ += FalsePositive(e);
     }else if(usage_ >= capacity_){

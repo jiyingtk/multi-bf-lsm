@@ -19,7 +19,8 @@ namespace leveldb {
 
 // Original:Generate new filter every 2KB of data
 //TODO: increase kFilterBaseLg
-static const size_t kFilterBaseLg = 16;  //try every 64KB of data
+//FULL-filter
+static const size_t kFilterBaseLg = 22;  //try every 64KB of data
 static const size_t kFilterBase = 1 << kFilterBaseLg;
 
 FilterBlockBuilder::FilterBlockBuilder(const FilterPolicy* policy)
