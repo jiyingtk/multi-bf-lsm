@@ -375,58 +375,57 @@ void MultiQueue::RecomputeExp(LRUQueueHandle *e)
     if((multi_queue_init && current_time_ < 100000) || (e->queue_id+1) == lrus_num_){
 	++e->fre_count;
 	expection_ += FalsePositive(e);
-    }else if(usage_ >= capacity_){
+    }else{
 	uint64_t start_micros = Env::Default()->NowMicros();
 	double now_expection  = expection_ + FalsePositive(e) ;
 	++e->fre_count;
 	double min_expection = now_expection,change_expection;
 	const double new_expection = expection_ - (e->fre_count-1)*FalsePositive(e) + e->fre_count*fps[e->queue_id+1]; //TODO: OPTIMIZE
-	int need_bits = bits_per_key_per_filter_[e->queue_id+1];
+	int need_bits = usage_ - capacity_ + bits_per_key_per_filter_[e->queue_id+1];
 	int remove_bits,min_i = -1 ;
-	for(int i = 1 ; i < lrus_num_ ; i++){
-	    remove_bits = 0;
-	    change_expection =  new_expection;
-	    LRUQueueHandle *old = lrus_[i].next;
-	    while(old != &lrus_[i]&&remove_bits < need_bits){
-		if(old->expire_time < current_time_ ){ // expired
-		    remove_bits += bits_per_key_per_filter_[i];
-		    change_expection += (old->fre_count*fps[i-1] - old->fre_count*FalsePositive(old));
-		}else{
-		    break;
+	if(need_bits > 0){
+	    for(int i = 1 ; i < lrus_num_ ; i++){
+		remove_bits = 0;
+		change_expection =  new_expection;
+		LRUQueueHandle *old = lrus_[i].next;
+		while(old != &lrus_[i]&&remove_bits < need_bits){
+		    if(old->expire_time < current_time_ ){ // expired
+			remove_bits += bits_per_key_per_filter_[i];
+			change_expection += (old->fre_count*fps[i-1] - old->fre_count*FalsePositive(old));
+		    }else{
+			break;
+		    }
+		    old = old->next;
 		}
-		old = old->next;
+		if(remove_bits >= need_bits && change_expection < min_expection){
+		    min_expection = change_expection;
+		    min_i = i;
+		}
 	    }
-	    if(remove_bits >= need_bits && change_expection < min_expection){
-		min_expection = change_expection;
-		min_i = i;
+	    if(min_i != -1 && now_expection - min_expection > now_expection*change_ratio){
+		remove_bits = 0;
+		while(lrus_[min_i].next != &lrus_[min_i]&&remove_bits < need_bits){
+			LRUQueueHandle *old = lrus_[min_i].next;
+			leveldb::TableAndFile *tf = reinterpret_cast<leveldb::TableAndFile *>(old->value);
+			remove_bits += bits_per_key_per_filter_[min_i];
+			size_t delta_charge = tf->table->RemoveFilters(1);
+			usage_ -=delta_charge;
+			MeasureTime(Statistics::GetStatistics().get(),Tickers::REMOVE_EXPIRED_FILTER_TIME_0+min_i,Env::Default()->NowMicros() - start_micros);
+			--lru_lens_[min_i];
+			LRU_Remove(old);
+			++lru_lens_[min_i - 1];
+			LRU_Append(&lrus_[min_i - 1],old);	
+		}
+		++e->queue_id;
+		expection_ = min_expection;
 	    }
-	}
-	if(min_i != -1 && now_expection - min_expection > now_expection*change_ratio){
-	    remove_bits = 0;
-	    while(lrus_[min_i].next != &lrus_[min_i]&&remove_bits < need_bits){
-		    LRUQueueHandle *old = lrus_[min_i].next;
-		    leveldb::TableAndFile *tf = reinterpret_cast<leveldb::TableAndFile *>(old->value);
-		    remove_bits += bits_per_key_per_filter_[min_i];
-		    size_t delta_charge = tf->table->RemoveFilters(1);
-		    usage_ -=delta_charge;
-		    MeasureTime(Statistics::GetStatistics().get(),Tickers::REMOVE_EXPIRED_FILTER_TIME_0+min_i,Env::Default()->NowMicros() - start_micros);
-		     --lru_lens_[min_i];
-		    LRU_Remove(old);
-		    ++lru_lens_[min_i - 1];
-		    LRU_Append(&lrus_[min_i - 1],old);	
-	    }
-	    ++e->queue_id;
-	    expection_ = min_expection;
 	}else{
-	    expection_ = now_expection;
-	}
-    }else{
-	++e->fre_count;
-	if(e->fre_count > Num_Queue(e->queue_id,(e->fre_count)<<1)){
-	    expection_ =  expection_ - (e->fre_count-1)*FalsePositive(e) + e->fre_count*fps[e->queue_id+1]; 	
-	    ++e->queue_id;
-	}else{
-	    expection_ += FalsePositive(e);
+	    if(now_expection - new_expection > now_expection*change_ratio){
+		++e->queue_id;
+		expection_ = new_expection;
+	    }else{
+		expection_ = now_expection;
+	    }
 	}
     }
 }
