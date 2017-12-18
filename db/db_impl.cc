@@ -1372,6 +1372,7 @@ Status DBImpl::MakeRoomForWrite(bool force) {
   assert(!writers_.empty());
   bool allow_delay = !force;
   Status s;
+  uint64_t start_micros = Env::Default()->NowMicros();
   while (true) {
     if (!bg_error_.ok()) {
       // Yield previous error
@@ -1389,6 +1390,7 @@ Status DBImpl::MakeRoomForWrite(bool force) {
       mutex_.Unlock();
       env_->SleepForMicroseconds(1000);
       allow_delay = false;  // Do not delay a single write more than once
+      MeasureTime(Statistics::GetStatistics().get(),Tickers::SLOW_DOWN_WRITE,Env::Default()->NowMicros() - start_micros);
       mutex_.Lock();
     } else if (!force &&
                (mem_->ApproximateMemoryUsage() <= options_.write_buffer_size)) {
@@ -1403,6 +1405,7 @@ Status DBImpl::MakeRoomForWrite(bool force) {
       // There are too many level-0 files.
       Log(options_.info_log, "Too many L0 files; waiting...\n");
       bg_cv_.Wait();
+      MeasureTime(Statistics::GetStatistics().get(),Tickers::STOP_WRITE,Env::Default()->NowMicros() - start_micros);
     } else {
       // Attempt to switch to a new memtable and trigger compaction of old
       assert(versions_->PrevLogNumber() == 0);
@@ -1454,11 +1457,11 @@ bool DBImpl::GetProperty(const Slice& property, std::string* value) {
     }
   } else if (in == "stats") {
     char buf[200];
-    snprintf(buf,sizeof(buf),"read latency:%.3lf\tread counts:%llu\n",
+    snprintf(buf,sizeof(buf),"read latency:%.3lf\tread counts:%lu\n",
              statis_->GetTickerHistogram(Tickers::TOTAL_READ_TIME)*1.0/statis_->getTickerCount(Tickers::TOTAL_READ_TIME),
              statis_->getTickerCount(Tickers::TOTAL_READ_TIME));
     value->append(buf);
-    snprintf(buf,sizeof(buf),"write latency:%.3lf\twrite counts:%llu\n",
+    snprintf(buf,sizeof(buf),"write latency:%.3lf\twrite counts:%lu\n",
                statis_->GetTickerHistogram(Tickers::TOTAL_WRITE_TIME)*1.0/statis_->getTickerCount(Tickers::TOTAL_WRITE_TIME),
                statis_->getTickerCount(Tickers::TOTAL_WRITE_TIME));
     value->append(buf);
@@ -1497,6 +1500,9 @@ bool DBImpl::GetProperty(const Slice& property, std::string* value) {
 		     statis_->GetTickerHistogram(Tickers::ADD_FILTER_TIME)*1.0/statis_->getTickerCount(Tickers::ADD_FILTER_TIME),statis_->getTickerCount(Tickers::ADD_FILTER_TIME));
 	    value->append(buf);
 	    value->append(statis_->ToString(Tickers::FINDTABLE,Tickers::OPEN_TABLE_TIME));
+	    if(statis_->getTickerCount(Tickers::SLOW_DOWN_WRITE) != 0){
+		value->append(statis_->ToString(Tickers::SLOW_DOWN_WRITE,Tickers::STOP_WRITE));
+	    }
     }
 
      value->append(printStatistics());
