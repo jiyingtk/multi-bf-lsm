@@ -1146,6 +1146,7 @@ int64_t DBImpl::TEST_MaxNextLevelOverlappingBytes() {
 Status DBImpl::Get(const ReadOptions& options,
                    const Slice& key,
                    std::string* value) {
+  uint64_t start_micros = env_->NowMicros();
   Status s;
   MutexLock l(&mutex_);
   SequenceNumber snapshot;
@@ -1195,6 +1196,7 @@ Status DBImpl::Get(const ReadOptions& options,
   mem->Unref();
   if (imm != NULL) imm->Unref();
   current->Unref();
+  MeasureTime(Statistics::GetStatistics().get(),Tickers::TOTAL_READ_TIME,Env::Default()->NowMicros() - start_micros);
   return s;
 }
 
@@ -1229,8 +1231,13 @@ void DBImpl::ReleaseSnapshot(const Snapshot* s) {
 
 // Convenience methods
 Status DBImpl::Put(const WriteOptions& o, const Slice& key, const Slice& val) {
-  return DB::Put(o, key, val);
+  Status s;
+  uint64_t start_micros = env_->NowMicros();
+  s = DB::Put(o, key, val);
+  MeasureTime(Statistics::GetStatistics().get(),Tickers::TOTAL_WRITE_TIME,Env::Default()->NowMicros() - start_micros);
+  return s;
 }
+
 
 Status DBImpl::Delete(const WriteOptions& options, const Slice& key) {
   return DB::Delete(options, key);
@@ -1447,6 +1454,14 @@ bool DBImpl::GetProperty(const Slice& property, std::string* value) {
     }
   } else if (in == "stats") {
     char buf[200];
+    snprintf(buf,sizeof(buf),"read latency:%.3lf\tread counts:%llu\n",
+             statis_->GetTickerHistogram(Tickers::TOTAL_READ_TIME)*1.0/statis_->getTickerCount(Tickers::TOTAL_READ_TIME),
+             statis_->getTickerCount(Tickers::TOTAL_READ_TIME));
+    value->append(buf);
+    snprintf(buf,sizeof(buf),"write latency:%.3lf\twrite counts:%llu\n",
+               statis_->GetTickerHistogram(Tickers::TOTAL_WRITE_TIME)*1.0/statis_->getTickerCount(Tickers::TOTAL_WRITE_TIME),
+               statis_->getTickerCount(Tickers::TOTAL_WRITE_TIME));
+    value->append(buf);
     snprintf(buf, sizeof(buf),
              "                               Compactions\n"
              "Level  Files Size(MB) Time(sec) Read(MB) Write(MB)\n"
@@ -1481,7 +1496,7 @@ bool DBImpl::GetProperty(const Slice& property, std::string* value) {
 	    snprintf(buf,sizeof(buf),"average add filter time  = %.3lf add filters count:%lu \n",
 		     statis_->GetTickerHistogram(Tickers::ADD_FILTER_TIME)*1.0/statis_->getTickerCount(Tickers::ADD_FILTER_TIME),statis_->getTickerCount(Tickers::ADD_FILTER_TIME));
 	    value->append(buf);
-	    value->append(statis_->ToString(Tickers::FINDTABLE,Tickers::FILTER_MATCHES_TIME));
+	    value->append(statis_->ToString(Tickers::FINDTABLE,Tickers::OPEN_TABLE_TIME));
     }
 
      value->append(printStatistics());
