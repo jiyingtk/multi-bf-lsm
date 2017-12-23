@@ -372,7 +372,7 @@ inline double MultiQueue::FalsePositive(LRUQueueHandle* e)
 
 void MultiQueue::RecomputeExp(LRUQueueHandle *e)
 {	
-    if((multi_queue_init && current_time_ < 100000) || (e->queue_id+1) == lrus_num_){
+    if(multi_queue_init || (e->queue_id+1) == lrus_num_){
 	++e->fre_count;
 	expection_ += FalsePositive(e);
     }else{
@@ -389,13 +389,13 @@ void MultiQueue::RecomputeExp(LRUQueueHandle *e)
 		change_expection =  new_expection;
 		LRUQueueHandle *old = lrus_[i].next;
 		while(old != &lrus_[i]&&remove_bits < need_bits){
-		    if(old->expire_time < current_time_ ){ // expired
-			remove_bits += bits_per_key_per_filter_[i];
-			change_expection += (old->fre_count*fps[i-1] - old->fre_count*FalsePositive(old));
-		    }else{
-			break;
-		    }
-		    old = old->next;
+		  //		    if(old->expire_time < current_time_ ){ // expired
+		  remove_bits += bits_per_key_per_filter_[i];
+		  change_expection += (old->fre_count*fps[i-1] - old->fre_count*FalsePositive(old));
+		    // }else{
+		    // 	break;
+		    // }
+		  old = old->next;
 		}
 		if(remove_bits >= need_bits && change_expection < min_expection){
 		    min_expection = change_expection;
@@ -418,9 +418,12 @@ void MultiQueue::RecomputeExp(LRUQueueHandle *e)
 		}
 		++e->queue_id;
 		expection_ = min_expection;
+	    }else{
+	      expection_ = now_expection;
 	    }
 	}else{
-	    if(now_expection - new_expection > now_expection*change_ratio){
+	   if(now_expection - new_expection > now_expection*change_ratio){
+	     //if(now_expection > new_expection){
 		++e->queue_id;
 		expection_ = new_expection;
 	    }else{
@@ -443,10 +446,12 @@ void MultiQueue::Ref(LRUQueueHandle* e,bool addFreCount)
 	if(addFreCount){
 	    if(e->expire_time > current_time_ ){ //not expired
 		RecomputeExp(e);
-	    }else if(e->expire_time < current_time_){   //expired
-		e->fre_count /= 2;
-		expection_ -= e->fre_count*FalsePositive(e);
-	    }
+	    }// else{ // if(e->expire_time < current_time_){   //expired
+	    //   if(e->fre_count > 0){
+	    // 	expection_ -= (e->fre_count*1.0/2.0)*FalsePositive(e);
+	    // 	e->fre_count /= 2;
+	    //   }
+	    // }
 	}
 	e->expire_time = current_time_ + life_time_;
 }
@@ -759,7 +764,7 @@ Cache::Handle* MultiQueue::Insert(const Slice& key, uint32_t hash, void* value, 
   
   if (capacity_ > 0) {
     e->refs++;  // for the cache's reference.
-    e->fre_count++; //for the first access
+    ++e->fre_count; //for the first access
     e->in_cache = true;
     mutex_.lock();
     expection_ += fps[e->queue_id];			//insert a new element ,expected number should be updated

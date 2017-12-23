@@ -133,12 +133,12 @@ class MultiFilter:public FilterPolicy{
 private:
 	std::vector<ChildBloomFilterPolicy*> filters;
 	size_t bits_per_key_;
-	static pthread_mutex_t filter_mutexs_[10];
-	static pthread_cond_t filter_conds_[10];
+  //	static pthread_mutex_t filter_mutexs_[10];
+  //	static pthread_cond_t filter_conds_[10];
 	static pthread_t pids_[8];
 	static std::atomic<int> curr_completed_filter_num_;
 	static int filter_num_;
-	static int filled_[8];
+        static std::atomic<bool> filled_[8];
 	static const Slice *keys_;
 	static int n_;
 	static bool end_thread;
@@ -150,17 +150,17 @@ public:
 	    delete (int *)(arg);
 	    CreateFilterArg *temp_cfa = cfas+id;
 	    while(true){
-	      pthread_mutex_lock(&filter_mutexs_[id]);
+	      //	      pthread_mutex_lock(&filter_mutexs_[id]);
 	      while(!filled_[id]&&!end_thread){
-		pthread_cond_wait(&filter_conds_[id],&filter_mutexs_[id]);
+		//		pthread_cond_wait(&filter_conds_[id],&filter_mutexs_[id]);
 	      }
-	      filled_[id] = false;
-	      pthread_mutex_unlock(&filter_mutexs_[id]);
+	      //	      pthread_mutex_unlock(&filter_mutexs_[id]);
 	      if(end_thread){
 		break;
 	      }
 	      uint64_t start_micros = Env::Default()->NowMicros();
 	      cfas[id].ch->CreateFilter(keys_,n_,cfas[id].dst);
+	      filled_[id] = false;
 	      MeasureTime(Statistics::GetStatistics().get(),Tickers::CHILD_CREATE_FILTER_TIME,Env::Default()->NowMicros() - start_micros);
 	      start_micros = Env::Default()->NowMicros();
 	      ++curr_completed_filter_num_;
@@ -226,12 +226,13 @@ public:
 	    int i = 0;
 	    uint64_t start_micros = Env::Default()->NowMicros();
 	    for(auto dsts_iter = dsts.begin() ; dsts_iter != dsts.end() ; ++dsts_iter){
-	        pthread_mutex_lock(&filter_mutexs_[i]);
+	        // pthread_mutex_lock(&filter_mutexs_[i]);
 		cfa->dst = &(*dsts_iter);
 		filled_[i] = true;
-		pthread_mutex_unlock(&filter_mutexs_[i]);
-		pthread_cond_signal(&filter_conds_[i++]);
+		// pthread_mutex_unlock(&filter_mutexs_[i]);
+		// pthread_cond_signal(&filter_conds_[i++]);
 		cfa++;
+		i++;
 	    }
 	    MeasureTime(Statistics::GetStatistics().get(),Tickers::FILTER_LOCK_TIME,Env::Default()->NowMicros() - start_micros);
 	    start_micros = Env::Default()->NowMicros();
@@ -280,9 +281,9 @@ public:
 
 std::atomic<int>  MultiFilter::curr_completed_filter_num_ (0);
 int MultiFilter::filter_num_ = 0;
-pthread_mutex_t MultiFilter::filter_mutexs_[10]={PTHREAD_MUTEX_INITIALIZER,PTHREAD_MUTEX_INITIALIZER,PTHREAD_MUTEX_INITIALIZER,PTHREAD_MUTEX_INITIALIZER,PTHREAD_MUTEX_INITIALIZER,PTHREAD_MUTEX_INITIALIZER,PTHREAD_MUTEX_INITIALIZER,PTHREAD_MUTEX_INITIALIZER,PTHREAD_MUTEX_INITIALIZER,PTHREAD_MUTEX_INITIALIZER,};
-pthread_cond_t MultiFilter::filter_conds_[10]={PTHREAD_COND_INITIALIZER,PTHREAD_COND_INITIALIZER,PTHREAD_COND_INITIALIZER,PTHREAD_COND_INITIALIZER,PTHREAD_COND_INITIALIZER,PTHREAD_COND_INITIALIZER,PTHREAD_COND_INITIALIZER,PTHREAD_COND_INITIALIZER,PTHREAD_COND_INITIALIZER,PTHREAD_COND_INITIALIZER};
-int  MultiFilter::filled_[8];
+// pthread_mutex_t MultiFilter::filter_mutexs_[10]={PTHREAD_MUTEX_INITIALIZER,PTHREAD_MUTEX_INITIALIZER,PTHREAD_MUTEX_INITIALIZER,PTHREAD_MUTEX_INITIALIZER,PTHREAD_MUTEX_INITIALIZER,PTHREAD_MUTEX_INITIALIZER,PTHREAD_MUTEX_INITIALIZER,PTHREAD_MUTEX_INITIALIZER,PTHREAD_MUTEX_INITIALIZER,PTHREAD_MUTEX_INITIALIZER,};
+// pthread_cond_t MultiFilter::filter_conds_[10]={PTHREAD_COND_INITIALIZER,PTHREAD_COND_INITIALIZER,PTHREAD_COND_INITIALIZER,PTHREAD_COND_INITIALIZER,PTHREAD_COND_INITIALIZER,PTHREAD_COND_INITIALIZER,PTHREAD_COND_INITIALIZER,PTHREAD_COND_INITIALIZER,PTHREAD_COND_INITIALIZER,PTHREAD_COND_INITIALIZER};
+std::atomic<bool>  MultiFilter::filled_[8];
 pthread_t MultiFilter::pids_[8];
 CreateFilterArg* MultiFilter::cfas(NULL);
 int MultiFilter::n_(0);
