@@ -470,9 +470,9 @@ void MultiQueue::Unref(LRUQueueHandle* e)
 		//int qn = Queue_Num(e->fre_count);
 		 leveldb::TableAndFile *tf = reinterpret_cast<leveldb::TableAndFile *>(e->value);
 		if(tf->table->getCurrFilterNum() < e->queue_id && e->type){  //only add;
-		    mutex_.unlock();
+		  //		    mutex_.unlock();
 		    int64_t delta_charge = tf->table->AdjustFilters(e->queue_id);  // not in lru list, so need to worry will be catched by ShrinkUsage
-		    mutex_.lock();
+		    //		    mutex_.lock();
 		    e->charge += delta_charge;
 		    usage_ += delta_charge;
 		    MayBeShrinkUsage();   
@@ -619,6 +619,7 @@ inline bool MultiQueue::ShrinkLRU(int k,int64_t remove_charge[],bool force)
 	    while(removed_usage < remove_charge[0]){
 		uint64_t start_micros = Env::Default()->NowMicros();
 		LRUQueueHandle *old = lrus_[k].next;
+		assert(old != &lrus_[k]);
 		leveldb::TableAndFile *tf = reinterpret_cast<leveldb::TableAndFile *>(old->value);
 		size_t delta_charge = tf->table->RemoveFilters(1); //  remove 1 filter
 		old->charge -= delta_charge;
