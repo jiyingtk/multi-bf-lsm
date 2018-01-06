@@ -1182,9 +1182,11 @@ Status DBImpl::Get(const ReadOptions& options,
       // Done
     } else {
       s = current->Get(options, lkey, value, &stats);
-      p->setHistType(options.read_file_nums+READ_0_TIME);
+      if(s.IsNotFound()){
+	p->setHistType(options.read_file_nums+READ_0_TIME);
+	alloc_stop_watch.destroy(p);
+      }
       have_stat_update = true;
-      alloc_stop_watch.destroy(p);
     }
     alloc_stop_watch.deallocate(p,1);
     mutex_.Lock();
