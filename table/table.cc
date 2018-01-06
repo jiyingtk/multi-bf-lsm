@@ -294,12 +294,15 @@ int64_t Table::AdjustFilters(int n)
 	delta = -static_cast<int64_t>(RemoveFilters(rep_->filter->getCurrFiltersNum() - n));
 	MeasureTime(Statistics::GetStatistics().get(),Tickers::REMOVE_FILTER_TIME,Env::Default()->NowMicros() - start_micros);
     }else*/
-    if(rep_->filter == NULL && n > 0){
-    	delta =  AddFilters(n);
-    }
-    else if(n > rep_->filter->getCurrFiltersNum()){ //only add when greater than
-	delta =  AddFilters(n - rep_->filter->getCurrFiltersNum());
-    }
+   assert(n >= 0);
+   if(n > 0){
+	if(rep_->filter == NULL){
+	    delta =  AddFilters(n);
+	}
+	else if(n > rep_->filter->getCurrFiltersNum()){ //only add when greater than
+	    delta =  AddFilters(n - rep_->filter->getCurrFiltersNum());
+	}
+   }
     return delta;
 }
 
