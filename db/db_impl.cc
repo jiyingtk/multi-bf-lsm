@@ -1568,6 +1568,7 @@ std::string DBImpl::printStatistics()
   
      if(statis_){
        std::string temp_str= statis_->ToString();
+       temp_str.append(statis_->ToString(ACCESS_L0_TIME,ACCESS_L10_TIME));
        statis_->reset();
        return temp_str;
     }

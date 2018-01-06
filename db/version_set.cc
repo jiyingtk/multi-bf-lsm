@@ -348,6 +348,7 @@ Status Version::Get(const ReadOptions& options,
   // in an smaller level, later levels are irrelevant.
   std::vector<FileMetaData*> tmp;
   FileMetaData* tmp2;
+  int access_level=0;
   for (int level = 0; level < config::kNumLevels; level++) {
     size_t num_files = files_[level].size();
     if (num_files == 0) continue;
@@ -388,7 +389,7 @@ Status Version::Get(const ReadOptions& options,
         }
       }
     }
-
+    access_level += num_files;
     for (uint32_t i = 0; i < num_files; ++i) {
       if (last_file_read != NULL && stats->seek_file == NULL) {
         // We have had more than one seek for this read.  Charge the 1st file.
@@ -424,7 +425,7 @@ Status Version::Get(const ReadOptions& options,
       }
     }
   }
-
+  MeasureTime(Statistics::GetStatistics().get(),Tickers::ACCESS_L0_TIME+access_level,options.read_file_nums);
   return Status::NotFound(Slice());  // Use an empty error message for speed
 }
 
