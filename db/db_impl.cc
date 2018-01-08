@@ -1588,7 +1588,7 @@ bool DBImpl::GetProperty(const Slice& property, std::string* value) {
 		    totalAddFilterTime += statis_->GetTickerHistogram(i);
 		    totalAddFilterCount += statis_->getTickerCount(i);
 		}
-		snprintf(buf,sizeof(buf),"total add filter count: %lu time: %lu  ",totalAddFilterCount,totalAddFilterTime);
+		snprintf(buf,sizeof(buf),"total add filter count: %lu latency: %.2lf  ",totalAddFilterCount,totalAddFilterTime*1.0/totalAddFilterCount);
 		value->append(buf);
 
 	}
