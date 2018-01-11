@@ -296,7 +296,6 @@ class PosixRandomAccessFile: public RandomAccessFile {
 	}
     }else{
 	r = pread(fd, scratch, n, static_cast<off_t>(offset));
-	fprintf(stderr,"no directIO\n");
 	if (r < 0) {
 	    // An error: return a non-ok status
 	    s = PosixError(filename_, errno);
