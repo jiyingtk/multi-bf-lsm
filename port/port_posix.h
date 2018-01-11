@@ -149,7 +149,9 @@ inline bool GetHeapProfile(void (*func)(void*, const char*, int), void* arg) {
 }
 
 uint32_t AcceleratedCRC32C(uint32_t crc, const char* buf, size_t size);
-
+static inline void AsmVolatilePause() {
+   asm volatile("pause");
+}
 } // namespace port
 } // namespace leveldb
 

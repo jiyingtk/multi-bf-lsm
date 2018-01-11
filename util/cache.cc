@@ -346,6 +346,8 @@ class ShardedLRUCache : public Cache {
   }
 
   static uint32_t Shard(uint32_t hash) {
+    if(kNumShardBits == 0)
+      return 0;
     return hash >> (32 - kNumShardBits);
   }
 
