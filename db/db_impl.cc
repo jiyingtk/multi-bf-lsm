@@ -1579,11 +1579,11 @@ bool DBImpl::GetProperty(const Slice& property, std::string* value) {
 		uint64_t totalAddFilterCount = 0;
 		uint64_t totalAddFilterTime = 0;
 		value->append(" ADD Filter Time \n");
-		for(i = Tickers::ADD_FILTER_TIME_0 ; i <= Tickers::ADD_FILTER_TIME_6  ; i ++){
+		for(i = Tickers::ADD_FILTER_TIME_0 ; i <= Tickers::ADD_FILTER_TIME_7  ; i ++){
 		    if(statis_->getTickerCount(i) == 0){
 			continue;
 		    }
-		    snprintf(buf,sizeof(buf),"add filter from  %d filter(s) count: %lu time: %lu  average time: %.3lf\n", i - Tickers::ADD_FILTER_TIME_0,
+		    snprintf(buf,sizeof(buf),"add filter to %d filter(s) count: %lu time: %lu  average time: %.3lf\n", i - Tickers::ADD_FILTER_TIME_0,
 			statis_->getTickerCount(i),
 			statis_->GetTickerHistogram(i),
 			statis_->GetTickerHistogram(i)*1.0/statis_->getTickerCount(i));

@@ -218,7 +218,7 @@ void Table::ReadFilter(const Slice& filter_handle_value) {
     filter_mem_space += block.data.size();
     filter_num++;
     int curr_filter_num = rep_->filter == NULL ? 0 : rep_->filter->getCurrFiltersNum();
-    MeasureTime(Statistics::GetStatistics().get(),Tickers::ADD_FILTER_TIME_0 + curr_filter_num,Env::Default()->NowMicros() - start_micros);
+    MeasureTime(Statistics::GetStatistics().get(),Tickers::ADD_FILTER_TIME_0 + curr_filter_num + 1,Env::Default()->NowMicros() - start_micros);
   }
   if(rep_->filter == NULL){
 	rep_->filter = new FilterBlockReader(rep_->options.filter_policy, block.data);

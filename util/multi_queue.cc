@@ -389,12 +389,12 @@ void MultiQueue::RecomputeExp(LRUQueueHandle *e)
 		change_expection =  new_expection;
 		LRUQueueHandle *old = lrus_[i].next;
 		while(old != &lrus_[i]&&remove_bits < need_bits){
-		  //		    if(old->expire_time < current_time_ ){ // expired
-		  remove_bits += bits_per_key_per_filter_[i];
-		  change_expection += (old->fre_count*fps[i-1] - old->fre_count*FalsePositive(old));
-		    // }else{
-		    // 	break;
-		    // }
+		  if(old->expire_time < current_time_ ){ // expired
+		    remove_bits += bits_per_key_per_filter_[i];
+		    change_expection += (old->fre_count*fps[i-1] - old->fre_count*FalsePositive(old));
+		  }else{
+		    break;
+		  }
 		  old = old->next;
 		}
 		if(remove_bits >= need_bits && change_expection < min_expection){
@@ -403,6 +403,7 @@ void MultiQueue::RecomputeExp(LRUQueueHandle *e)
 		}
 	    }
 	    if(min_i != -1 && now_expection - min_expection > now_expection*change_ratio){
+        	assert(now_expection > min_expection);
 		remove_bits = 0;
 		while(lrus_[min_i].next != &lrus_[min_i]&&remove_bits < need_bits){
 			LRUQueueHandle *old = lrus_[min_i].next;
