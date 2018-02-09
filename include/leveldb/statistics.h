@@ -69,10 +69,9 @@ namespace leveldb{
 	BLOCKREADER_NOCACHE_TIME,
 	FILTER_MATCHES_TIME,
 	OPEN_TABLE_TIME,
-    	TOTAL_READ_TIME,
-    	TOTAL_WRITE_TIME,
 	SLOW_DOWN_WRITE,
 	STOP_WRITE,
+	WAIT_TIME,
 	TICKER_ENUM_MAX
  };  
 
@@ -140,11 +139,9 @@ namespace leveldb{
      {BLOCKREADER_NOCACHE_TIME,"leveldb.block.read.no.cache.time"},
      {FILTER_MATCHES_TIME,"leveldb.filter.matches.time"},
      {OPEN_TABLE_TIME,"leveldb.open.table.time"},
-     {TOTAL_WRITE_TIME,"leveldb.total.write.time"},
-     {TOTAL_READ_TIME,"leveldb.total.read.time"},
-     {TOTAL_WRITE_TIME,"leveldb.total.read.time"},
      {SLOW_DOWN_WRITE,"leveldb.slow.down.time"},
-     {STOP_WRITE,"leveldb.stop.write.time"}
+     {STOP_WRITE,"leveldb.stop.write.time"},
+     {WAIT_TIME,"leveldb.wait.time"}
 };
 
 struct HistogramData{

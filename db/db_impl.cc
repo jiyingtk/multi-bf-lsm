@@ -1411,8 +1411,8 @@ Status DBImpl::MakeRoomForWrite(bool force) {
   assert(!writers_.empty());
   bool allow_delay = !force;
   Status s;
-  uint64_t start_micros = Env::Default()->NowMicros();
   while (true) {
+    uint64_t start_micros = Env::Default()->NowMicros();
     if (!bg_error_.ok()) {
       // Yield previous error
       s = bg_error_;
@@ -1430,6 +1430,7 @@ Status DBImpl::MakeRoomForWrite(bool force) {
       env_->SleepForMicroseconds(1000);
       allow_delay = false;  // Do not delay a single write more than once
       MeasureTime(Statistics::GetStatistics().get(),Tickers::SLOW_DOWN_WRITE,Env::Default()->NowMicros() - start_micros);
+      MeasureTime(Statistics::GetStatistics().get(),Tickers::WAIT_TIME,Env::Default()->NowMicros() - start_micros);
       mutex_.Lock();
     } else if (!force &&
                (mem_->ApproximateMemoryUsage() <= options_.write_buffer_size)) {
@@ -1440,10 +1441,12 @@ Status DBImpl::MakeRoomForWrite(bool force) {
       // one is still being compacted, so we wait.
       Log(options_.info_log, "Current memtable full; waiting...\n");
       bg_cv_.Wait();
+      MeasureTime(Statistics::GetStatistics().get(),Tickers::WAIT_TIME,Env::Default()->NowMicros() - start_micros);
     } else if (versions_->NumLevelFiles(0) >= config::kL0_StopWritesTrigger) {
       // There are too many level-0 files.
       Log(options_.info_log, "Too many L0 files; waiting...\n");
       bg_cv_.Wait();
+      MeasureTime(Statistics::GetStatistics().get(),Tickers::WAIT_TIME,Env::Default()->NowMicros() - start_micros);
       MeasureTime(Statistics::GetStatistics().get(),Tickers::STOP_WRITE,Env::Default()->NowMicros() - start_micros);
     } else {
       // Attempt to switch to a new memtable and trigger compaction of old
@@ -1598,7 +1601,7 @@ bool DBImpl::GetProperty(const Slice& property, std::string* value) {
 	value->append(statis_->ToString(Tickers::SET_FRE_COUNT_IN_COMPACTION_TIME,Tickers::SET_FRE_COUNT_IN_COMPACTION_TIME));
 	value->append(statis_->ToString(Tickers::FINDTABLE,Tickers::OPEN_TABLE_TIME));
 	if(statis_->getTickerCount(Tickers::SLOW_DOWN_WRITE) != 0){
-	  value->append(statis_->ToString(Tickers::SLOW_DOWN_WRITE,Tickers::STOP_WRITE));
+	  value->append(statis_->ToString(Tickers::SLOW_DOWN_WRITE,Tickers::WAIT_TIME));
 	}
 	value->append(table_cache_->LRU_Status());
 	value->append(printStatistics());
