@@ -19,7 +19,6 @@
 #include <deque>
 #include <limits>
 #include <set>
-#include <boost/concept_check.hpp>
 #include "leveldb/env.h"
 #include "leveldb/slice.h"
 #include "port/port.h"

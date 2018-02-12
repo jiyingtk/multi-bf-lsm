@@ -47,6 +47,9 @@ namespace leveldb{
     	TOTAL_WRITE_TIME,
 	SLOW_DOWN_WRITE,
 	STOP_WRITE,
+    WRITE_TO_MEMTABLE,
+    WRITE_TO_LOG,
+    MAKE_ROOM_FOR_WRITE,
 	TICKER_ENUM_MAX
  };  
 
@@ -91,7 +94,10 @@ namespace leveldb{
      {TOTAL_READ_TIME,"leveldb.total.write.time"},
      {TOTAL_WRITE_TIME,"leveldb.total.read.time"},
      {SLOW_DOWN_WRITE,"leveldb.slow.down.time"},
-     {STOP_WRITE,"leveldb.stop.write.time"}
+     {STOP_WRITE,"leveldb.stop.write.time"},
+     {WRITE_TO_MEMTABLE,"leveldb.write.to.memtable"},
+     {WRITE_TO_LOG,"leveldb.write.to.log"},
+     {MAKE_ROOM_FOR_WRITE,"leveldb.make.room.for.write"}
 };
 
 struct HistogramData{

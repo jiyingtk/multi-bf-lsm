@@ -1261,7 +1261,9 @@ Status DBImpl::Write(const WriteOptions& options, WriteBatch* my_batch) {
   }
 
   // May temporarily unlock and wait.
+  uint64_t start_micros = Env::Default()->NowMicros();
   Status status = MakeRoomForWrite(my_batch == NULL);
+  MeasureTime(Statistics::GetStatistics().get(),Tickers::MAKE_ROOM_FOR_WRITE,Env::Default()->NowMicros() - start_micros);
   uint64_t last_sequence = versions_->LastSequence();
   Writer* last_writer = &w;
   if (status.ok() && my_batch != NULL) {  // NULL batch is for compactions
@@ -1274,6 +1276,7 @@ Status DBImpl::Write(const WriteOptions& options, WriteBatch* my_batch) {
     // and protects against concurrent loggers and concurrent writes
     // into mem_.
     {
+      start_micros = Env::Default()->NowMicros();
       mutex_.Unlock();
       status = log_->AddRecord(WriteBatchInternal::Contents(updates));
       bool sync_error = false;
@@ -1283,9 +1286,12 @@ Status DBImpl::Write(const WriteOptions& options, WriteBatch* my_batch) {
           sync_error = true;
         }
       }
+      MeasureTime(Statistics::GetStatistics().get(),Tickers::WRITE_TO_LOG,Env::Default()->NowMicros() - start_micros);
+      start_micros = Env::Default()->NowMicros();
       if (status.ok()) {
         status = WriteBatchInternal::InsertInto(updates, mem_);
       }
+      MeasureTime(Statistics::GetStatistics().get(),Tickers::WRITE_TO_MEMTABLE,Env::Default()->NowMicros() - start_micros);
       mutex_.Lock();
       if (sync_error) {
         // The state of the log file is indeterminate: the log record we
@@ -1491,23 +1497,26 @@ bool DBImpl::GetProperty(const Slice& property, std::string* value) {
     snprintf(buf,sizeof(buf),"filter mem space overhead:%llu filter num:%llu \n",filter_mem_space,filter_num);
     value->append(buf);
     if(statis_){
-	 if(statis_->getTickerCount(Tickers::CREATE_FILTER_TIME) != 0){
-		snprintf(buf,sizeof(buf),"average create filters time  = %.3lf create filter count:%lu \naverage sync SSTable time = %.3lf sync SSTable count: %lu\n",
+        if(statis_->getTickerCount(Tickers::CREATE_FILTER_TIME) != 0){
+            snprintf(buf,sizeof(buf),"average create filters time  = %.3lf create filter count:%lu \naverage sync SSTable time = %.3lf          sync SSTable count: %lu\n",
 			statis_->GetTickerHistogram(Tickers::CREATE_FILTER_TIME)*1.0/statis_->getTickerCount(Tickers::CREATE_FILTER_TIME),statis_->getTickerCount(Tickers::CREATE_FILTER_TIME),
 			statis_->GetTickerHistogram(Tickers::SYNC_TIME)*1.0/statis_->getTickerCount(Tickers::SYNC_TIME),statis_->getTickerCount(Tickers::SYNC_TIME)
 			);
-	    }
+        }
 	    value->append(buf);    
 	    snprintf(buf,sizeof(buf),"average add filter time  = %.3lf add filters count:%lu \n",
 		     statis_->GetTickerHistogram(Tickers::ADD_FILTER_TIME)*1.0/statis_->getTickerCount(Tickers::ADD_FILTER_TIME),statis_->getTickerCount(Tickers::ADD_FILTER_TIME));
 	    value->append(buf);
 	    value->append(statis_->ToString(Tickers::FINDTABLE,Tickers::OPEN_TABLE_TIME));
 	    if(statis_->getTickerCount(Tickers::SLOW_DOWN_WRITE) != 0){
-		value->append(statis_->ToString(Tickers::SLOW_DOWN_WRITE,Tickers::STOP_WRITE));
+            value->append(statis_->ToString(Tickers::SLOW_DOWN_WRITE,Tickers::STOP_WRITE));
+	    }
+        if(statis_->getTickerCount(Tickers::WRITE_TO_MEMTABLE) != 0){
+            value->append(statis_->ToString(Tickers::WRITE_TO_MEMTABLE,Tickers::MAKE_ROOM_FOR_WRITE));
 	    }
     }
-
-     value->append(printStatistics());
+    
+    value->append(printStatistics());
     return true;
   } else if (in == "sstables") {
     *value = versions_->current()->DebugString();
