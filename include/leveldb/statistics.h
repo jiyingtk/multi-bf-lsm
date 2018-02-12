@@ -32,7 +32,7 @@ namespace leveldb{
 	ADD_FILTER_TIME_4,
 	ADD_FILTER_TIME_5,
 	ADD_FILTER_TIME_6,
-        ADD_FILTER_TIME_7,
+    ADD_FILTER_TIME_7,
 	REMOVE_FILTER_TIME,
 	REMOVE_EXPIRED_FILTER_TIME_0,
 	REMOVE_EXPIRED_FILTER_TIME_1,
@@ -59,7 +59,7 @@ namespace leveldb{
 	FORCE_SHRINKING,
 	FINDTABLE,
 	INTERNALGET,
-        RELEASE,
+    RELEASE,
 	BLOCK_READ_TIME,
 	READ_BLOCK_NEW_TIME,
 	READ_BLOCK_FILE_READ_TIME,
@@ -72,6 +72,9 @@ namespace leveldb{
 	SLOW_DOWN_WRITE,
 	STOP_WRITE,
 	WAIT_TIME,
+    WRITE_TO_MEMTABLE,
+    WRITE_TO_LOG,
+    MAKE_ROOM_FOR_WRITE,
 	TICKER_ENUM_MAX
  };  
 
@@ -141,7 +144,10 @@ namespace leveldb{
      {OPEN_TABLE_TIME,"leveldb.open.table.time"},
      {SLOW_DOWN_WRITE,"leveldb.slow.down.time"},
      {STOP_WRITE,"leveldb.stop.write.time"},
-     {WAIT_TIME,"leveldb.wait.time"}
+     {WAIT_TIME,"leveldb.wait.time"},
+     {WRITE_TO_MEMTABLE,"leveldb.write.to.memtable"},
+     {WRITE_TO_LOG,"leveldb.write.to.log"},
+     {MAKE_ROOM_FOR_WRITE,"leveldb.make.room.for.write"}
 };
 
 struct HistogramData{

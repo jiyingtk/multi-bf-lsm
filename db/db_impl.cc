@@ -1298,7 +1298,9 @@ Status DBImpl::Write(const WriteOptions& options, WriteBatch* my_batch) {
   }
 
   // May temporarily unlock and wait.
+  uint64_t start_micros = Env::Default()->NowMicros();
   Status status = MakeRoomForWrite(my_batch == NULL);
+  MeasureTime(Statistics::GetStatistics().get(),Tickers::MAKE_ROOM_FOR_WRITE,Env::Default()->NowMicros() - start_micros);
   uint64_t last_sequence = versions_->LastSequence();
   Writer* last_writer = &w;
   if (status.ok() && my_batch != NULL) {  // NULL batch is for compactions
@@ -1311,6 +1313,7 @@ Status DBImpl::Write(const WriteOptions& options, WriteBatch* my_batch) {
     // and protects against concurrent loggers and concurrent writes
     // into mem_.
     {
+      start_micros = Env::Default()->NowMicros();
       mutex_.Unlock();
       status = log_->AddRecord(WriteBatchInternal::Contents(updates));
       bool sync_error = false;
@@ -1320,9 +1323,12 @@ Status DBImpl::Write(const WriteOptions& options, WriteBatch* my_batch) {
           sync_error = true;
         }
       }
+      MeasureTime(Statistics::GetStatistics().get(),Tickers::WRITE_TO_LOG,Env::Default()->NowMicros() - start_micros);
+      start_micros = Env::Default()->NowMicros();
       if (status.ok()) {
         status = WriteBatchInternal::InsertInto(updates, mem_);
       }
+      MeasureTime(Statistics::GetStatistics().get(),Tickers::WRITE_TO_MEMTABLE,Env::Default()->NowMicros() - start_micros);
       mutex_.Lock();
       if (sync_error) {
         // The state of the log file is indeterminate: the log record we
@@ -1603,6 +1609,9 @@ bool DBImpl::GetProperty(const Slice& property, std::string* value) {
 	if(statis_->getTickerCount(Tickers::SLOW_DOWN_WRITE) != 0){
 	  value->append(statis_->ToString(Tickers::SLOW_DOWN_WRITE,Tickers::WAIT_TIME));
 	}
+	if(statis_->getTickerCount(Tickers::WRITE_TO_MEMTABLE) != 0){
+        value->append(statis_->ToString(Tickers::WRITE_TO_MEMTABLE,MAKE_ROOM_FOR_WRITE));
+    }
 	value->append(table_cache_->LRU_Status());
 	value->append(printStatistics());
 	statis_->reset();
