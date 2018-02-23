@@ -181,8 +181,11 @@ void DBImpl::untilCompactionEnds()
 
 DBImpl::~DBImpl() {
   // Wait for background work to finish
-  untilCompactionEnds();
+  //  untilCompactionEnds();
   mutex_.Lock();
+  // while (bg_compaction_scheduled_) {
+  //   bg_cv_.Wait();
+  // }
   shutting_down_.Release_Store(this);  // Any non-NULL value is ok
   while (bg_compaction_scheduled_) {
     bg_cv_.Wait();

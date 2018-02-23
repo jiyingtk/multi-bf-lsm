@@ -116,6 +116,10 @@ void Table::ReadMeta(const Footer& footer) {
   iter->Seek(key);
   if (iter->Valid() && iter->key() == Slice(key)) {
     ReadFilter(iter->value());
+  }else{
+    fprintf(stderr,"no filter of SSTable\n");
+    assert(0);
+    // exit(0);
   }
   delete iter;
   delete meta;

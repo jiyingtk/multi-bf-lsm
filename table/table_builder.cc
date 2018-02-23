@@ -208,6 +208,8 @@ Status TableBuilder::Finish() {
   if (ok() && r->filter_block != NULL) {
     WriteRawBlock(r->filter_block->Finish(), kNoCompression,
                   &filter_block_handle);
+  }else{
+    assert(0);
   }
 
   // Write metaindex block
