@@ -463,21 +463,27 @@ void MultiQueue::Unref(LRUQueueHandle* e)
 	 assert(e->refs > 0);
 	 e->refs--;
 	 if (e->refs == 0) { // Deallocate.
+	 deallocate:
 		assert(!e->in_cache);
 		(*e->deleter)(e->key(), e->value);
 		free(e);
 	  } else if (e->in_cache && e->refs == 1) {  // note:No longer in use; move to lru_ list.
-		LRU_Remove(e);
 		//int qn = Queue_Num(e->fre_count);
 		 leveldb::TableAndFile *tf = reinterpret_cast<leveldb::TableAndFile *>(e->value);
 		if(tf->table->getCurrFilterNum() < e->queue_id && e->type){  //only add;
-		  //		    mutex_.unlock();
+		    ++e->refs;
+		    mutex_.unlock();
 		    int64_t delta_charge = tf->table->AdjustFilters(e->queue_id);  // not in lru list, so need to worry will be catched by ShrinkUsage
-		    //		    mutex_.lock();
+		    mutex_.lock();
+		    --e->refs;
+		    if(e->refs == 0){
+		      goto deallocate;
+		    }
 		    e->charge += delta_charge;
 		    usage_ += delta_charge;
 		    MayBeShrinkUsage();   
 		 }
+		LRU_Remove(e);
 		LRU_Append(&lrus_[e->queue_id], e);   
 		++lru_lens_[e->queue_id];
 		++sum_lru_len;
