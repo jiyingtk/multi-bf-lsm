@@ -63,7 +63,7 @@ struct Table::Rep {
 Status Table::Open(const Options& options,
                    RandomAccessFile* file,
                    uint64_t size,
-                   Table** table) {
+                   Table** table,bool isLevel0) {
   *table = NULL;
   if (size < Footer::kEncodedLength) {
     return Status::Corruption("file is too short to be an sstable");
@@ -105,7 +105,12 @@ Status Table::Open(const Options& options,
     rep->filter_datas.clear();
     rep->filter = NULL;
     *table = new Table(rep);
-    (*table)->ReadMeta(footer,options.opEp_.add_filter);
+    if(isLevel0){
+	 (*table)->ReadMeta(footer,3);
+    }else{
+	 (*table)->ReadMeta(footer,options.opEp_.add_filter?1:0);
+    }
+   
   } else {
     delete index_block;
   }
@@ -113,7 +118,7 @@ Status Table::Open(const Options& options,
   return s;
 }
 
-void Table::ReadMeta(const Footer& footer,bool add_filter) {
+void Table::ReadMeta(const Footer& footer,int add_filter_num) {
   if (rep_->options.filter_policy == NULL) { //allow add_filter in init_phase
     return;  // Do not need any metadata
   }
@@ -145,9 +150,12 @@ void Table::ReadMeta(const Footer& footer,bool add_filter) {
       rep_->filter_handles.push_back(iter->value());
       iter->Next();
    }
-   if(multi_queue_init){
+   if(add_filter_num > 1){
+	ReadFilters(rep_->filter_handles,add_filter_num);
+    }
+   else if(multi_queue_init){
 	ReadFilters(rep_->filter_handles,rep_->options.opEp_.init_filter_nums);
-   }else if(add_filter){
+   }else if(add_filter_num){
 	ReadFilter(rep_->filter_handles[0]);
    }
   delete iter;

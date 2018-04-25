@@ -19,7 +19,7 @@ Status BuildTable(const std::string& dbname,
                   const Options& options,
                   TableCache* table_cache,
                   Iterator* iter,
-                  FileMetaData* meta) {
+                  FileMetaData* meta,bool isLevel0) {
   Status s;
   meta->file_size = 0;
   iter->SeekToFirst();
@@ -66,7 +66,9 @@ Status BuildTable(const std::string& dbname,
 
     if (s.ok()) {
       // Verify that the table is usable
-      Iterator* it = table_cache->NewIterator(ReadOptions(),
+      leveldb::ReadOptions ro;
+      ro.isLevel0 = isLevel0;
+      Iterator* it = table_cache->NewIterator(ro,
                                               meta->number,
                                               meta->file_size);
       s = it->status();

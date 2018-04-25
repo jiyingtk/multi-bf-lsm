@@ -183,7 +183,7 @@ struct ReadOptions {
   // verified against corresponding checksums.
   // Default: false
   bool verify_checksums;
-
+  bool isLevel0;  //new file isLevel0?
   // Should the data read for this iteration be cached in memory?
   // Callers may wish to set this field to false for bulk scans.
   // Default: true
@@ -198,7 +198,7 @@ struct ReadOptions {
   const Snapshot* snapshot;
   
   ReadOptions()
-      : verify_checksums(false),
+      : verify_checksums(false),isLevel0(false),
         fill_cache(true),
         snapshot(NULL),read_file_nums(0) {
   }

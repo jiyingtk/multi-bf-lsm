@@ -27,7 +27,7 @@ extern Status BuildTable(const std::string& dbname,
                          const Options& options,
                          TableCache* table_cache,
                          Iterator* iter,
-                         FileMetaData* meta);
+                         FileMetaData* meta, bool isLevel0=false);
 
 }  // namespace leveldb
 

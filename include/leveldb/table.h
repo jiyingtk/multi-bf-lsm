@@ -38,7 +38,7 @@ class Table {
   static Status Open(const Options& options,
                      RandomAccessFile* file,
                      uint64_t file_size,
-                     Table** table);
+                     Table** table,bool isLevel0 = false);
 
   ~Table();
 
@@ -77,7 +77,7 @@ class Table {
       void (*handle_result)(void* arg, const Slice& k, const Slice& v));
 
 
-  void ReadMeta(const Footer& footer,bool add_filter=true);
+  void ReadMeta(const Footer& footer,int add_filter_num=1); //int add_filter
   void ReadFilter(const Slice& filter_handle_value);
   void ReadFilters(std::vector<Slice> &filter_handle_values,int n);
   // No copying allowed

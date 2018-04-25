@@ -1102,6 +1102,7 @@ Status DBImpl::DoCompactionWork(CompactionState* compact) {
 
   CompactionStats stats;
   stats.micros = env_->NowMicros() - start_micros - imm_micros;
+  MeasureTime(Statistics::GetStatistics().get(),Tickers::COMPACTION_TIME,Env::Default()->NowMicros() - start_micros);
   for (int which = 0; which < 2; which++) {
     for (int i = 0; i < compact->compaction->num_input_files(which); i++) {
       stats.bytes_read += compact->compaction->input(which, i)->file_size;
@@ -1610,7 +1611,7 @@ bool DBImpl::GetProperty(const Slice& property, std::string* value) {
 	  value->append(statis_->ToString(Tickers::SLOW_DOWN_WRITE,Tickers::WAIT_TIME));
 	}
 	if(statis_->getTickerCount(Tickers::WRITE_TO_MEMTABLE) != 0){
-        value->append(statis_->ToString(Tickers::WRITE_TO_MEMTABLE,MAKE_ROOM_FOR_WRITE));
+        value->append(statis_->ToString(Tickers::WRITE_TO_MEMTABLE,Tickers::COMPACTION_TIME));
     }
 	value->append(table_cache_->LRU_Status());
 	value->append(printStatistics());

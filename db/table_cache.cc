@@ -37,7 +37,7 @@ TableCache::~TableCache() {
 }
 
 Status TableCache::FindTable(uint64_t file_number, uint64_t file_size,
-                             Cache::Handle** handle,bool Get) {
+                             Cache::Handle** handle,bool Get,bool isLevel0) {
   Status s;
   char buf[sizeof(file_number)];
   EncodeFixed64(buf, file_number);
@@ -56,7 +56,7 @@ Status TableCache::FindTable(uint64_t file_number, uint64_t file_size,
       }
     }
     if (s.ok()) {
-      s = Table::Open(*options_, file, file_size, &table);
+      s = Table::Open(*options_, file, file_size, &table,isLevel0);
     }
     MeasureTime(Statistics::GetStatistics().get(),Tickers::OPEN_TABLE_TIME,Env::Default()->NowMicros() - start_micros);
     if (!s.ok()) {
@@ -85,9 +85,9 @@ Iterator* TableCache::NewIterator(const ReadOptions& options,
   if (tableptr != NULL) {
     *tableptr = NULL;
   }
-
+ 
   Cache::Handle* handle = NULL;
-  Status s = FindTable(file_number, file_size, &handle);
+  Status s = FindTable(file_number, file_size, &handle,false,options.isLevel0);
   if (!s.ok()) {
     return NewErrorIterator(s);
   }
