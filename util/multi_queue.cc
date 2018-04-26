@@ -530,6 +530,7 @@ uint64_t MultiQueue::LookupFreCount(const Slice& key)
     mutex_.lock();
     LRUQueueHandle* e = table_.Lookup(key, hash);
     if (e != NULL) {
+	mutex_.unlock();
 	return e->fre_count;
     }
     mutex_.unlock();
@@ -541,7 +542,9 @@ void MultiQueue::SetFreCount(const Slice &key,uint64_t freCount){
      mutex_.lock();
      LRUQueueHandle* e = table_.Lookup(key, hash);  
      if (e != NULL) {
+	 expection_ -= e->fre_count*FalsePositive(e);
 	e->fre_count = freCount;
+	expection_ += e->fre_count*FalsePositive(e);
      }
      mutex_.unlock();
  
