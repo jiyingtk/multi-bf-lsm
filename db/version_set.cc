@@ -218,7 +218,8 @@ static Iterator* GetFileIterator(void* arg,
     return NewErrorIterator(
         Status::Corruption("FileReader invoked with unexpected value"));
   } else {
-    return cache->NewIterator(options,
+  
+    return cache->NewBufferedIterator(options,
                               DecodeFixed64(file_value.data()),
                               DecodeFixed64(file_value.data() + 8));
   }
@@ -1321,7 +1322,7 @@ Iterator* VersionSet::MakeInputIterator(Compaction* c) {
       if (c->level() + which == 0) {
         const std::vector<FileMetaData*>& files = c->inputs_[which];
         for (size_t i = 0; i < files.size(); i++) {
-          list[num++] = table_cache_->NewIterator(
+          list[num++] = table_cache_->NewBufferedIterator(
               options, files[i]->number, files[i]->file_size);
         }
       } else {

@@ -40,6 +40,11 @@ class TableCache {
                         uint64_t file_number,
                         uint64_t file_size,
                         Table** tableptr = NULL);
+   
+ Iterator* NewBufferedIterator(const ReadOptions& options,
+                        uint64_t file_number,
+                        uint64_t file_size,
+                        Table** tableptr = NULL);
 
   // If a seek to internal key "k" in specified file finds an entry,
   // call (*handle_result)(arg, found_key, found_value).
@@ -64,6 +69,7 @@ class TableCache {
   Cache* cache_;
   friend class VersionSet;
   friend class Version;
+  Status FindBufferedTable(uint64_t file_number, uint64_t file_size, Cache::Handle**,TableAndFile *rtf);
   Status FindTable(uint64_t file_number, uint64_t file_size, Cache::Handle**,bool Get=false,bool isLevel0=false);
 };
 

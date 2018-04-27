@@ -61,6 +61,8 @@ class Env {
   virtual Status NewRandomAccessFile(const std::string& fname,
                                      RandomAccessFile** result,bool direct_IO_flag = false) = 0;
 
+  virtual Status NewBufferedRandomAccessFile(const std::string& fname,
+                                     RandomAccessFile** result) = 0;
   // Create an object that writes to a new file with the specified
   // name.  Deletes any existing file with the same name and creates a
   // new file.  On success, stores a pointer to the new file in
@@ -226,7 +228,9 @@ class RandomAccessFile {
   virtual Status Read(uint64_t offset, size_t n, Slice* result,
                       char* scratch) const = 0;
  virtual Status Reads(uint64_t offset, size_t n, Slice results[],
-                      char* scratch[],size_t lens[],int num) const{}
+                      char* scratch[],size_t lens[],int num) const{
+			  fprintf(stderr,"not implemented!\n");
+		    }
  private:
   // No copying allowed
   RandomAccessFile(const RandomAccessFile&);
@@ -314,6 +318,9 @@ class EnvWrapper : public Env {
   Status NewRandomAccessFile(const std::string& f, RandomAccessFile** r,bool direct_IO_flag=false) {
     return target_->NewRandomAccessFile(f, r,direct_IO_flag);
   }
+  Status NewBufferedRandomAccessFile(const std::string& f, RandomAccessFile** r){
+	return target_->NewBufferedRandomAccessFile(f,r);
+ }
   Status NewWritableFile(const std::string& f, WritableFile** r) {
     return target_->NewWritableFile(f, r);
   }

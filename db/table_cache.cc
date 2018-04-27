@@ -23,6 +23,12 @@ static void UnrefEntry(void* arg1, void* arg2) {
   cache->Release(h);
 }
 
+static void DeleteEntry(void* arg1, void* arg2) {
+  TableAndFile* tf = reinterpret_cast<TableAndFile*>(arg2);
+  delete tf->table;
+  delete tf->file;
+  delete tf;
+}
 TableCache::TableCache(const std::string& dbname,
                        const Options* options,
                        int entries)
@@ -34,6 +40,41 @@ TableCache::TableCache(const std::string& dbname,
 
 TableCache::~TableCache() {
   delete cache_;
+}
+
+Status TableCache::FindBufferedTable(uint64_t file_number, uint64_t file_size,
+                             Cache::Handle** handle,TableAndFile *rtf){
+    Status s;
+    char buf[sizeof(file_number)];
+    EncodeFixed64(buf, file_number);
+    Slice key(buf, sizeof(buf));
+    std::string fname = TableFileName(dbname_, file_number);
+    RandomAccessFile* file = NULL;
+    Table* table = NULL;
+    s = env_->NewBufferedRandomAccessFile(fname, &file);
+    if (!s.ok()) {
+      std::string old_fname = SSTTableFileName(dbname_, file_number);
+      if (env_->NewBufferedRandomAccessFile(old_fname, &file).ok()) {
+        s = Status::OK();
+      }
+    }
+    if (s.ok()) {
+      s = Table::Open(*options_, file, file_size, &table,false);
+    }
+    if (!s.ok()) {
+      assert(table == NULL);
+      rtf->file = NULL;
+      rtf->table = NULL;
+      delete file;
+      // We do not cache error results so that if the error is transient,
+      // or somebody repairs the file, we recover automatically.
+    } else {
+      //TableAndFile* tf = new TableAndFile;
+      rtf->file = file;
+      rtf->table = table;
+     
+    }
+    return s;
 }
 
 Status TableCache::FindTable(uint64_t file_number, uint64_t file_size,
@@ -76,6 +117,31 @@ Status TableCache::FindTable(uint64_t file_number, uint64_t file_size,
     }
   }
   return s;
+}
+
+Iterator* TableCache::NewBufferedIterator(const ReadOptions& options,
+                                  uint64_t file_number,
+                                  uint64_t file_size,
+                                  Table** tableptr) {
+    if (tableptr != NULL) {
+	*tableptr = NULL;
+    }
+    TableAndFile *rtf = new TableAndFile;
+    Cache::Handle* handle = NULL;
+    Status s = FindBufferedTable(file_number, file_size, &handle,rtf);
+    if (!s.ok()) {
+	return NewErrorIterator(s);
+    }
+
+    Table* table = reinterpret_cast<TableAndFile*>(cache_->Value(handle))->table;
+    Iterator* result = table->NewIterator(options);
+    result->RegisterCleanup(&DeleteEntry,NULL,rtf);
+    if (tableptr != NULL) {
+	*tableptr = table;
+    }
+    return result;				
+				
+				     
 }
 
 Iterator* TableCache::NewIterator(const ReadOptions& options,
