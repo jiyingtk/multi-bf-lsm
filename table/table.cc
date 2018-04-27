@@ -106,7 +106,7 @@ Status Table::Open(const Options& options,
     rep->filter = NULL;
     *table = new Table(rep);
     if(isLevel0){
-	 (*table)->ReadMeta(footer,3);
+	 (*table)->ReadMeta(footer,4);
     }else{
 	 (*table)->ReadMeta(footer,options.opEp_.add_filter?1:0);
     }
@@ -151,6 +151,7 @@ void Table::ReadMeta(const Footer& footer,int add_filter_num) {
       iter->Next();
    }
    if(add_filter_num > 1){
+     //     fprintf(stderr,"level 0 add %d filters\n",add_filter_num);
 	ReadFilters(rep_->filter_handles,add_filter_num);
     }
    else if(multi_queue_init){

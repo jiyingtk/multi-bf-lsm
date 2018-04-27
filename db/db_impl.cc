@@ -537,7 +537,7 @@ Status DBImpl::WriteLevel0Table(MemTable* mem, VersionEdit* edit,
   Status s;
   {
     mutex_.Unlock();
-    s = BuildTable(dbname_, env_, options_, table_cache_, iter, &meta);
+    s = BuildTable(dbname_, env_, options_, table_cache_, iter, &meta,true);
     mutex_.Lock();
   }
 
@@ -807,7 +807,7 @@ void DBImpl::BackgroundCompaction() {
 }
 void DBImpl::KeepFreCount(CompactionState *compact){
   uint64_t sum_fre_count = 0,bundle_fre_count = 0;
-  uint64_t old_bags[16],new_bags[24];
+  uint64_t old_bags[30],new_bags[30];
   int which = 0,num_bags;
   int i;
   num_bags = compact->compaction->num_input_files(0);
@@ -1226,10 +1226,10 @@ Status DBImpl::Get(const ReadOptions& options,
 	alloc_stop_watch.destroy(p);
     } else {
       s = current->Get(options, lkey, value, &stats);
-      if(s.IsNotFound()){
+      //      if(s.IsNotFound()){
 	p->setHistType(options.read_file_nums+READ_0_TIME);
 	alloc_stop_watch.destroy(p);
-      }
+	//      }
       have_stat_update = true;
     }
     alloc_stop_watch.deallocate(p,1);
