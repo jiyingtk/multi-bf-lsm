@@ -283,6 +283,27 @@ class PosixBufferedRandomAccessFile:public RandomAccessFile{
     return s;
   }
   
+    virtual Status Reads(uint64_t offset, size_t n, Slice  results[],
+                      char* scratch[],size_t lens[],int num) const {
+    Status s;
+    ssize_t r;
+      int i;
+      static struct iovec iov[8];
+      for(i = 0 ; i < num ; ++i){
+	    iov[i].iov_base = scratch[i];
+	    iov[i].iov_len = lens[i];
+      }
+      r = preadv(fd_, iov,num, static_cast<off_t>(offset));
+      for(i = 0 ; i < num ; ++i){
+	  if (r < 0) {
+		// An error: return a non-ok status
+		s = PosixError(filename_, errno);
+		break;
+	    }
+	    results[i] = Slice(scratch[i], lens[i]);
+      }
+     return s;
+  }
 };
 // pread() based random-access
 class PosixRandomAccessFile: public RandomAccessFile {
