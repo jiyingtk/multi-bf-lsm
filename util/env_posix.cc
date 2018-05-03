@@ -27,6 +27,7 @@
 #include "util/posix_logger.h"
 #include "util/env_posix_test_helper.h"
 #include <thread>
+#include "leveldb/statistics.h"
 namespace leveldb {
 inline size_t TruncateToPageBoundary(size_t page_size, size_t s) {
   s -= (s & (page_size - 1));
@@ -233,6 +234,59 @@ class PosixSequentialFile: public SequentialFile {
   }
 };
 
+
+class PosixBufferedRandomAccessFile:public RandomAccessFile{
+    private:
+  std::string filename_;
+  bool temporary_fd_;  // If true, fd_ is -1 and we open on every read.
+  int fd_;
+  Limiter* limiter_;
+  public:
+  PosixBufferedRandomAccessFile(const std::string& fname, int fd, Limiter* limiter)
+      : filename_(fname), fd_(fd), limiter_(limiter){
+	temporary_fd_ = !limiter->Acquire();
+	if (temporary_fd_) {
+	    // Open file on every access.
+	    close(fd_);
+	    fd_ = -1;
+	}
+  }
+  
+  virtual ~PosixBufferedRandomAccessFile() {
+    if (!temporary_fd_) {
+      close(fd_);
+      limiter_->Release();
+    }
+  }
+  
+  virtual Status Read(uint64_t offset, size_t n, Slice* result,
+                      char* scratch) const {
+    int fd = fd_;
+    uint64_t start_micros = Env::Default()->NowMicros();
+    if (temporary_fd_) {
+      int o_flag = O_RDONLY;
+      fd = open(filename_.c_str(), o_flag);
+      if (fd < 0) {
+        return PosixError(filename_, errno);
+      }
+    }
+    Status s;
+    ssize_t r;
+   r = pread(fd, scratch, n, static_cast<off_t>(offset));
+    if (r < 0) {
+	    // An error: return a non-ok status
+	    s = PosixError(filename_, errno);
+    }
+    *result = Slice(scratch, (r < 0) ? 0 : r);
+    if (temporary_fd_) {
+      // Close the temporary file descriptor opened earlier.
+      close(fd);
+    }
+    MeasureTime(Statistics::GetStatistics().get(),Tickers::COMPACTION_READ_TIME,Env::Default()->NowMicros() - start_micros);
+    return s;
+  }
+  
+};
 // pread() based random-access
 class PosixRandomAccessFile: public RandomAccessFile {
  private:
@@ -484,6 +538,22 @@ class PosixEnv : public Env {
       return Status::OK();
     }
   }
+  
+  virtual Status NewBufferedRandomAccessFile(const std::string& fname,
+                                     RandomAccessFile** result){
+		
+	*result = NULL;
+	Status s;
+	int fd;
+	fd = open(fname.c_str(),O_RDONLY);
+	if (fd < 0) {
+	    s = PosixError(fname, errno);			    
+	}else {
+	    //directio
+	*result = new PosixBufferedRandomAccessFile(fname, fd, &fd_limit_);
+	}
+	return s;
+   }
 
   virtual Status NewRandomAccessFile(const std::string& fname,
                                      RandomAccessFile** result,bool direct_IO_flag) {

@@ -1515,7 +1515,7 @@ bool DBImpl::GetProperty(const Slice& property, std::string* value) {
             value->append(statis_->ToString(Tickers::SLOW_DOWN_WRITE,Tickers::STOP_WRITE));
 	    }
         if(statis_->getTickerCount(Tickers::WRITE_TO_MEMTABLE) != 0){
-            value->append(statis_->ToString(Tickers::WRITE_TO_MEMTABLE,Tickers::MAKE_ROOM_FOR_WRITE));
+            value->append(statis_->ToString(Tickers::WRITE_TO_MEMTABLE,Tickers::COMPACTION_READ_TIME));
 	    }
     }
     

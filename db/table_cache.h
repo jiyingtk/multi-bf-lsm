@@ -15,7 +15,10 @@
 #include "port/port.h"
 
 namespace leveldb {
-
+struct TableAndFile {
+  RandomAccessFile* file;
+  Table* table;
+};
 class Env;
 
 class TableCache {
@@ -35,6 +38,11 @@ class TableCache {
                         uint64_t file_size,
                         Table** tableptr = NULL);
 
+  Iterator* NewBufferedIterator(const ReadOptions& options,
+                        uint64_t file_number,
+                        uint64_t file_size,
+                        Table** tableptr = NULL);
+  
   // If a seek to internal key "k" in specified file finds an entry,
   // call (*handle_result)(arg, found_key, found_value).
   Status Get(const ReadOptions& options,
@@ -52,7 +60,7 @@ class TableCache {
   const std::string dbname_;
   const Options* options_;
   Cache* cache_;
-
+  Status FindBufferedTable(uint64_t file_number, uint64_t file_size, Cache::Handle**,TableAndFile *rtf);
   Status FindTable(uint64_t file_number, uint64_t file_size, Cache::Handle**);
 };
 

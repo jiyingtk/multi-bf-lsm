@@ -60,7 +60,9 @@ class Env {
   // The returned file may be concurrently accessed by multiple threads.
   virtual Status NewRandomAccessFile(const std::string& fname,
                                      RandomAccessFile** result,bool directIO_flag = false) = 0;
-
+				     
+  virtual Status NewBufferedRandomAccessFile(const std::string& fname,
+                                     RandomAccessFile** result) = 0;
   // Create an object that writes to a new file with the specified
   // name.  Deletes any existing file with the same name and creates a
   // new file.  On success, stores a pointer to the new file in
@@ -303,6 +305,9 @@ class EnvWrapper : public Env {
   Status NewRandomAccessFile(const std::string& f, RandomAccessFile** r,bool directIO_flag=false) {
     return target_->NewRandomAccessFile(f, r,directIO_flag);
   }
+  Status NewBufferedRandomAccessFile(const std::string& f, RandomAccessFile** r){
+	return target_->NewBufferedRandomAccessFile(f,r);
+ }
   Status NewWritableFile(const std::string& f, WritableFile** r) {
     return target_->NewWritableFile(f, r);
   }
