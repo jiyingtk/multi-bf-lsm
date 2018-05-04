@@ -133,7 +133,7 @@ Iterator* TableCache::NewBufferedIterator(const ReadOptions& options,
 	return NewErrorIterator(s);
     }
 
-    Table* table = reinterpret_cast<TableAndFile*>(cache_->Value(handle))->table;
+    Table* table = rtf->table;
     Iterator* result = table->NewIterator(options);
     result->RegisterCleanup(&DeleteEntry,NULL,rtf);
     if (tableptr != NULL) {
