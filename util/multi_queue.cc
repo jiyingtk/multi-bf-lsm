@@ -191,6 +191,7 @@ class HandleTable {   // a list store LRUQueueHandle's address , don't care queu
 
 
 class MultiQueue:public Cache{
+    int insert_count;
     int lrus_num_;
     size_t *charges_;
     std::atomic<uint64_t> last_id_;
@@ -270,7 +271,7 @@ public:
 };
 
 MultiQueue::MultiQueue(size_t capacity,int lrus_num,int base_num,uint64_t life_time,double fr,double sr,double cr,int lg_b,double s_r):capacity_(capacity),lrus_num_(lrus_num),base_num_(base_num),life_time_(life_time),shrinking_(false)
-  ,force_shrink_ratio(fr),slow_shrink_ratio(sr),change_ratio(cr),sum_lru_len(0),log_base(log(lg_b)),slow_ratio(sr),expection_(0),usage_(0),shutting_down_(false)
+  ,force_shrink_ratio(fr),slow_shrink_ratio(sr),change_ratio(cr),sum_lru_len(0),log_base(log(lg_b)),slow_ratio(sr),expection_(0),usage_(0),shutting_down_(false),insert_count(0)
 {
     //TODO: declare outside  class  in_use and lrus parent must be Initialized,avoid lock crush
       uint64_t base_sum = lg_b;
@@ -318,6 +319,7 @@ std::string MultiQueue::LRU_Status()
 	snprintf(buf,sizeof(buf),"lru %d count %d lru_lens_count:%lu \n",i,count,lru_lens_[i]);
 	value.append(buf);
     }
+  snprintf(buf,sizeof(buf),"lru insert_count %d\n",insert_count);
     mutex_.unlock();
     return value;
 }
@@ -755,6 +757,7 @@ Cache::Handle* MultiQueue::Insert(const Slice& key, void* value, size_t charge, 
 
 Cache::Handle* MultiQueue::Insert(const Slice& key, uint32_t hash, void* value, size_t charge, void (*deleter)(const Slice& key, void* value),bool type)
 {
+  insert_count++;
   //MutexLock l(&mutex_);
 
   LRUQueueHandle* e = reinterpret_cast<LRUQueueHandle*>(
@@ -770,6 +773,10 @@ Cache::Handle* MultiQueue::Insert(const Slice& key, uint32_t hash, void* value, 
   e->fre_count = 0;
   leveldb::TableAndFile *tf = reinterpret_cast<leveldb::TableAndFile *>(e->value);
   e->queue_id = tf->table->getCurrFilterNum() ;   //
+  if (e->queue_id == 0) {
+    cout << "multiqueue insert queue_id 0" << endl;
+  }
+
   e->expire_time = current_time_ + life_time_;
   memcpy(e->key_data, key.data(), key.size());
   

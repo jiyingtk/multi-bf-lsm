@@ -14,8 +14,9 @@
 #include "table/format.h"
 #include "table/two_level_iterator.h"
 #include "util/coding.h"
-#include<list>
-#include <boost/config/posix_features.hpp>
+#include <iostream>
+#include <list>
+#include <boost/config/detail/posix_features.hpp>
 
 //filter memory space overhead
 extern unsigned long long filter_mem_space;
@@ -132,6 +133,7 @@ void Table::ReadMeta(const Footer& footer,int add_filter_num) {
   BlockContents contents;
   if (!ReadBlock(rep_->file, opt, footer.metaindex_handle(), &contents).ok()) {
     // Do not propagate errors since meta info is not needed for operation
+    std::cout << "ReadMeta footer failed" << std::endl;
     return;
   }
   Block* meta = new Block(contents);
@@ -144,6 +146,8 @@ void Table::ReadMeta(const Footer& footer,int add_filter_num) {
   if (iter->Valid() && iter->key() == Slice(key)) {
    
   }else{
+    std::cout << "ReadMeta filter iter is not valid" << std::endl;
+
     fprintf(stderr,"filter iter is not valid\n");
   }
   while(iter->Valid()){
@@ -169,6 +173,8 @@ void Table::ReadFilters(std::vector< Slice >& filter_handle_values,int n)
     for(int i = 0 ;  i <  n ; i++){
 	    v = filter_handle_values[i];
 	    if(!filter_handles[i].DecodeFrom(&v).ok()){
+    std::cout << "ReadFilters handles decode failed" << std::endl;
+
 		return;
 	    }
     }
@@ -179,6 +185,7 @@ void Table::ReadFilters(std::vector< Slice >& filter_handle_values,int n)
    BlockContents blocks[6];
    uint64_t start_micros = Env::Default()->NowMicros();
    if (!ReadBlocks(rep_->file, opt, filter_handles, blocks,n).ok()) {
+  std::cout << "ReadFilters read filter_handles failed" << std::endl;
 	return;
    }
    for(int i = 0 ; i < n ; i++){
@@ -193,6 +200,10 @@ void Table::ReadFilters(std::vector< Slice >& filter_handle_values,int n)
 	}else{
 		rep_->filter->AddFilter(blocks[i].data);
 	}
+
+  if (rep_->filter == NULL) {
+  std::cout << "ReadFilters read filter data failed" << std::endl;
+  }
    }
    MeasureTime(Statistics::GetStatistics().get(),Tickers::ADD_FILTER_TIME_0 + n,Env::Default()->NowMicros() - start_micros);
 }

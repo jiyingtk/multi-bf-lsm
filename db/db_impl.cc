@@ -1615,6 +1615,9 @@ bool DBImpl::GetProperty(const Slice& property, std::string* value) {
     }
 	value->append(table_cache_->LRU_Status());
 	value->append(printStatistics());
+  if(statis_->getTickerCount(Tickers::FILTER_LOOKUP_TIME) != 0){
+    value->append(statis_->ToString(Tickers::FILTER_LOOKUP_TIME,Tickers::FILTER_LOOKUP_TIME));
+  }
 	statis_->reset();
     }
     return true;

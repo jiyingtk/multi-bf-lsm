@@ -5,6 +5,7 @@
 #include "db/table_cache.h"
 #include "db/filename.h"
 #include "util/coding.h"
+#include <iostream>
 
 namespace leveldb {
 bool directIO_of_RandomAccess = false;
@@ -83,7 +84,11 @@ Status TableCache::FindTable(uint64_t file_number, uint64_t file_size,
   char buf[sizeof(file_number)];
   EncodeFixed64(buf, file_number);
   Slice key(buf, sizeof(buf));
+  
+  uint64_t start_micros_l = Env::Default()->NowMicros();
   *handle = cache_->Lookup(key,Get);
+  MeasureTime(Statistics::GetStatistics().get(),Tickers::FILTER_LOOKUP_TIME,Env::Default()->NowMicros() - start_micros_l);
+
   if (*handle == NULL) {
     uint64_t start_micros = Env::Default()->NowMicros();
     std::string fname = TableFileName(dbname_, file_number);
@@ -113,8 +118,12 @@ Status TableCache::FindTable(uint64_t file_number, uint64_t file_size,
       for(int i = 0 ; i < table->getCurrFilterNum() ; i ++){
 	  charge += FilterPolicy::bits_per_key_per_filter_[i];
       }
+      // std::cout << "cachetable insert fid " << file_number << " charge " << charge << std::endl;
       *handle = cache_->Insert(key, tf,charge, &DeleteEntry,true);
     }
+  }
+  else {
+      // std::cout << "cachetable lookup fid " << file_number << std::endl;
   }
   return s;
 }

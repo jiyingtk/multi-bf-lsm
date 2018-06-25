@@ -9,6 +9,7 @@
 #include "table/block.h"
 #include "util/coding.h"
 #include "util/crc32c.h"
+#include <iostream>
 
 namespace leveldb {
 
@@ -80,6 +81,8 @@ Status ReadBlocks(RandomAccessFile* file,
     Slice contents[6];
     Status s = file->Reads(handles_ptr[0].offset(), sum_lens + n*kBlockTrailerSize, contents, bufs,lens,n);
     if (!s.ok()) {
+  std::cout << "ReadBlocks read failed offset " << handles_ptr[0].offset() << " len0 " << lens[0] << std::endl;
+
 	 for(i = 0 ; i <  n ; ++i){
 		delete [] bufs[i];
 	 }
