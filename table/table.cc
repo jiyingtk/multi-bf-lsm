@@ -173,8 +173,6 @@ void Table::ReadFilters(std::vector< Slice >& filter_handle_values,int n)
     for(int i = 0 ;  i <  n ; i++){
 	    v = filter_handle_values[i];
 	    if(!filter_handles[i].DecodeFrom(&v).ok()){
-    std::cout << "ReadFilters handles decode failed" << std::endl;
-
 		return;
 	    }
     }
@@ -185,7 +183,6 @@ void Table::ReadFilters(std::vector< Slice >& filter_handle_values,int n)
    BlockContents blocks[6];
    uint64_t start_micros = Env::Default()->NowMicros();
    if (!ReadBlocks(rep_->file, opt, filter_handles, blocks,n).ok()) {
-  std::cout << "ReadFilters read filter_handles failed" << std::endl;
 	return;
    }
    for(int i = 0 ; i < n ; i++){
@@ -201,9 +198,6 @@ void Table::ReadFilters(std::vector< Slice >& filter_handle_values,int n)
 		rep_->filter->AddFilter(blocks[i].data);
 	}
 
-  if (rep_->filter == NULL) {
-  std::cout << "ReadFilters read filter data failed" << std::endl;
-  }
    }
    MeasureTime(Statistics::GetStatistics().get(),Tickers::ADD_FILTER_TIME_0 + n,Env::Default()->NowMicros() - start_micros);
 }

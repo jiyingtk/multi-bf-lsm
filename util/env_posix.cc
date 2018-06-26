@@ -385,6 +385,17 @@ class PosixRandomAccessFile: public RandomAccessFile {
   }
    virtual Status Reads(uint64_t offset, size_t n, Slice  results[],
                       char* scratch[],size_t lens[],int num) const {
+    if (temporary_fd_) {
+      int o_flag = O_RDONLY;
+      if(direct_IO_flag_){
+      o_flag = O_RDONLY|O_DIRECT;
+      }
+      fd_ = open(filename_.c_str(), o_flag);
+      if (fd < 0) {
+        return PosixError(filename_, errno);
+      }
+    }
+
     Status s;
     ssize_t r;
     if(direct_IO_flag_){
@@ -425,6 +436,10 @@ class PosixRandomAccessFile: public RandomAccessFile {
 	    }
 	    results[i] = Slice(scratch[i], lens[i]);
       }
+    }
+    if (temporary_fd_) {
+      // Close the temporary file descriptor opened earlier.
+      close(fd_);
     }
     return s;
   }
@@ -882,6 +897,7 @@ PosixEnv::PosixEnv()
     : started_bgthread_(false),
       mmap_limit_(MaxMmaps()),
       fd_limit_(MaxOpenFiles()) {
+  printf("MaxOpenFiles %ld\n", (long)MaxOpenFiles());
   PthreadCall("mutex_init", pthread_mutex_init(&mu_, NULL));
   PthreadCall("cvar_init", pthread_cond_init(&bgsignal_, NULL));
 }

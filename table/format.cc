@@ -81,7 +81,7 @@ Status ReadBlocks(RandomAccessFile* file,
     Slice contents[6];
     Status s = file->Reads(handles_ptr[0].offset(), sum_lens + n*kBlockTrailerSize, contents, bufs,lens,n);
     if (!s.ok()) {
-  std::cout << "ReadBlocks read failed offset " << handles_ptr[0].offset() << " len0 " << lens[0] << std::endl;
+  std::cout << "ReadBlocks read failed, n " << n << " offset " << handles_ptr[0].offset() << " len0 " << lens[0] << " status " << s.ToString() << std::endl;
 
 	 for(i = 0 ; i <  n ; ++i){
 		delete [] bufs[i];
