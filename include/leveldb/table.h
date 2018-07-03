@@ -60,11 +60,14 @@ class Table {
    size_t getCurrFiltersSize();
    int getCurrFilterNum();
    static uint64_t LRU_Fre_Count;
+  int freq_count;
+  int *freqs;
+
  private:
   struct Rep;
   Rep* rep_;
 
-  explicit Table(Rep* rep) { rep_ = rep; }
+  explicit Table(Rep* rep) : freq_count(0) { rep_ = rep; }
   static Iterator* BlockReader(void*, const ReadOptions&, const Slice&);
 
   // Calls (*handle_result)(arg, ...) with the entry found after a call

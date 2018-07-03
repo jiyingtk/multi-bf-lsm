@@ -16,7 +16,9 @@
 #include "util/coding.h"
 #include <iostream>
 #include <list>
-#include <boost/config/detail/posix_features.hpp>
+//#include <boost/config/detail/posix_features.hpp>
+#include <boost/config/posix_features.hpp>
+
 
 //filter memory space overhead
 extern unsigned long long filter_mem_space;
@@ -180,7 +182,7 @@ void Table::ReadFilters(std::vector< Slice >& filter_handle_values,int n)
    if (rep_->options.paranoid_checks) {
 	opt.verify_checksums = true;
    }
-   BlockContents blocks[6];
+   BlockContents blocks[32];
    uint64_t start_micros = Env::Default()->NowMicros();
    if (!ReadBlocks(rep_->file, opt, filter_handles, blocks,n).ok()) {
 	return;
@@ -342,6 +344,7 @@ size_t Table::getCurrFiltersSize(){
 
 Table::~Table() {
   delete rep_;
+  if (freq_count != 0) delete freqs;
 }
 
 static void DeleteBlock(void* arg, void* ignored) {
@@ -431,14 +434,25 @@ Status Table::InternalGet(const ReadOptions& options, const Slice& k,
                           void (*saver)(void*, const Slice&, const Slice&)) {
   Status s;
   Iterator* iiter = rep_->index_block->NewIterator(rep_->options.comparator);
+
+  if (freq_count == 0) {
+    iiter->SeekToLast();
+    Slice handle_value = iiter->value();
+    BlockHandle handle;
+    handle.DecodeFrom(&handle_value);
+    freq_count = (handle.offset() + options.freq_divide_size - 1) / options.freq_divide_size;
+    freqs = new int[freq_count]();
+  }
+
   iiter->Seek(k);
   uint64_t start_micros = Env::Default()->NowMicros();
   if (iiter->Valid()) {
     Slice handle_value = iiter->value();
     FilterBlockReader* filter = rep_->filter;
     BlockHandle handle;
+    Status ds = handle.DecodeFrom(&handle_value);
     if (filter != NULL &&
-        handle.DecodeFrom(&handle_value).ok() &&
+        ds.ok() &&
         !filter->KeyMayMatch(handle.offset(), k)) {
       // Not found
 	MeasureTime(Statistics::GetStatistics().get(),Tickers::FILTER_MATCHES_TIME,Env::Default()->NowMicros() - start_micros);
@@ -453,6 +467,17 @@ Status Table::InternalGet(const ReadOptions& options, const Slice& k,
 	s = block_iter->status();
 	options.read_file_nums++;
 	delete block_iter;
+    }
+
+    if (ds.ok()) {
+      uint64_t offset = handle.offset();
+      uint64_t which = offset / options.freq_divide_size;
+      if (which < freq_count)
+        freqs[which]++;
+      else{
+        std::cout << "error freq overflow, which " << which << " count " << freq_count << " offset " << offset << " size " << handle.size() << std::endl;
+      }
+      
     }
   }
   if (s.ok()) {

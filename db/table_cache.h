@@ -62,6 +62,10 @@ class TableCache {
   uint64_t LookupFreCount(uint64_t file_number);
   void SetFreCount(uint64_t file_number,uint64_t freCount);
   std::string LRU_Status();
+
+  void *getCacheValue(Cache::Handle* handle) {return cache_->Value(handle);}
+  void releaseCacheHandle(Cache::Handle* handle) {cache_->Release(handle);}
+  
  private:
   Env* const env_;
   const std::string dbname_;

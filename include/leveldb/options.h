@@ -197,6 +197,8 @@ struct ReadOptions {
   // Default: NULL
   const Snapshot* snapshot;
   
+  static const uint64_t freq_divide_size = 2097152;
+
   ReadOptions()
       : verify_checksums(false),isLevel0(false),
         fill_cache(true),

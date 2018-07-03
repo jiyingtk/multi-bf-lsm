@@ -118,7 +118,8 @@ Status TableCache::FindTable(uint64_t file_number, uint64_t file_size,
       for(int i = 0 ; i < table->getCurrFilterNum() ; i ++){
 	  charge += FilterPolicy::bits_per_key_per_filter_[i];
       }
-      // std::cout << "cachetable insert fid " << file_number << " charge " << charge << std::endl;
+
+        // std::cout << "cachetable insert fid " << file_number << " charge " << charge << std::endl;
       *handle = cache_->Insert(key, tf,charge, &DeleteEntry,true);
     }
   }

@@ -385,12 +385,13 @@ class PosixRandomAccessFile: public RandomAccessFile {
   }
    virtual Status Reads(uint64_t offset, size_t n, Slice  results[],
                       char* scratch[],size_t lens[],int num) const {
+    int fd = fd_;
     if (temporary_fd_) {
       int o_flag = O_RDONLY;
       if(direct_IO_flag_){
       o_flag = O_RDONLY|O_DIRECT;
       }
-      fd_ = open(filename_.c_str(), o_flag);
+      fd = open(filename_.c_str(), o_flag);
       if (fd < 0) {
         return PosixError(filename_, errno);
       }
@@ -408,7 +409,7 @@ class PosixRandomAccessFile: public RandomAccessFile {
 	    abuf->AllocateNewBuffer(read_size);
 	}
 	//printf("read_size:%ld , aligned_offset:%ld , buf capacity:%ld \n",read_size,aligned_offset,abuf_->capacity_);
-	r = pread(fd_, abuf->bufstart_, read_size, static_cast<off_t>(aligned_offset));
+	r = pread(fd, abuf->bufstart_, read_size, static_cast<off_t>(aligned_offset));
 	if (r < 0) {
 	    // An error: return a non-ok status
 	    s = PosixError(filename_, errno);
@@ -427,7 +428,7 @@ class PosixRandomAccessFile: public RandomAccessFile {
 	    iov[i].iov_base = scratch[i];
 	    iov[i].iov_len = lens[i];
       }
-      r = preadv(fd_, iov,num, static_cast<off_t>(offset));
+      r = preadv(fd, iov,num, static_cast<off_t>(offset));
       for(i = 0 ; i < num ; ++i){
 	  if (r < 0) {
 		// An error: return a non-ok status
@@ -439,7 +440,7 @@ class PosixRandomAccessFile: public RandomAccessFile {
     }
     if (temporary_fd_) {
       // Close the temporary file descriptor opened earlier.
-      close(fd_);
+      close(fd);
     }
     return s;
   }
