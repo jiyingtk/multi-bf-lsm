@@ -42,7 +42,7 @@ static double MaxBytesForLevel(const Options* options, int level) {
   // the level-0 compaction threshold based on number of files.
 
   // Result for both level-0 and level-1
-  double result = 10. * 1048576.0 * 3.0;
+  double result = 10. * 1048576.0 * options->opEp_.l0_base_ratio;
   while (level > 1) {
     result *= options->opEp_.size_ratio;
     level--;
@@ -344,6 +344,8 @@ Status Version::Get(const ReadOptions& options,
   FileMetaData* last_file_read = NULL;
   int last_file_read_level = -1;
   options.read_file_nums = 0;
+  options.access_file_nums = 0;
+  options.total_fpr = 0;
   // We can search level-by-level since entries never hop across
   // levels.  Therefore we are guaranteed that if we find data
   // in an smaller level, later levels are irrelevant.
@@ -628,7 +630,7 @@ void Version::printTables(int level, std::string* file_strs,const char *property
 	 // }else{
  	//     snprintf(buf,sizeof(buf),",%d",files_[level][i]->access_time);
 	 // }
-        
+
           Cache::Handle* handle = NULL;
           Status s = table_cache->FindTable(files_[level][i]->number, files_[level][i]->file_size, &handle);
           Table* t = reinterpret_cast<TableAndFile*>(table_cache->getCacheValue(handle))->table;
@@ -1363,8 +1365,9 @@ Compaction* VersionSet::PickCompaction() {
 
   // We prefer compactions triggered by too much data in a level over
   // the compactions triggered by seeks.
-  const bool size_compaction = (current_->compaction_score_ >= 1);
-  const bool seek_compaction = (current_->file_to_compact_ != NULL)&&(options_->opEp_.seek_compaction_);
+  const bool size_compaction = options_->opEp_.force_disable_compaction ? false : (current_->compaction_score_ >= 1);
+  const bool seek_compaction = options_->opEp_.force_disable_compaction ? false : ((current_->file_to_compact_ != NULL)&&(options_->opEp_.seek_compaction_));
+
   if (size_compaction) {
     level = current_->compaction_level_;
     assert(level >= 0);

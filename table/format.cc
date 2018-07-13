@@ -68,8 +68,8 @@ Status ReadBlocks(RandomAccessFile* file,
                  const BlockHandle* handles_ptr,
                  BlockContents* results,int n) {
     int i;
-    size_t lens[6],sum_lens=0;
-    char *bufs[6];
+    size_t lens[32],sum_lens=0;
+    char *bufs[32];
     for(i = 0 ; i <  n ; ++i){
 	results[i].data = Slice();
 	results[i].cachable = false;
@@ -78,7 +78,7 @@ Status ReadBlocks(RandomAccessFile* file,
 	lens[i] = handles_ptr[i].size() + kBlockTrailerSize;
 	sum_lens += handles_ptr[i].size();
     }
-    Slice contents[6];
+    Slice contents[32];
     Status s = file->Reads(handles_ptr[0].offset(), sum_lens + n*kBlockTrailerSize, contents, bufs,lens,n);
     if (!s.ok()) {
   std::cout << "ReadBlocks read failed, n " << n << " offset " << handles_ptr[0].offset() << " len0 " << lens[0] << " status " << s.ToString() << std::endl;

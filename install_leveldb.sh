@@ -1,4 +1,4 @@
-#make clean && make
+make clean && make -j
 sudo rm /usr/lib/libleveldb.so.1*
 sudo rm /usr/lib/libleveldb.so
 sudo cp -r include/leveldb /usr/include

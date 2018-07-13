@@ -109,7 +109,7 @@ Status Table::Open(const Options& options,
     rep->filter = NULL;
     *table = new Table(rep);
     if(isLevel0){
-	 (*table)->ReadMeta(footer,4);
+	 (*table)->ReadMeta(footer,options.opEp_.init_filter_nums);//4
     }else{
 	 (*table)->ReadMeta(footer,options.opEp_.add_filter?1:0);
     }
@@ -171,7 +171,7 @@ void Table::ReadMeta(const Footer& footer,int add_filter_num) {
 void Table::ReadFilters(std::vector< Slice >& filter_handle_values,int n)
 {
     Slice v;
-    BlockHandle filter_handles[6];
+    BlockHandle filter_handles[32];
     for(int i = 0 ;  i <  n ; i++){
 	    v = filter_handle_values[i];
 	    if(!filter_handles[i].DecodeFrom(&v).ok()){
@@ -447,6 +447,8 @@ Status Table::InternalGet(const ReadOptions& options, const Slice& k,
   iiter->Seek(k);
   uint64_t start_micros = Env::Default()->NowMicros();
   if (iiter->Valid()) {
+    options.access_file_nums++;
+
     Slice handle_value = iiter->value();
     FilterBlockReader* filter = rep_->filter;
     BlockHandle handle;
@@ -463,12 +465,17 @@ Status Table::InternalGet(const ReadOptions& options, const Slice& k,
 	if (block_iter->Valid()) {
 	    (*saver)(arg, block_iter->key(), block_iter->value());
 	}
+
 	 MeasureTime(Statistics::GetStatistics().get(),Tickers::BLOCK_READ_TIME,Env::Default()->NowMicros() - start_micros);
 	s = block_iter->status();
 	options.read_file_nums++;
 	delete block_iter;
     }
 
+    if (filter == NULL)
+      options.total_fpr += 1;
+    else
+      options.total_fpr += filter->getCurrFpr();
     if (ds.ok()) {
       uint64_t offset = handle.offset();
       uint64_t which = offset / options.freq_divide_size;

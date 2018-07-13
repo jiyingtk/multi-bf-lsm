@@ -150,6 +150,14 @@ DBImpl::DBImpl(const Options& raw_options, const std::string& dbname)
   versions_ = new VersionSet(dbname_, &options_, table_cache_,
                              &internal_comparator_);
   leveldb::directIO_of_RandomAccess = options_.opEp_.no_cache_io_;
+
+printf("DBImpl l0sizeraito %lf\n", options_.opEp_.l0_base_ratio);
+  fp_reqs = fp_io = fp_nums = read_nums = 0;
+  fp_sum = 0;
+  fp_calc_fpr_str.clear();
+  fp_access_file_str.clear();
+  fp_real_fpr_str.clear();
+  fp_real_io_str.clear();
 }
 
 void DBImpl::untilCompactionEnds()
@@ -1227,10 +1235,25 @@ Status DBImpl::Get(const ReadOptions& options,
     } else {
       s = current->Get(options, lkey, value, &stats);
       //      if(s.IsNotFound()){
-	p->setHistType(options.read_file_nums+READ_0_TIME);
-	alloc_stop_watch.destroy(p);
+    	p->setHistType(options.read_file_nums+READ_0_TIME);
+    	alloc_stop_watch.destroy(p);
 	//      }
       have_stat_update = true;
+
+      // if(s.IsNotFound()){
+      //   fp_sum += options.total_fpr;
+      //   fp_reqs++;
+      //   fp_nums += options.read_file_nums;
+      // }
+
+      fp_reqs++;
+      fp_sum += options.total_fpr;
+      read_nums += options.access_file_nums;
+      fp_nums += options.read_file_nums;
+      fp_io += options.read_file_nums;
+      if(!s.IsNotFound()){
+        fp_nums--;
+      }
     }
     alloc_stop_watch.deallocate(p,1);
     mutex_.Lock();
@@ -1242,6 +1265,20 @@ Status DBImpl::Get(const ReadOptions& options,
   mem->Unref();
   if (imm != NULL) imm->Unref();
   current->Unref();
+
+  if (fp_reqs != 0 && fp_reqs % options_.opEp_.fp_stat_num == 0) {
+    char buf[32];
+    // snprintf(buf, sizeof(buf), "%lu,", fp_reqs);
+    snprintf(buf, sizeof(buf), "%.5lf,", (double)(1.0*fp_sum/fp_reqs));
+    fp_calc_fpr_str.append(buf);
+    snprintf(buf, sizeof(buf), "%.5lf,", (double)(1.0*read_nums/fp_reqs));
+    fp_access_file_str.append(buf);
+    snprintf(buf, sizeof(buf), "%.5lf,", (double)(1.0*fp_nums/fp_reqs));
+    fp_real_fpr_str.append(buf);
+    snprintf(buf, sizeof(buf), "%.5lf,", (double)(1.0*fp_io/fp_reqs));
+    fp_real_io_str.append(buf);
+  }
+  
   return s;
 }
 
@@ -1637,24 +1674,36 @@ bool DBImpl::GetProperty(const Slice& property, std::string* value) {
              static_cast<unsigned long long>(total_usage));
     value->append(buf);
     return true;
-  }else if(in.starts_with("files-access-frequencies")){
- 	in.remove_prefix(strlen("files-access-frequencies"));
- 	uint64_t level;
- 	bool ok = ConsumeDecimalNumber(&in, &level) && in.empty();
- 	if (!ok || level >= config::kNumLevels) {
- 	    return false;
- 	} else {
- 	    versions_->printTables(level,value); 
- 	    return true;
- 	}
-   }else if(in == "num-files"){
+  } else if(in.starts_with("files-access-frequencies")){
+   	in.remove_prefix(strlen("files-access-frequencies"));
+   	uint64_t level;
+   	bool ok = ConsumeDecimalNumber(&in, &level) && in.empty();
+   	if (!ok || level >= config::kNumLevels) {
+   	    return false;
+   	} else {
+   	    versions_->printTables(level,value); 
+   	    return true;
+   	}
+  } else if(in == "num-files"){
       for(int level = 0  ; level < config::kNumLevels ; level++){
-	char buf[100];
-	snprintf(buf, sizeof(buf), "%d",versions_->NumLevelFiles(static_cast<int>(level)));
-	value->append(buf);
+      	char buf[100];
+      	snprintf(buf, sizeof(buf), "%d",versions_->NumLevelFiles(static_cast<int>(level)));
+      	value->append(buf);
       }
       return true;
-   }else if(in.starts_with("file_filter_size")){
+  } else if (in == "fp-stat-calc_fpr") {
+    value->append(fp_calc_fpr_str);
+    return true;
+  } else if (in == "fp-stat-access_file") {
+    value->append(fp_access_file_str);
+    return true;
+  } else if (in == "fp-stat-real_fpr") {
+    value->append(fp_real_fpr_str);
+    return true;
+  } else if (in == "fp-stat-real_io") {
+    value->append(fp_real_io_str);
+    return true;
+  } else if(in.starts_with("file_filter_size")){
         in.remove_prefix(strlen("file_filter_size"));
  	uint64_t level;
  	bool ok = ConsumeDecimalNumber(&in, &level) && in.empty();

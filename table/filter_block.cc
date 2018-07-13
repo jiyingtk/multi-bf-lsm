@@ -8,6 +8,7 @@
 #include "util/coding.h"
 #include <util/stop_watch.h>
 #include <unistd.h>
+#include <math.h>
 #include<atomic>
 #ifndef handle_error_en
 #define handle_error_en(en, msg) \
@@ -225,6 +226,15 @@ void FilterBlockReader::RemoveFilters(int n)
     
 }
 
+double FilterBlockReader::getCurrFpr() {
+  double ret = 0;
+  int sum_bits = 0;
+  for (int i = 0; i < curr_num_of_filters_; i++) {
+    sum_bits += FilterPolicy::bits_per_key_per_filter_[i];
+  }
+  ret = pow(0.6185,sum_bits);
+  return ret;
+}
 
 bool FilterBlockReader::KeyMayMatch(uint64_t block_offset, const Slice& key) {
   uint64_t index = block_offset >> base_lg_;
@@ -236,9 +246,9 @@ bool FilterBlockReader::KeyMayMatch(uint64_t block_offset, const Slice& key) {
         if (start <= limit && limit <= static_cast<size_t>(offsets_[i] - datas_[i])) {
             Slice filter = Slice(datas_[i] + start, limit - start);
             filters.push_back(filter);
-	} else if (start == limit) {
+	} else if (start >= limit) {
             // Empty filters do not match any keys                                                                                                                      
-           // printf("empty filters\n");
+           printf("empty filters\n");
             return false;
         }
      }

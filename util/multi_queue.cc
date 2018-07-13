@@ -241,6 +241,7 @@ public:
     virtual uint64_t NewId();
     virtual size_t TotalCharge() const;
     virtual uint64_t GetLRUFreCount() const;
+    virtual bool IsCacheFull() const;
     //charge must >= 0
     Cache::Handle* Insert(const Slice& key, uint32_t hash, void* value, size_t charge,
       void (*deleter)(const Slice& key, void* value),bool type) ;  
@@ -467,6 +468,9 @@ void MultiQueue::Unref(LRUQueueHandle* e)
 	 if (e->refs == 0) { // Deallocate.
 	 deallocate:
 		assert(!e->in_cache);
+
+    // expection_ -= e->fre_count * FalsePositive(e);
+
 		(*e->deleter)(e->key(), e->value);
 		free(e);
 	  } else if (e->in_cache && e->refs == 1) {  // note:No longer in use; move to lru_ list.
@@ -661,6 +665,11 @@ inline uint64_t MultiQueue::GetLRUFreCount() const{
     }
     
 }
+
+inline bool MultiQueue::IsCacheFull() const{
+    return usage_ >= capacity_;
+}
+
 void MultiQueue::SlowShrinking(){
     int64_t remove_charge = (usage_ - capacity_*slow_shrink_ratio);
     const int interval = 8;
@@ -773,9 +782,9 @@ Cache::Handle* MultiQueue::Insert(const Slice& key, uint32_t hash, void* value, 
   e->fre_count = 0;
   leveldb::TableAndFile *tf = reinterpret_cast<leveldb::TableAndFile *>(e->value);
   e->queue_id = tf->table->getCurrFilterNum() ;   //
-  if (e->queue_id == 0) {
-    cout << "multiqueue insert queue_id 0" << endl;
-  }
+  // if (e->queue_id == 0) {
+  //   cout << "multiqueue insert queue_id 0" << endl;
+  // }
 
   e->expire_time = current_time_ + life_time_;
   memcpy(e->key_data, key.data(), key.size());

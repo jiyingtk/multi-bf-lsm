@@ -62,6 +62,7 @@ class FilterBlockReader {
   inline int getCurrFiltersNum(){
     return curr_num_of_filters_;  
   }
+  double getCurrFpr();
   static bool end_thread;
  private:
   const FilterPolicy* policy_;

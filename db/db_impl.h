@@ -202,6 +202,13 @@ class DBImpl : public DB {
   const Comparator* user_comparator() const {
     return internal_comparator_.user_comparator();
   }
+
+  uint64_t fp_reqs, fp_io, fp_nums, read_nums;
+  double fp_sum;
+  std::string fp_calc_fpr_str;
+  std::string fp_access_file_str;
+  std::string fp_real_fpr_str;
+  std::string fp_real_io_str;
 };
 
 // Sanitize db options.  The caller should delete result.info_log if

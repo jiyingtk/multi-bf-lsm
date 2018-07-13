@@ -38,6 +38,18 @@ static uint32_t BloomHash(const Slice& key,int id) {
 	return Hash(key.data(), key.size(), 0x934bc9f1);  
 	case 6:
 	return Hash(key.data(), key.size(), 0x4bc9f193);  
+	case 7:
+	return Hash(key.data(), key.size(), 0x51c2578a);  
+	case 8:
+	return Hash(key.data(), key.size(), 0xda23562f);  
+	case 9:
+	return Hash(key.data(), key.size(), 0x135254f2);  
+	case 10:
+	return Hash(key.data(), key.size(), 0xea1e4a48);  
+	case 11:
+	return Hash(key.data(), key.size(), 0x567925f1);  
+	default:
+		handle_error_en(1, "BloomHash id error");
    }
 }
 
@@ -135,10 +147,10 @@ private:
 	size_t bits_per_key_;
   //	static pthread_mutex_t filter_mutexs_[10];
   //	static pthread_cond_t filter_conds_[10];
-	static pthread_t pids_[8];
+	static pthread_t pids_[16];
 	static std::atomic<int> curr_completed_filter_num_;
 	static int filter_num_;
-        static std::atomic<bool> filled_[8];
+        static std::atomic<bool> filled_[16];
 	static const Slice *keys_;
 	static int n_;
 	static bool end_thread;
@@ -172,7 +184,7 @@ public:
 	    int cpu_count =  sysconf(_SC_NPROCESSORS_CONF);
 	    int base_cpu_id = 8;
 	    
-	    bits_per_key_per_filter_ = new size_t[10];
+	    bits_per_key_per_filter_ = new size_t[16];
 	    char name_buf[24];
 	    end_thread = false;
 	    for(i = 0 ; bits_per_key_per_filter[i]!=0 ; i++ ){
@@ -283,8 +295,8 @@ std::atomic<int>  MultiFilter::curr_completed_filter_num_ (0);
 int MultiFilter::filter_num_ = 0;
 // pthread_mutex_t MultiFilter::filter_mutexs_[10]={PTHREAD_MUTEX_INITIALIZER,PTHREAD_MUTEX_INITIALIZER,PTHREAD_MUTEX_INITIALIZER,PTHREAD_MUTEX_INITIALIZER,PTHREAD_MUTEX_INITIALIZER,PTHREAD_MUTEX_INITIALIZER,PTHREAD_MUTEX_INITIALIZER,PTHREAD_MUTEX_INITIALIZER,PTHREAD_MUTEX_INITIALIZER,PTHREAD_MUTEX_INITIALIZER,};
 // pthread_cond_t MultiFilter::filter_conds_[10]={PTHREAD_COND_INITIALIZER,PTHREAD_COND_INITIALIZER,PTHREAD_COND_INITIALIZER,PTHREAD_COND_INITIALIZER,PTHREAD_COND_INITIALIZER,PTHREAD_COND_INITIALIZER,PTHREAD_COND_INITIALIZER,PTHREAD_COND_INITIALIZER,PTHREAD_COND_INITIALIZER,PTHREAD_COND_INITIALIZER};
-std::atomic<bool>  MultiFilter::filled_[8];
-pthread_t MultiFilter::pids_[8];
+std::atomic<bool>  MultiFilter::filled_[16];
+pthread_t MultiFilter::pids_[16];
 CreateFilterArg* MultiFilter::cfas(NULL);
 int MultiFilter::n_(0);
 const Slice *MultiFilter::keys_(NULL);
