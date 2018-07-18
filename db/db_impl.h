@@ -209,6 +209,7 @@ class DBImpl : public DB {
   std::string fp_access_file_str;
   std::string fp_real_fpr_str;
   std::string fp_real_io_str;
+  std::string get_latency_str[config::kNumLevels];
 };
 
 // Sanitize db options.  The caller should delete result.info_log if

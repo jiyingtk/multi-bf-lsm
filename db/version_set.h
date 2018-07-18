@@ -113,6 +113,8 @@ class Version {
   std::string DebugString() const;
   void printTables(int level,std::string *file_strs,const char*property_str,TableCache *table_cache);
   void findAllTables(TableCache *table_cache);
+ 
+  std::map<uint64_t, FileExtraMetaData*> *files_extra_;
  private:
   friend class Compaction;
   friend class VersionSet;
@@ -169,6 +171,8 @@ class VersionSet {
              TableCache* table_cache,
              const InternalKeyComparator*);
   ~VersionSet();
+
+  std::map<uint64_t, FileExtraMetaData*> files_extra_[config::kNumLevels];
 
   // Apply *edit to the current version to form a new descriptor that
   // is both saved to persistent state and installed as the new
@@ -268,6 +272,7 @@ class VersionSet {
   };
   const char* LevelSummary(LevelSummaryStorage* scratch) const;
   void printTables(int level,std::string *file_strs,const char*property_str="file_access_frequencies");
+  void printTableExtraInfos(int level,std::string *file_strs);
   void adjustFilter();
   void findAllTables();
  private:

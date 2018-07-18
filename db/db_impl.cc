@@ -158,6 +158,9 @@ printf("DBImpl l0sizeraito %lf\n", options_.opEp_.l0_base_ratio);
   fp_access_file_str.clear();
   fp_real_fpr_str.clear();
   fp_real_io_str.clear();
+
+  for (int i = 0; i < config::kNumLevels; i++)
+    get_latency_str[i].clear();
 }
 
 void DBImpl::untilCompactionEnds()
@@ -1233,6 +1236,8 @@ Status DBImpl::Get(const ReadOptions& options,
 	p->setHistType(IMMEM_READ_TIME);
 	alloc_stop_watch.destroy(p);
     } else {
+      uint64_t start_micros = Env::Default()->NowMicros();
+
       s = current->Get(options, lkey, value, &stats);
       //      if(s.IsNotFound()){
     	p->setHistType(options.read_file_nums+READ_0_TIME);
@@ -1253,6 +1258,14 @@ Status DBImpl::Get(const ReadOptions& options,
       fp_io += options.read_file_nums;
       if(!s.IsNotFound()){
         fp_nums--;
+      }
+      else {
+        uint64_t during = Env::Default()->NowMicros() - start_micros;
+        char buf[32];
+        snprintf(buf, sizeof(buf), "%lu,", during);
+
+        int which = options.access_compacted_file_nums >= config::kNumLevels ? config::kNumLevels - 1 : options.access_compacted_file_nums;
+        get_latency_str[which].append(buf);
       }
     }
     alloc_stop_watch.deallocate(p,1);
@@ -1684,6 +1697,17 @@ bool DBImpl::GetProperty(const Slice& property, std::string* value) {
    	    versions_->printTables(level,value); 
    	    return true;
    	}
+  } else if(in.starts_with("files-extra-infos")){
+    in.remove_prefix(strlen("files-extra-infos"));
+    uint64_t level;
+    bool ok = ConsumeDecimalNumber(&in, &level) && in.empty();
+    if (!ok || level >= config::kNumLevels) {
+        return false;
+    } else {
+        // versions_->printTableExtraInfos(level,value); 
+        value->append(get_latency_str[level]);
+        return true;
+    }
   } else if(in == "num-files"){
       for(int level = 0  ; level < config::kNumLevels ; level++){
       	char buf[100];

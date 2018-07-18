@@ -345,6 +345,7 @@ Status Version::Get(const ReadOptions& options,
   int last_file_read_level = -1;
   options.read_file_nums = 0;
   options.access_file_nums = 0;
+  options.access_compacted_file_nums = 0;
   options.total_fpr = 0;
   // We can search level-by-level since entries never hop across
   // levels.  Therefore we are guaranteed that if we find data
@@ -409,10 +410,18 @@ Status Version::Get(const ReadOptions& options,
       saver.ucmp = ucmp;
       saver.user_key = user_key;
       saver.value = value;
-       ++f->access_time;
+      ++f->access_time;
+      uint64_t start_micros = Env::Default()->NowMicros();
       s = vset_->table_cache_->Get(options, f->number, f->file_size,
                                    ikey, &saver, SaveValue);
      
+      FileExtraMetaData* file_extra_ = files_extra_[level][f->number];
+      assert(file_extra_);
+      file_extra_->latency_sum += Env::Default()->NowMicros() - start_micros;
+      file_extra_->count += 1;
+
+      options.access_compacted_file_nums += (file_extra_->is_compacted ? 1 : 0);
+
       if (!s.ok()) {
         return s;
       }
@@ -645,7 +654,7 @@ void Version::printTables(int level, std::string* file_strs,const char *property
              snprintf(buf, sizeof(buf),"%d",t->freqs[j]);
             else
              snprintf(buf, sizeof(buf),",%d",t->freqs[j]);
-  	       file_strs->append(buf);
+  	        file_strs->append(buf);
           }
           file_strs->append(")");
 
@@ -776,6 +785,8 @@ class VersionSet::Builder {
 
   // Save the current state in *v.
   void SaveTo(Version* v) {
+    static bool init = true;
+
     BySmallestKey cmp;
     cmp.internal_comparator = &vset_->icmp_;
     for (int level = 0; level < config::kNumLevels; level++) {
@@ -789,6 +800,14 @@ class VersionSet::Builder {
       for (FileSet::const_iterator added_iter = added->begin();
            added_iter != added->end();
            ++added_iter) {
+
+        FileMetaData* cur_f = *added_iter;
+        FileExtraMetaData* new_f = new FileExtraMetaData();
+        new_f->is_compacted = !init;
+        new_f->latency_sum = 0;
+        new_f->count = 0;
+        v->files_extra_[level][cur_f->number] = new_f;
+
         // Add all smaller files listed in base_
         for (std::vector<FileMetaData*>::const_iterator bpos
                  = std::upper_bound(base_iter, base_end, *added_iter, cmp);
@@ -820,6 +839,10 @@ class VersionSet::Builder {
         }
       }
 #endif
+    }
+
+    if (init) {
+      init = false;
     }
   }
 
@@ -865,6 +888,13 @@ VersionSet::~VersionSet() {
   assert(dummy_versions_.next_ == &dummy_versions_);  // List must be empty
   delete descriptor_log_;
   delete descriptor_file_;
+
+  for (int level = 0; level < config::kNumLevels; level++) {
+    std::map<uint64_t, FileExtraMetaData*>::iterator iter;
+    for (iter = files_extra_[level].begin(); iter != files_extra_[level].end(); iter++) {
+      delete iter->second;
+    }
+  }
 }
 
 void VersionSet::AppendVersion(Version* v) {
@@ -900,6 +930,7 @@ Status VersionSet::LogAndApply(VersionEdit* edit, port::Mutex* mu) {
   edit->SetLastSequence(last_sequence_);
 
   Version* v = new Version(this);
+  v->files_extra_ = files_extra_;
   {
     Builder builder(this, current_);
     builder.Apply(edit);
@@ -1074,6 +1105,7 @@ Status VersionSet::Recover(bool *save_manifest) {
 
   if (s.ok()) {
     Version* v = new Version(this);
+    v->files_extra_ = files_extra_;
     builder.SaveTo(v);
     // Install recovered version
     Finalize(v);
@@ -1520,7 +1552,56 @@ void VersionSet::adjustFilter()
     current_->Unref();
 }
 
- 
+void VersionSet::printTableExtraInfos(int level,std::string *file_strs)
+{
+  current_->Ref();
+
+  char buf[64];
+  bool first = true;
+  std::map<uint64_t, FileExtraMetaData*>::iterator iter;
+
+  file_strs->append("compacted:\n");
+  for (iter = files_extra_[level].begin(); iter != files_extra_[level].end(); iter++) {
+    FileExtraMetaData* file_extra_ = iter->second;
+    if (file_extra_->is_compacted && file_extra_->count != 0) {
+      uint64_t latency = file_extra_->latency_sum / file_extra_->count;
+      if (first) {
+        // snprintf(buf, sizeof(buf), "(%ld,%ld,%ld)", file_extra_->latency_sum, file_extra_->count, latency);
+        snprintf(buf, sizeof(buf), "%ld", latency);
+        first = false;
+      }
+      else {
+        // snprintf(buf, sizeof(buf), ",(%ld,%ld,%ld)", file_extra_->latency_sum, file_extra_->count, latency);
+        snprintf(buf, sizeof(buf), ",%ld", latency);
+      }
+      file_strs->append(buf);
+    }
+  }
+  file_strs->append("\n");
+
+  first = true;
+  file_strs->append("uncompacted:\n");
+  for (iter = files_extra_[level].begin(); iter != files_extra_[level].end(); iter++) {
+    FileExtraMetaData* file_extra_ = iter->second;
+    if (!file_extra_->is_compacted && file_extra_->count != 0) {
+      int latency = file_extra_->latency_sum / file_extra_->count;
+      if (first) {
+        // snprintf(buf, sizeof(buf), "(%ld,%ld,%ld)", file_extra_->latency_sum, file_extra_->count, latency);
+        snprintf(buf, sizeof(buf), "%ld", latency);
+        first = false;
+      }
+      else {
+        // snprintf(buf, sizeof(buf), ",(%ld,%ld,%ld)", file_extra_->latency_sum, file_extra_->count, latency);
+        snprintf(buf, sizeof(buf), ",%ld", latency);
+      }
+      file_strs->append(buf);
+    }
+  }
+  file_strs->append("\n");
+
+  current_->Unref();
+}
+
 Compaction* VersionSet::CompactRange(
     int level,
     const InternalKey* begin,

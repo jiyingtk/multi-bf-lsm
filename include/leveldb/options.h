@@ -193,6 +193,7 @@ struct ReadOptions {
   bool fill_cache;
   mutable unsigned short read_file_nums;
   mutable unsigned short access_file_nums;
+  mutable unsigned short access_compacted_file_nums;
   mutable double total_fpr;
  
   // If "snapshot" is non-NULL, read as of the supplied snapshot

@@ -25,6 +25,13 @@ struct FileMetaData {
   FileMetaData() : refs(0), allowed_seeks(1 << 30), file_size(0),access_time(0){}
 };
 
+struct FileExtraMetaData {
+  bool is_compacted;
+  uint64_t latency_sum;
+  uint64_t count;
+  FileExtraMetaData() : is_compacted(false), latency_sum(0), count(0){}
+};
+
 class VersionEdit {
  public:
   VersionEdit() { Clear(); }

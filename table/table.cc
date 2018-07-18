@@ -108,11 +108,12 @@ Status Table::Open(const Options& options,
     rep->filter_datas.clear();
     rep->filter = NULL;
     *table = new Table(rep);
-    if(isLevel0){
-	 (*table)->ReadMeta(footer,options.opEp_.init_filter_nums);//4
-    }else{
-	 (*table)->ReadMeta(footer,options.opEp_.add_filter?1:0);
-    }
+  //   if(isLevel0){
+	 // (*table)->ReadMeta(footer,options.opEp_.init_filter_nums);//4
+  //   }else{
+	 // (*table)->ReadMeta(footer,options.opEp_.add_filter?1:0);
+  //   }
+   (*table)->ReadMeta(footer,options.opEp_.add_filter?1:0);
    
   } else {
     delete index_block;
@@ -454,7 +455,7 @@ Status Table::InternalGet(const ReadOptions& options, const Slice& k,
     BlockHandle handle;
     Status ds = handle.DecodeFrom(&handle_value);
     if (filter != NULL &&
-        ds.ok() &&
+        ds.ok() && 
         !filter->KeyMayMatch(handle.offset(), k)) {
       // Not found
 	MeasureTime(Statistics::GetStatistics().get(),Tickers::FILTER_MATCHES_TIME,Env::Default()->NowMicros() - start_micros);
