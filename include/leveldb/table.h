@@ -38,7 +38,7 @@ class Table {
   static Status Open(const Options& options,
                      RandomAccessFile* file,
                      uint64_t file_size,
-                     Table** table,bool isLevel0 = false);
+                     Table** table, size_t * &charge, bool isLevel0 = false);
 
   ~Table();
 
@@ -54,11 +54,12 @@ class Table {
   // E.g., the approximate offset of the last key in the table will
   // be close to the file length.
   uint64_t ApproximateOffsetOf(const Slice& key) const;
-   int64_t AdjustFilters(int n);
-   size_t AddFilters(int n);
-   size_t RemoveFilters(int n);
+   size_t AddFilters(int n, int regionId);
+   int64_t AdjustFilters(int n, int regionId = 0);
+   size_t RemoveFilters(int n, int regionId = 0);
    size_t getCurrFiltersSize();
-   int getCurrFilterNum();
+   int getCurrFilterNum(int regionId = 0);
+   int getRegionNum();
    static uint64_t LRU_Fre_Count;
   int freq_count;
   int *freqs;
@@ -77,12 +78,12 @@ class Table {
   Status InternalGet(
       const ReadOptions&, const Slice& key,
       void* arg,
-      void (*handle_result)(void* arg, const Slice& k, const Slice& v));
+      void (*handle_result)(void* arg, const Slice& k, const Slice& v), char* region_name);
 
 
-  void ReadMeta(const Footer& footer,int add_filter_num=1); //int add_filter
-  void ReadFilter(const Slice& filter_handle_value);
-  void ReadFilters(std::vector<Slice> &filter_handle_values,int n);
+  void ReadMeta(const Footer& footer, size_t * &charge, int add_filter_num=1); //int add_filter
+  size_t ReadFilter(const Slice& filter_handle_value, int regionId);
+  void ReadFilters(std::vector<Slice> &filter_handle_values, size_t * &charge, int n);
   // No copying allowed
   Table(const Table&);
   void operator=(const Table&);

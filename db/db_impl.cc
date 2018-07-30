@@ -144,7 +144,7 @@ DBImpl::DBImpl(const Options& raw_options, const std::string& dbname)
   has_imm_.Release_Store(NULL);
 
   // Reserve ten files or so for other uses and give the rest to TableCache.
-  const int table_cache_size = static_cast<int>((options_.max_open_files - kNumNonTableCacheFiles)*options_.opEp_.filter_capacity_ratio);
+  const size_t table_cache_size = (size_t)((options_.max_open_files - kNumNonTableCacheFiles)*options_.opEp_.filter_capacity_ratio / 8 * 64 * 10000);
   table_cache_ = new TableCache(dbname_, &options_, table_cache_size);
 
   versions_ = new VersionSet(dbname_, &options_, table_cache_,
@@ -1250,7 +1250,7 @@ Status DBImpl::Get(const ReadOptions& options,
       //   fp_reqs++;
       //   fp_nums += options.read_file_nums;
       // }
-
+    #ifndef MULTI_THREAD_MODE
       fp_reqs++;
       fp_sum += options.total_fpr;
       read_nums += options.access_file_nums;
@@ -1267,6 +1267,7 @@ Status DBImpl::Get(const ReadOptions& options,
         int which = options.access_compacted_file_nums >= config::kNumLevels ? config::kNumLevels - 1 : options.access_compacted_file_nums;
         get_latency_str[which].append(buf);
       }
+    #endif
     }
     alloc_stop_watch.deallocate(p,1);
     mutex_.Lock();
@@ -1279,6 +1280,7 @@ Status DBImpl::Get(const ReadOptions& options,
   if (imm != NULL) imm->Unref();
   current->Unref();
 
+#ifndef MULTI_THREAD_MODE
   if (fp_reqs != 0 && fp_reqs % options_.opEp_.fp_stat_num == 0) {
     char buf[32];
     // snprintf(buf, sizeof(buf), "%lu,", fp_reqs);
@@ -1291,6 +1293,7 @@ Status DBImpl::Get(const ReadOptions& options,
     snprintf(buf, sizeof(buf), "%.5lf,", (double)(1.0*fp_io/fp_reqs));
     fp_real_io_str.append(buf);
   }
+#endif
   
   return s;
 }

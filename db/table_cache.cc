@@ -13,9 +13,11 @@ bool directIO_of_RandomAccess = false;
 
 static void DeleteEntry(const Slice& key, void* value) {
   TableAndFile* tf = reinterpret_cast<TableAndFile*>(value);
-  delete tf->table;
-  delete tf->file;
-  delete tf;
+  // if (--tf->refs == 0) {
+    delete tf->table;
+    delete tf->file;
+    delete tf;
+  // }
 }
 
 static void UnrefEntry(void* arg1, void* arg2) {
@@ -32,7 +34,7 @@ static void DeleteEntry(void* arg1, void* arg2) {
 }
 TableCache::TableCache(const std::string& dbname,
                        const Options* options,
-                       int entries)
+                       size_t entries)
     : env_(options->env),
       dbname_(dbname),
       options_(options),
@@ -59,9 +61,11 @@ Status TableCache::FindBufferedTable(uint64_t file_number, uint64_t file_size,
         s = Status::OK();
       }
     }
+    size_t *charge = NULL;
     if (s.ok()) {
-      s = Table::Open(*options_, file, file_size, &table,false);
+      s = Table::Open(*options_, file, file_size, &table, charge,false);
     }
+    delete [] charge;
     if (!s.ok()) {
       assert(table == NULL);
       rtf->file = NULL;
@@ -81,12 +85,14 @@ Status TableCache::FindBufferedTable(uint64_t file_number, uint64_t file_size,
 Status TableCache::FindTable(uint64_t file_number, uint64_t file_size,
                              Cache::Handle** handle,bool Get,bool isLevel0) {
   Status s;
-  char buf[sizeof(file_number)];
+  char buf[sizeof(file_number) + sizeof(uint32_t)];
   EncodeFixed64(buf, file_number);
+  uint32_t *id_ = (uint32_t *) (buf + sizeof(file_number));
+  *id_ = 0;
   Slice key(buf, sizeof(buf));
   
   uint64_t start_micros_l = Env::Default()->NowMicros();
-  *handle = cache_->Lookup(key,Get);
+  *handle = cache_->Lookup(key, false); //Get
   MeasureTime(Statistics::GetStatistics().get(),Tickers::FILTER_LOOKUP_TIME,Env::Default()->NowMicros() - start_micros_l);
 
   if (*handle == NULL) {
@@ -101,8 +107,10 @@ Status TableCache::FindTable(uint64_t file_number, uint64_t file_size,
         s = Status::OK();
       }
     }
+    size_t *charge = NULL;
+
     if (s.ok()) {
-      s = Table::Open(*options_, file, file_size, &table,isLevel0);
+      s = Table::Open(*options_, file, file_size, &table, charge, isLevel0);
     }
     MeasureTime(Statistics::GetStatistics().get(),Tickers::OPEN_TABLE_TIME,Env::Default()->NowMicros() - start_micros);
     if (!s.ok()) {
@@ -114,13 +122,26 @@ Status TableCache::FindTable(uint64_t file_number, uint64_t file_size,
       TableAndFile* tf = new TableAndFile;
       tf->file = file;
       tf->table = table;
-      size_t charge = 0;
-      for(int i = 0 ; i < table->getCurrFilterNum() ; i ++){
-	  charge += FilterPolicy::bits_per_key_per_filter_[i];
-      }
+      tf->refs = 0;
+   //    for(int i = 0 ; i < table->getCurrFilterNum() ; i ++){
+    // charge += FilterPolicy::bits_per_key_per_filter_[i];
+   //    }
+      // printf("table number %llu, regionNum %d\n", file_number, regionNum);fflush(stdout);
 
-        // std::cout << "cachetable insert fid " << file_number << " charge " << charge << std::endl;
-      *handle = cache_->Insert(key, tf,charge, &DeleteEntry,true);
+      int regionNum = table->getRegionNum();
+      if (charge == NULL)
+        charge = new size_t[regionNum]();
+      for (int i = 0; i <= regionNum; i++) {
+        *id_ = i;
+        Slice key2(buf, sizeof(buf));
+        if (i == 0)
+          *handle = cache_->Insert(key2, tf,0, &DeleteEntry,true);        
+        else
+          cache_->Insert(key2, tf, charge[i - 1], &DeleteEntry,true);        
+
+        tf->refs++;
+      }
+      delete [] charge;
     }
   }
   else {
@@ -194,6 +215,8 @@ void TableCache::SetFreCount(uint64_t file_number, uint64_t freCount)
 }
 
 
+
+
 Status TableCache::Get(const ReadOptions& options,
                        uint64_t file_number,
                        uint64_t file_size,
@@ -204,12 +227,18 @@ Status TableCache::Get(const ReadOptions& options,
   uint64_t start_micros = env_->NowMicros();
   // options_->opEp_.add_filter = file_access_time > cache_->GetLRUFreCount()?true:false;
   options_->opEp_.add_filter = !cache_->IsCacheFull();
+  options.file_number = file_number;
   Status s = FindTable(file_number, file_size, &handle,true);
   MeasureTime(Statistics::GetStatistics().get(),Tickers::FINDTABLE,Env::Default()->NowMicros() - start_micros);
   if (s.ok()) {
     start_micros = env_->NowMicros();
     Table* t = reinterpret_cast<TableAndFile*>(cache_->Value(handle))->table;
-    s = t->InternalGet(options, k, arg, saver);
+    char buf[sizeof(file_number) + sizeof(uint32_t)];
+    s = t->InternalGet(options, k, arg, saver, buf);
+    Slice key(buf, sizeof(buf));
+    Cache::Handle* cache_handle = cache_->Lookup(key, true);
+    cache_->Release(cache_handle);
+
     MeasureTime(Statistics::GetStatistics().get(),Tickers::INTERNALGET,Env::Default()->NowMicros() - start_micros);
     start_micros = env_->NowMicros();
     cache_->Release(handle);
@@ -219,8 +248,10 @@ Status TableCache::Get(const ReadOptions& options,
 }
 
 void TableCache::Evict(uint64_t file_number) {
-  char buf[sizeof(file_number)];
+  char buf[sizeof(file_number) + sizeof(uint32_t)];
   EncodeFixed64(buf, file_number);
+  uint32_t *id_ = (uint32_t *) (buf + sizeof(file_number));
+  *id_ = 0;
   cache_->Erase(Slice(buf, sizeof(buf)));
 }
 
@@ -231,7 +262,7 @@ void TableCache::adjustFilters(uint64_t file_number, uint64_t file_size,int n)
     if (s.ok()) {
 	Table* t = reinterpret_cast<TableAndFile*>(cache_->Value(handle))->table;
 	if(n > 0){
-	    t->AddFilters(n);
+	    t->AddFilters(n, 0);
 	}else{
 	    t->RemoveFilters(-n);
 	}

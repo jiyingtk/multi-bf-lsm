@@ -89,10 +89,14 @@ public:
   
   static inline AlignedBuffer* GetAlignedBuffer(){
       if(!initialized){
-	    for(int i = 0 ;  i < buffer_nums ; ++i ){
-		abfs.emplace_back(new AlignedBuffer(4096));
-	    }
-	    initialized = true;
+        buffer_mutex.lock();
+        if (!initialized) {
+    	    for(int i = 0 ;  i < buffer_nums ; ++i ){
+        		abfs.emplace_back(new AlignedBuffer(4096));
+    	    }
+    	    initialized = true;
+        }
+        buffer_mutex.unlock();
       }
       while(true){
 	    buffer_mutex.lock();

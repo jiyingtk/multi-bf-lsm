@@ -21,7 +21,7 @@ namespace leveldb {
 // Original:Generate new filter every 2KB of data
 //TODO: increase kFilterBaseLg
 //FULL-filter
-static const size_t kFilterBaseLg = 22;  //try every 64KB of data
+static const size_t kFilterBaseLg = 11;  //try every 64KB of data
 static const size_t kFilterBase = 1 << kFilterBaseLg;
 
 FilterBlockBuilder::FilterBlockBuilder(const FilterPolicy* policy)
@@ -66,6 +66,24 @@ std::list<std::string>& FilterBlockBuilder::Finish() {
   return results_;
 }
 
+std::string* FilterBlockBuilder::getOffsets() {
+  auto results_iter = results_.begin();
+
+  Slice contents((*results_iter));
+  size_t n = contents.size();
+  if (n < 5) return new std::string();  // 1 byte for base_lg_ and 4 for start of offset array
+
+  uint32_t last_word = DecodeFixed32(contents.data() + n - 5);
+  if (last_word > n - 5) return new std::string();
+
+  // char *buf = new char[n - last_word];
+  // memcpy(buf, contents.data() + last_word, n - last_word);
+  // std::string* dst = new std::string(buf, sizeof(buf));
+  std::string* dst = new std::string(contents.data() + last_word, n - last_word);
+  return dst;
+}
+
+
 void FilterBlockBuilder::GenerateFilter() {
   const size_t num_keys = start_.size();
   auto filters_offsets_iter = filters_offsets_.begin();
@@ -107,7 +125,7 @@ class FilterPolicy;
 
 std::atomic<bool> FilterBlockReader::start_matches[8];
 bool FilterBlockReader::matches[8];
-std::vector<const char*> *FilterBlockReader::filter_offsets = NULL;
+// std::vector<uint32_t> *FilterBlockReader::filter_offsets = NULL;
 std::vector<const char*> *FilterBlockReader::filter_datas = NULL;
 int FilterBlockReader::filter_index(0);
 bool FilterBlockReader::pthread_created(false);
@@ -118,26 +136,26 @@ pthread_t FilterBlockReader::pids_[8];
 
 void *FilterBlockReader::KeyMayMatch_Thread(void* arg)
 {
-       int id = *(int*)(arg);
-	delete (int *)(arg);
-	uint32_t start,limit;
-	while(true){
-	    while(!start_matches[id]&&!end_thread){
-		sched_yield();
-	    }
-	    if(end_thread){
-		break;
-	     }
-	    start = DecodeFixed32((*filter_offsets)[id] + filter_index*4);
-	    limit = DecodeFixed32((*filter_offsets)[id] + filter_index*4 + 4);
-	    if (start <= limit && limit <= static_cast<size_t>((*filter_offsets)[id] - (*filter_datas)[id])) {
-		Slice filter = Slice((*filter_datas)[id] + start, limit - start);
-		 matches[id] = filter_policy->KeyMayMatch(filter_key,filter,id);
-	    } else if (start == limit) {
-		matches[id] = false;
-	    }
-	    start_matches[id] = false;
-	}
+ //       int id = *(int*)(arg);
+	// delete (int *)(arg);
+	// uint32_t start,limit;
+	// while(true){
+	//     while(!start_matches[id]&&!end_thread){
+	// 	sched_yield();
+	//     }
+	//     if(end_thread){
+	// 	break;
+	//      }
+	//     start = DecodeFixed32((*filter_offsets)[id] + filter_index*4);
+	//     limit = DecodeFixed32((*filter_offsets)[id] + filter_index*4 + 4);
+	//     if (start <= limit && limit <= static_cast<size_t>((*filter_offsets)[id] - (*filter_datas)[id])) {
+	// 	Slice filter = Slice((*filter_datas)[id] + start, limit - start);
+	// 	 matches[id] = filter_policy->KeyMayMatch(filter_key,filter,id);
+	//     } else if (start == limit) {
+	// 	matches[id] = false;
+	//     }
+	//     start_matches[id] = false;
+	// }
 }
 
 
@@ -173,59 +191,68 @@ void FilterBlockReader::CreateThread(int filters_num,const leveldb::FilterPolicy
 }
 
 FilterBlockReader::FilterBlockReader(const FilterPolicy* policy,
-                                     const Slice& contents)
-    : policy_(policy),
-      datas_(1),
-      offsets_(1),
-      num_(0),
-      base_lg_(0),curr_num_of_filters_(1), max_num_of_filters_(policy->filterNums()){
-  size_t n = contents.size();
-  if (n < 5) return;  // 1 byte for base_lg_ and 4 for start of offset array
-  base_lg_ = contents[n-1];
-  uint32_t last_word = DecodeFixed32(contents.data() + n - 5);
-  if (last_word > n - 5) return;
-  datas_[0] = contents.data();
-  offsets_[0] = datas_[0] + last_word;
-  num_ = (n - 5 - last_word) / 4;
+                                     int regionNum, int regionFilters_, int base_lg, std::vector<uint32_t> *filter_offsets_)
+    : policy_(policy), curr_num_of_filters_(0), regionFilters(regionFilters_), 
+      num_(filter_offsets_->size()), num_regions(regionNum), filter_offsets(filter_offsets_),
+      base_lg_(base_lg), max_num_of_filters_(policy->filterNums()){
+
+  datas_.clear();
+  for (int i = 0; i < num_regions; i++) {
+    std::vector<const char *> region_data;
+    region_data.clear();
+    datas_.push_back(region_data);
+  }
+  curr_num_of_filters_regions_ = new int[num_regions]();
+
 }
 
-
-
-void FilterBlockReader::readFilters(const Slice& contents)
-{
-    size_t base_lg,num;
-    size_t n = contents.size();
-    if(n < 5) return;
-    base_lg = contents[n-1];
-    assert(base_lg == base_lg_);
-    uint32_t last_word = DecodeFixed32(contents.data() + n - 5);
-    if (last_word > n - 5) return;
-    datas_.push_back(contents.data());
-    offsets_.push_back(datas_.back() + last_word);
-    num = (n - 5 - last_word) / 4;
-    assert(num == num_);
+FilterBlockReader::~FilterBlockReader() {
+  datas_.clear();
+  delete [] curr_num_of_filters_regions_;
 }
 
-void FilterBlockReader::AddFilter(Slice &contents)
+void FilterBlockReader::AddFilter(Slice &contents, int regionId)
 {
-    assert(1 + curr_num_of_filters_ <= max_num_of_filters_);
-    readFilters(contents);
-    curr_num_of_filters_++;
+  assert(1 + curr_num_of_filters_regions_[regionId] <= max_num_of_filters_);
+
+  std::vector<const char *> &region_data = datas_[regionId];
+  region_data.push_back(contents.data());
+
+  curr_num_of_filters_regions_[regionId]++;
 }
 
-void FilterBlockReader::RemoveFilters(int n)
+size_t FilterBlockReader::RemoveFilters(int n, int regionId)
 {
-    assert(n <= curr_num_of_filters_);	//at least 0 filters
+  size_t delta = 0;
+    // assert(n <= curr_num_of_filters_regions_[regionId]);	//at least 0 filters
+  if (n > curr_num_of_filters_regions_[regionId]) {
+    delta = 0;
+    return delta;
+  }
+
     while(n--){
 	//const char *toBeDelete = datas_.back();
 	//delete []toBeDelete;  // note: no need to be deleted, thus, FilterBlockReader is just a manager for filter blocks.
-	datas_.pop_back();
-	offsets_.pop_back();
-	curr_num_of_filters_--;
+
+    size_t loc = regionId * regionFilters;
+
+    size_t data_size;
+    if (regionId != num_regions - 1)
+        data_size = (*filter_offsets)[loc + regionFilters] - (*filter_offsets)[loc];
+    else
+        data_size = (*filter_offsets)[(*filter_offsets).size() - 1] - (*filter_offsets)[loc];
+
+
+	delta += data_size;
+  datas_[regionId].pop_back();
+	// offsets_.pop_back();
+	curr_num_of_filters_regions_[regionId]--;
     }
-    
+  
+  return delta;
 }
 
+//todo
 double FilterBlockReader::getCurrFpr() {
   double ret = 0;
   int sum_bits = 0;
@@ -236,23 +263,33 @@ double FilterBlockReader::getCurrFpr() {
   return ret;
 }
 
-bool FilterBlockReader::KeyMayMatch(uint64_t block_offset, const Slice& key) {
+//todo
+bool FilterBlockReader::KeyMayMatch(uint64_t block_offset, const Slice &key)
+{
   uint64_t index = block_offset >> base_lg_;
   std::list<Slice> filters;
-  if (index < num_) {
-     for(int i = 0 ; i < offsets_.size() ; i++){
-	uint32_t start = DecodeFixed32(offsets_[i] + index*4);
-        uint32_t limit = DecodeFixed32(offsets_[i] + index*4 + 4);
-        if (start <= limit && limit <= static_cast<size_t>(offsets_[i] - datas_[i])) {
-            Slice filter = Slice(datas_[i] + start, limit - start);
-            filters.push_back(filter);
-	} else if (start >= limit) {
-            // Empty filters do not match any keys                                                                                                                      
-           printf("empty filters\n");
-            return false;
-        }
-     }
-     return policy_->KeyMayMatchFilters(key,filters);
+  if (index < num_)
+  {
+      int regionId = index / regionFilters;
+      for(int i = 0 ; i < curr_num_of_filters_regions_[regionId] ; i++)
+      {
+          uint32_t start = (*filter_offsets)[index];
+          uint32_t limit = (*filter_offsets)[index + 1];
+          int region_index = regionId * regionFilters;
+          uint32_t region_start = start - (*filter_offsets)[region_index];
+          if (start <= limit)
+          {
+              Slice filter = Slice(datas_[regionId][i] + region_start, limit - start);
+              filters.push_back(filter);
+          }
+          else if (start >= limit)
+          {
+              // Empty filters do not match any keys
+              printf("empty filters\n");
+              return false;
+          }
+      }
+      return policy_->KeyMayMatchFilters(key, filters);
   }
   return true;  // Errors are treated as potential matches
 }

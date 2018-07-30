@@ -11,7 +11,7 @@ DEVICE_CFLAGS	Makefile	/^DEVICE_CFLAGS = -isysroot "$(DEVICESDK)" -arch armv6 -a
 DEVICE_LIBOBJECTS	Makefile	/^DEVICE_LIBOBJECTS := $(addprefix $(DEVICE_OUTDIR)\/, $(SOURCES:.cc=.o))$/;"	m
 DEVICE_MEMENVOBJECTS	Makefile	/^DEVICE_MEMENVOBJECTS := $(addprefix $(DEVICE_OUTDIR)\/, $(MEMENV_SOURCES:.cc=.o))$/;"	m
 DEVICE_OUTDIR	Makefile	/^DEVICE_OUTDIR=out-ios-arm$/;"	m
-OPT	Makefile	/^OPT ?= -g2$/;"	m
+OPT	Makefile	/^OPT ?= -g2 -DMULTI_THREAD_MODE$/;"	m
 PROGNAMES	Makefile	/^PROGNAMES := $(notdir $(TESTS) $(UTILS))$/;"	m
 SHARED_ALLOBJS	Makefile	/^SHARED_ALLOBJS := $(SHARED_LIBOBJECTS) $(SHARED_MEMENVOBJECTS) $(TESTHARNESS)$/;"	m
 SHARED_LIB1	Makefile	/^SHARED_LIB1 = libleveldb.$(PLATFORM_SHARED_EXT)$/;"	m
@@ -464,6 +464,7 @@ fp_real_fpr_str	db/db_impl.h	/^  std::string fp_real_fpr_str;$/;"	m	class:leveld
 fp_real_io_str	db/db_impl.h	/^  std::string fp_real_io_str;$/;"	m	class:leveldb::DBImpl
 fp_reqs	db/db_impl.h	/^  uint64_t fp_reqs, fp_io, fp_nums, read_nums;$/;"	m	class:leveldb::DBImpl
 fp_sum	db/db_impl.h	/^  double fp_sum;$/;"	m	class:leveldb::DBImpl
+get_latency_str	db/db_impl.h	/^  std::string get_latency_str[config::kNumLevels];$/;"	m	class:leveldb::DBImpl
 has_imm_	db/db_impl.h	/^  port::AtomicPointer has_imm_;  \/\/ So bg thread can detect non-NULL imm_$/;"	m	class:leveldb::DBImpl
 imm_	db/db_impl.h	/^  MemTable* imm_;                \/\/ Memtable being compacted$/;"	m	class:leveldb::DBImpl
 internal_comparator_	db/db_impl.h	/^  const InternalKeyComparator internal_comparator_;$/;"	m	class:leveldb::DBImpl
@@ -1288,6 +1289,7 @@ file	db/table_cache.h	/^  RandomAccessFile* file;$/;"	m	struct:leveldb::TableAnd
 getCacheValue	db/table_cache.h	/^  void *getCacheValue(Cache::Handle* handle) {return cache_->Value(handle);}$/;"	f	class:leveldb::TableCache
 leveldb	db/table_cache.h	/^namespace leveldb {$/;"	n
 options_	db/table_cache.h	/^  const Options* options_;$/;"	m	class:leveldb::TableCache
+refs	db/table_cache.h	/^  uint32_t refs;$/;"	m	struct:leveldb::TableAndFile
 releaseCacheHandle	db/table_cache.h	/^  void releaseCacheHandle(Cache::Handle* handle) {cache_->Release(handle);}$/;"	f	class:leveldb::TableCache
 table	db/table_cache.h	/^  Table* table;$/;"	m	struct:leveldb::TableAndFile
 Clear	db/version_edit.cc	/^void VersionEdit::Clear() {$/;"	f	class:leveldb::VersionEdit
@@ -1309,6 +1311,8 @@ leveldb	db/version_edit.cc	/^namespace leveldb {$/;"	n	file:
 AddFile	db/version_edit.h	/^  void AddFile(int level, uint64_t file,$/;"	f	class:leveldb::VersionEdit
 DeleteFile	db/version_edit.h	/^  void DeleteFile(int level, uint64_t file) {$/;"	f	class:leveldb::VersionEdit
 DeletedFileSet	db/version_edit.h	/^  typedef std::set< std::pair<int, uint64_t> > DeletedFileSet;$/;"	t	class:leveldb::VersionEdit
+FileExtraMetaData	db/version_edit.h	/^  FileExtraMetaData() : is_compacted(false), latency_sum(0), count(0){}$/;"	f	struct:leveldb::FileExtraMetaData
+FileExtraMetaData	db/version_edit.h	/^struct FileExtraMetaData {$/;"	s	namespace:leveldb
 FileMetaData	db/version_edit.h	/^  FileMetaData() : refs(0), allowed_seeks(1 << 30), file_size(0),access_time(0){}$/;"	f	struct:leveldb::FileMetaData
 FileMetaData	db/version_edit.h	/^struct FileMetaData {$/;"	s	namespace:leveldb
 STORAGE_LEVELDB_DB_VERSION_EDIT_H_	db/version_edit.h	6;"	d
@@ -1324,6 +1328,7 @@ access_time	db/version_edit.h	/^  int access_time;			\/\/file access_time in Get
 allowed_seeks	db/version_edit.h	/^  int allowed_seeks;          \/\/ Seeks allowed until compaction$/;"	m	struct:leveldb::FileMetaData
 compact_pointers_	db/version_edit.h	/^  std::vector< std::pair<int, InternalKey> > compact_pointers_;$/;"	m	class:leveldb::VersionEdit
 comparator_	db/version_edit.h	/^  std::string comparator_;$/;"	m	class:leveldb::VersionEdit
+count	db/version_edit.h	/^  uint64_t count;$/;"	m	struct:leveldb::FileExtraMetaData
 deleted_files_	db/version_edit.h	/^  DeletedFileSet deleted_files_;$/;"	m	class:leveldb::VersionEdit
 file_size	db/version_edit.h	/^  uint64_t file_size;         \/\/ File size in bytes$/;"	m	struct:leveldb::FileMetaData
 has_comparator_	db/version_edit.h	/^  bool has_comparator_;$/;"	m	class:leveldb::VersionEdit
@@ -1331,8 +1336,10 @@ has_last_sequence_	db/version_edit.h	/^  bool has_last_sequence_;$/;"	m	class:le
 has_log_number_	db/version_edit.h	/^  bool has_log_number_;$/;"	m	class:leveldb::VersionEdit
 has_next_file_number_	db/version_edit.h	/^  bool has_next_file_number_;$/;"	m	class:leveldb::VersionEdit
 has_prev_log_number_	db/version_edit.h	/^  bool has_prev_log_number_;$/;"	m	class:leveldb::VersionEdit
+is_compacted	db/version_edit.h	/^  bool is_compacted;$/;"	m	struct:leveldb::FileExtraMetaData
 largest	db/version_edit.h	/^  InternalKey largest;        \/\/ Largest internal key served by table$/;"	m	struct:leveldb::FileMetaData
 last_sequence_	db/version_edit.h	/^  SequenceNumber last_sequence_;$/;"	m	class:leveldb::VersionEdit
+latency_sum	db/version_edit.h	/^  uint64_t latency_sum;$/;"	m	struct:leveldb::FileExtraMetaData
 leveldb	db/version_edit.h	/^namespace leveldb {$/;"	n
 log_number_	db/version_edit.h	/^  uint64_t log_number_;$/;"	m	class:leveldb::VersionEdit
 new_files_	db/version_edit.h	/^  std::vector< std::pair<int, FileMetaData> > new_files_;$/;"	m	class:leveldb::VersionEdit
@@ -1434,6 +1441,7 @@ key	db/version_set.cc	/^  Slice key() const {$/;"	f	class:leveldb::Version::Leve
 leveldb	db/version_set.cc	/^namespace leveldb {$/;"	n	file:
 levels_	db/version_set.cc	/^  LevelState levels_[config::kNumLevels];$/;"	m	class:leveldb::VersionSet::Builder	file:
 operator ()	db/version_set.cc	/^    bool operator()(FileMetaData* f1, FileMetaData* f2) const {$/;"	f	struct:leveldb::VersionSet::Builder::BySmallestKey
+printTableExtraInfos	db/version_set.cc	/^void VersionSet::printTableExtraInfos(int level,std::string *file_strs)$/;"	f	class:leveldb::VersionSet
 printTables	db/version_set.cc	/^void Version::printTables(int level, std::string* file_strs,const char *property_str,TableCache *table_cache)$/;"	f	class:leveldb::Version
 printTables	db/version_set.cc	/^void VersionSet::printTables(int level,std::string *file_strs,const char* property_str)$/;"	f	class:leveldb::VersionSet
 state	db/version_set.cc	/^  SaverState state;$/;"	m	struct:leveldb::__anon14::Saver	file:
@@ -1481,6 +1489,8 @@ env_	db/version_set.h	/^  Env* const env_;$/;"	m	class:leveldb::VersionSet
 file_to_compact_	db/version_set.h	/^  FileMetaData* file_to_compact_;$/;"	m	class:leveldb::Version
 file_to_compact_level_	db/version_set.h	/^  int file_to_compact_level_;$/;"	m	class:leveldb::Version
 files_	db/version_set.h	/^  std::vector<FileMetaData*> files_[config::kNumLevels];$/;"	m	class:leveldb::Version
+files_extra_	db/version_set.h	/^  std::map<uint64_t, FileExtraMetaData*> *files_extra_;$/;"	m	class:leveldb::Version
+files_extra_	db/version_set.h	/^  std::map<uint64_t, FileExtraMetaData*> files_extra_[config::kNumLevels];$/;"	m	class:leveldb::VersionSet
 grandparent_index_	db/version_set.h	/^  size_t grandparent_index_;  \/\/ Index in grandparent_starts_$/;"	m	class:leveldb::Compaction
 grandparents_	db/version_set.h	/^  std::vector<FileMetaData*> grandparents_;$/;"	m	class:leveldb::Compaction
 icmp_	db/version_set.h	/^  const InternalKeyComparator icmp_;$/;"	m	class:leveldb::VersionSet
@@ -1865,7 +1875,7 @@ function	include/leveldb/iterator.h	/^    CleanupFunction function;$/;"	m	struct
 leveldb	include/leveldb/iterator.h	/^namespace leveldb {$/;"	n
 next	include/leveldb/iterator.h	/^    Cleanup* next;$/;"	m	struct:leveldb::Iterator::Cleanup
 CompressionType	include/leveldb/options.h	/^enum CompressionType {$/;"	g	namespace:leveldb
-OptionExp	include/leveldb/options.h	/^    OptionExp():no_cache_io_(false),seek_compaction_(false),stats_(nullptr),filter_capacity_ratio(1.0),base_num(64),life_time(50),findAllTable(false),setFreCountInCompaction(false),$/;"	f	struct:leveldb::OptionExp
+OptionExp	include/leveldb/options.h	/^    OptionExp():no_cache_io_(false),seek_compaction_(false),stats_(nullptr),filter_capacity_ratio(1.0),base_num(64),life_time(50),findAllTable(false),setFreCountInCompaction(false), freq_divide_size(2097152),$/;"	f	struct:leveldb::OptionExp
 OptionExp	include/leveldb/options.h	/^typedef struct OptionExp{$/;"	s	namespace:leveldb
 OptionExp	include/leveldb/options.h	/^}OptionExp;$/;"	t	namespace:leveldb	typeref:struct:leveldb::OptionExp
 Options	include/leveldb/options.h	/^struct Options {$/;"	s	namespace:leveldb
@@ -1874,6 +1884,7 @@ ReadOptions	include/leveldb/options.h	/^struct ReadOptions {$/;"	s	namespace:lev
 STORAGE_LEVELDB_INCLUDE_OPTIONS_H_	include/leveldb/options.h	6;"	d
 WriteOptions	include/leveldb/options.h	/^  WriteOptions()$/;"	f	struct:leveldb::WriteOptions
 WriteOptions	include/leveldb/options.h	/^struct WriteOptions {$/;"	s	namespace:leveldb
+access_compacted_file_nums	include/leveldb/options.h	/^  mutable unsigned short access_compacted_file_nums;$/;"	m	struct:leveldb::ReadOptions
 access_file_nums	include/leveldb/options.h	/^  mutable unsigned short access_file_nums;$/;"	m	struct:leveldb::ReadOptions
 add_filter	include/leveldb/options.h	/^    mutable bool add_filter;$/;"	m	struct:leveldb::OptionExp
 base_num	include/leveldb/options.h	/^    int base_num;$/;"	m	struct:leveldb::OptionExp
@@ -1886,6 +1897,7 @@ compression	include/leveldb/options.h	/^  CompressionType compression;$/;"	m	str
 create_if_missing	include/leveldb/options.h	/^  bool create_if_missing;$/;"	m	struct:leveldb::Options
 env	include/leveldb/options.h	/^  Env* env;$/;"	m	struct:leveldb::Options
 error_if_exists	include/leveldb/options.h	/^  bool error_if_exists;$/;"	m	struct:leveldb::Options
+file_number	include/leveldb/options.h	/^  mutable uint64_t file_number;$/;"	m	struct:leveldb::ReadOptions
 fill_cache	include/leveldb/options.h	/^  bool fill_cache;$/;"	m	struct:leveldb::ReadOptions
 filter_capacity_ratio	include/leveldb/options.h	/^    double filter_capacity_ratio;$/;"	m	struct:leveldb::OptionExp
 filter_policy	include/leveldb/options.h	/^  const FilterPolicy* filter_policy;$/;"	m	struct:leveldb::Options
@@ -1893,7 +1905,7 @@ findAllTable	include/leveldb/options.h	/^    bool findAllTable;$/;"	m	struct:lev
 force_disable_compaction	include/leveldb/options.h	/^    bool force_disable_compaction;$/;"	m	struct:leveldb::OptionExp
 force_shrink_ratio	include/leveldb/options.h	/^    double force_shrink_ratio;$/;"	m	struct:leveldb::OptionExp
 fp_stat_num	include/leveldb/options.h	/^    uint64_t fp_stat_num;$/;"	m	struct:leveldb::OptionExp
-freq_divide_size	include/leveldb/options.h	/^  static const uint64_t freq_divide_size = 2097152;$/;"	m	struct:leveldb::ReadOptions
+freq_divide_size	include/leveldb/options.h	/^    uint64_t freq_divide_size;$/;"	m	struct:leveldb::OptionExp
 info_log	include/leveldb/options.h	/^  Logger* info_log;$/;"	m	struct:leveldb::Options
 init_filter_nums	include/leveldb/options.h	/^    int init_filter_nums;$/;"	m	struct:leveldb::OptionExp
 isLevel0	include/leveldb/options.h	/^  bool isLevel0;  \/\/new file isLevel0?$/;"	m	struct:leveldb::ReadOptions
@@ -2179,53 +2191,56 @@ last_key_	table/block_builder.h	/^  std::string           last_key_;$/;"	m	class
 leveldb	table/block_builder.h	/^namespace leveldb {$/;"	n
 options_	table/block_builder.h	/^  const Options*        options_;$/;"	m	class:leveldb::BlockBuilder
 restarts_	table/block_builder.h	/^  std::vector<uint32_t> restarts_;    \/\/ Restart points$/;"	m	class:leveldb::BlockBuilder
-AddFilter	table/filter_block.cc	/^void FilterBlockReader::AddFilter(Slice &contents)$/;"	f	class:leveldb::FilterBlockReader
+AddFilter	table/filter_block.cc	/^void FilterBlockReader::AddFilter(Slice &contents, int regionId)$/;"	f	class:leveldb::FilterBlockReader
 AddKey	table/filter_block.cc	/^void FilterBlockBuilder::AddKey(const Slice& key) {$/;"	f	class:leveldb::FilterBlockBuilder
 CreateThread	table/filter_block.cc	/^void FilterBlockReader::CreateThread(int filters_num,const leveldb::FilterPolicy *policy)$/;"	f	class:leveldb::FilterBlockReader
 FilterBlockBuilder	table/filter_block.cc	/^FilterBlockBuilder::FilterBlockBuilder(const FilterPolicy* policy)$/;"	f	class:leveldb::FilterBlockBuilder
 FilterBlockReader	table/filter_block.cc	/^FilterBlockReader::FilterBlockReader(const FilterPolicy* policy,$/;"	f	class:leveldb::FilterBlockReader
 Finish	table/filter_block.cc	/^std::list<std::string>& FilterBlockBuilder::Finish() {$/;"	f	class:leveldb::FilterBlockBuilder
 GenerateFilter	table/filter_block.cc	/^void FilterBlockBuilder::GenerateFilter() {$/;"	f	class:leveldb::FilterBlockBuilder
-KeyMayMatch	table/filter_block.cc	/^bool FilterBlockReader::KeyMayMatch(uint64_t block_offset, const Slice& key) {$/;"	f	class:leveldb::FilterBlockReader
+KeyMayMatch	table/filter_block.cc	/^bool FilterBlockReader::KeyMayMatch(uint64_t block_offset, const Slice &key)$/;"	f	class:leveldb::FilterBlockReader
 KeyMayMatch_Thread	table/filter_block.cc	/^void *FilterBlockReader::KeyMayMatch_Thread(void* arg)$/;"	f	class:leveldb::FilterBlockReader
-RemoveFilters	table/filter_block.cc	/^void FilterBlockReader::RemoveFilters(int n)$/;"	f	class:leveldb::FilterBlockReader
+RemoveFilters	table/filter_block.cc	/^void FilterBlockReader::RemoveFilters(int n, int regionId)$/;"	f	class:leveldb::FilterBlockReader
 StartBlock	table/filter_block.cc	/^void FilterBlockBuilder::StartBlock(uint64_t block_offset) {$/;"	f	class:leveldb::FilterBlockBuilder
 filter_datas	table/filter_block.cc	/^std::vector<const char*> *FilterBlockReader::filter_datas = NULL;$/;"	m	class:leveldb::FilterBlockReader	file:
 filter_key	table/filter_block.cc	/^Slice FilterBlockReader::filter_key;$/;"	m	class:leveldb::FilterBlockReader	file:
-filter_offsets	table/filter_block.cc	/^std::vector<const char*> *FilterBlockReader::filter_offsets = NULL;$/;"	m	class:leveldb::FilterBlockReader	file:
 getCurrFpr	table/filter_block.cc	/^double FilterBlockReader::getCurrFpr() {$/;"	f	class:leveldb::FilterBlockReader
+getOffsets	table/filter_block.cc	/^std::string* FilterBlockBuilder::getOffsets() {$/;"	f	class:leveldb::FilterBlockBuilder
 handle_error_en	table/filter_block.cc	14;"	d	file:
 kFilterBase	table/filter_block.cc	/^static const size_t kFilterBase = 1 << kFilterBaseLg;$/;"	m	namespace:leveldb	file:
-kFilterBaseLg	table/filter_block.cc	/^static const size_t kFilterBaseLg = 22;  \/\/try every 64KB of data$/;"	m	namespace:leveldb	file:
+kFilterBaseLg	table/filter_block.cc	/^static const size_t kFilterBaseLg = 11;  \/\/try every 64KB of data$/;"	m	namespace:leveldb	file:
 leveldb	table/filter_block.cc	/^namespace leveldb {$/;"	n	file:
 matches	table/filter_block.cc	/^bool FilterBlockReader::matches[8];$/;"	m	class:leveldb::FilterBlockReader	file:
 pids_	table/filter_block.cc	/^pthread_t FilterBlockReader::pids_[8];$/;"	m	class:leveldb::FilterBlockReader	file:
-readFilters	table/filter_block.cc	/^void FilterBlockReader::readFilters(const Slice& contents)$/;"	f	class:leveldb::FilterBlockReader
 start_matches	table/filter_block.cc	/^std::atomic<bool> FilterBlockReader::start_matches[8];$/;"	m	class:leveldb::FilterBlockReader	file:
+~FilterBlockReader	table/filter_block.cc	/^FilterBlockReader::~FilterBlockReader() {$/;"	f	class:leveldb::FilterBlockReader
 FilterBlockBuilder	table/filter_block.h	/^class FilterBlockBuilder {$/;"	c	namespace:leveldb
 FilterBlockReader	table/filter_block.h	/^class FilterBlockReader {$/;"	c	namespace:leveldb
 STORAGE_LEVELDB_TABLE_FILTER_BLOCK_H_	table/filter_block.h	10;"	d
 base_lg_	table/filter_block.h	/^  size_t base_lg_;      \/\/ Encoding parameter (see kFilterBaseLg in .cc file)$/;"	m	class:leveldb::FilterBlockReader
 curr_num_of_filters_	table/filter_block.h	/^  int curr_num_of_filters_;$/;"	m	class:leveldb::FilterBlockReader
-datas_	table/filter_block.h	/^  std::vector<const char*> datas_;    \/\/ Pointer to filter data (at block-start)$/;"	m	class:leveldb::FilterBlockReader
+curr_num_of_filters_regions_	table/filter_block.h	/^  int *curr_num_of_filters_regions_;$/;"	m	class:leveldb::FilterBlockReader
+datas_	table/filter_block.h	/^  std::vector<std::vector<const char*>> datas_;    \/\/ Pointer to filter data (at block-start)$/;"	m	class:leveldb::FilterBlockReader
 end_thread	table/filter_block.h	/^  static bool end_thread;$/;"	m	class:leveldb::FilterBlockReader
 filter_datas	table/filter_block.h	/^  static std::vector<const char*> *filter_datas;$/;"	m	class:leveldb::FilterBlockReader
 filter_index	table/filter_block.h	/^  static int filter_index;$/;"	m	class:leveldb::FilterBlockReader
 filter_key	table/filter_block.h	/^  static Slice filter_key;$/;"	m	class:leveldb::FilterBlockReader
-filter_offsets	table/filter_block.h	/^  static std::vector<const char*> *filter_offsets;$/;"	m	class:leveldb::FilterBlockReader
+filter_offsets	table/filter_block.h	/^  std::vector<uint32_t> *filter_offsets;$/;"	m	class:leveldb::FilterBlockReader
+filter_offsets_	table/filter_block.h	/^  std::vector<uint32_t> filter_offsets_;$/;"	m	class:leveldb::FilterBlockReader
 filter_policy	table/filter_block.h	/^  static const FilterPolicy *filter_policy;$/;"	m	class:leveldb::FilterBlockReader
 filters_offsets_	table/filter_block.h	/^  std::list<std::vector<uint32_t>> filters_offsets_;$/;"	m	class:leveldb::FilterBlockBuilder
-getCurrFiltersNum	table/filter_block.h	/^  inline int getCurrFiltersNum(){$/;"	f	class:leveldb::FilterBlockReader
+getCurrFiltersNum	table/filter_block.h	/^  inline int getCurrFiltersNum(int regionId){$/;"	f	class:leveldb::FilterBlockReader
 keys_	table/filter_block.h	/^  std::string keys_;              \/\/ Flattened key contents$/;"	m	class:leveldb::FilterBlockBuilder
 leveldb	table/filter_block.h	/^namespace leveldb {$/;"	n
 matches	table/filter_block.h	/^  static bool matches[8];$/;"	m	class:leveldb::FilterBlockReader
 max_num_of_filters_	table/filter_block.h	/^  int max_num_of_filters_;$/;"	m	class:leveldb::FilterBlockReader
 num_	table/filter_block.h	/^  size_t num_;          \/\/ Number of entries in offset array$/;"	m	class:leveldb::FilterBlockReader
-offsets_	table/filter_block.h	/^  std::vector<const char*> offsets_;  \/\/ Pointer to beginning of offset array (at block-end)$/;"	m	class:leveldb::FilterBlockReader
+num_regions	table/filter_block.h	/^  int num_regions;$/;"	m	class:leveldb::FilterBlockReader
 pids_	table/filter_block.h	/^  static pthread_t pids_[8];$/;"	m	class:leveldb::FilterBlockReader
 policy_	table/filter_block.h	/^  const FilterPolicy* policy_;$/;"	m	class:leveldb::FilterBlockBuilder
 policy_	table/filter_block.h	/^  const FilterPolicy* policy_;$/;"	m	class:leveldb::FilterBlockReader
 pthread_created	table/filter_block.h	/^  static bool pthread_created;$/;"	m	class:leveldb::FilterBlockReader
+regionFilters	table/filter_block.h	/^  int regionFilters;$/;"	m	class:leveldb::FilterBlockReader
 results_	table/filter_block.h	/^  std::list<std::string> results_;$/;"	m	class:leveldb::FilterBlockBuilder
 start_	table/filter_block.h	/^  std::vector<size_t> start_;     \/\/ Starting index in keys_ of each key$/;"	m	class:leveldb::FilterBlockBuilder
 start_matches	table/filter_block.h	/^  static std::atomic<bool> start_matches[8];$/;"	m	class:leveldb::FilterBlockReader
@@ -2234,9 +2249,6 @@ CreateFilter	table/filter_block_test.cc	/^  virtual void CreateFilter(const Slic
 FilterBlockTest	table/filter_block_test.cc	/^class FilterBlockTest {$/;"	c	namespace:leveldb	file:
 KeyMayMatch	table/filter_block_test.cc	/^  virtual bool KeyMayMatch(const Slice& key, const Slice& filter) const {$/;"	f	class:leveldb::TestHashFilter
 Name	table/filter_block_test.cc	/^  virtual const char* Name() const {$/;"	f	class:leveldb::TestHashFilter
-TEST	table/filter_block_test.cc	/^TEST(FilterBlockTest, EmptyBuilder) {$/;"	f	namespace:leveldb
-TEST	table/filter_block_test.cc	/^TEST(FilterBlockTest, MultiChunk) {$/;"	f	namespace:leveldb
-TEST	table/filter_block_test.cc	/^TEST(FilterBlockTest, SingleChunk) {$/;"	f	namespace:leveldb
 TestHashFilter	table/filter_block_test.cc	/^class TestHashFilter : public FilterPolicy {$/;"	c	namespace:leveldb	file:
 leveldb	table/filter_block_test.cc	/^namespace leveldb {$/;"	n	file:
 main	table/filter_block_test.cc	/^int main(int argc, char** argv) {$/;"	f
@@ -2339,37 +2351,40 @@ value	table/merger.cc	/^  virtual Slice value() const {$/;"	f	class:leveldb::__a
 ~MergingIterator	table/merger.cc	/^  virtual ~MergingIterator() {$/;"	f	class:leveldb::__anon22::MergingIterator
 STORAGE_LEVELDB_TABLE_MERGER_H_	table/merger.h	6;"	d
 leveldb	table/merger.h	/^namespace leveldb {$/;"	n
-AddFilters	table/table.cc	/^size_t Table::AddFilters(int n)$/;"	f	class:leveldb::Table
-AdjustFilters	table/table.cc	/^int64_t Table::AdjustFilters(int n)$/;"	f	class:leveldb::Table
-ApproximateOffsetOf	table/table.cc	/^uint64_t Table::ApproximateOffsetOf(const Slice& key) const {$/;"	f	class:leveldb::Table
-BlockReader	table/table.cc	/^Iterator* Table::BlockReader(void* arg,$/;"	f	class:leveldb::Table
-DeleteBlock	table/table.cc	/^static void DeleteBlock(void* arg, void* ignored) {$/;"	f	namespace:leveldb
-DeleteCachedBlock	table/table.cc	/^static void DeleteCachedBlock(const Slice& key, void* value) {$/;"	f	namespace:leveldb
-InternalGet	table/table.cc	/^Status Table::InternalGet(const ReadOptions& options, const Slice& k,$/;"	f	class:leveldb::Table
-LRU_Fre_Count	table/table.cc	/^uint64_t Table::LRU_Fre_Count=0;$/;"	m	class:leveldb::Table	file:
-NewIterator	table/table.cc	/^Iterator* Table::NewIterator(const ReadOptions& options) const {$/;"	f	class:leveldb::Table
-Open	table/table.cc	/^Status Table::Open(const Options& options,$/;"	f	class:leveldb::Table
-ReadFilter	table/table.cc	/^void Table::ReadFilter(const Slice& filter_handle_value) {$/;"	f	class:leveldb::Table
-ReadFilters	table/table.cc	/^void Table::ReadFilters(std::vector< Slice >& filter_handle_values,int n)$/;"	f	class:leveldb::Table
-ReadMeta	table/table.cc	/^void Table::ReadMeta(const Footer& footer,int add_filter_num) {$/;"	f	class:leveldb::Table
-ReleaseBlock	table/table.cc	/^static void ReleaseBlock(void* arg, void* h) {$/;"	f	namespace:leveldb
-RemoveFilters	table/table.cc	/^size_t Table::RemoveFilters(int n)$/;"	f	class:leveldb::Table
-Rep	table/table.cc	/^struct Table::Rep {$/;"	s	class:leveldb::Table	file:
-cache_id	table/table.cc	/^  uint64_t cache_id;$/;"	m	struct:leveldb::Table::Rep	file:
-file	table/table.cc	/^  RandomAccessFile* file;$/;"	m	struct:leveldb::Table::Rep	file:
-filter	table/table.cc	/^  FilterBlockReader* filter;$/;"	m	struct:leveldb::Table::Rep	file:
-filter_datas	table/table.cc	/^  std::vector<const char*> filter_datas; \/\/ be careful about vector memory overhead$/;"	m	struct:leveldb::Table::Rep	file:
-filter_handles	table/table.cc	/^  std::vector<Slice> filter_handles;    \/\/use string instead of slice $/;"	m	struct:leveldb::Table::Rep	file:
-getCurrFilterNum	table/table.cc	/^int  Table::getCurrFilterNum() $/;"	f	class:leveldb::Table
-getCurrFiltersSize	table/table.cc	/^size_t Table::getCurrFiltersSize(){$/;"	f	class:leveldb::Table
-index_block	table/table.cc	/^  Block* index_block;$/;"	m	struct:leveldb::Table::Rep	file:
-leveldb	table/table.cc	/^namespace leveldb {$/;"	n	file:
-meta	table/table.cc	/^  Block *meta=NULL;$/;"	m	struct:leveldb::Table::Rep	file:
-metaindex_handle	table/table.cc	/^  BlockHandle metaindex_handle;  \/\/ Handle to metaindex_block: saved from footer$/;"	m	struct:leveldb::Table::Rep	file:
-options	table/table.cc	/^  Options options;$/;"	m	struct:leveldb::Table::Rep	file:
-status	table/table.cc	/^  Status status;$/;"	m	struct:leveldb::Table::Rep	file:
-~Rep	table/table.cc	/^  ~Rep() {$/;"	f	struct:leveldb::Table::Rep
-~Table	table/table.cc	/^Table::~Table() {$/;"	f	class:leveldb::Table
+AddFilters	table/table.cc	/^    size_t Table::AddFilters(int n, int regionId)$/;"	f	class:leveldb::Table
+AdjustFilters	table/table.cc	/^    int64_t Table::AdjustFilters(int n, int regionId)$/;"	f	class:leveldb::Table
+ApproximateOffsetOf	table/table.cc	/^    uint64_t Table::ApproximateOffsetOf(const Slice &key) const$/;"	f	class:leveldb::Table
+BlockReader	table/table.cc	/^    Iterator *Table::BlockReader(void *arg,$/;"	f	class:leveldb::Table
+DeleteBlock	table/table.cc	/^    static void DeleteBlock(void *arg, void *ignored)$/;"	f	namespace:leveldb
+DeleteCachedBlock	table/table.cc	/^    static void DeleteCachedBlock(const Slice &key, void *value)$/;"	f	namespace:leveldb
+InternalGet	table/table.cc	/^    Status Table::InternalGet(const ReadOptions &options, const Slice &k,$/;"	f	class:leveldb::Table
+LRU_Fre_Count	table/table.cc	/^    uint64_t Table::LRU_Fre_Count = 0;$/;"	m	class:leveldb::Table	file:
+NewIterator	table/table.cc	/^    Iterator *Table::NewIterator(const ReadOptions &options) const$/;"	f	class:leveldb::Table
+Open	table/table.cc	/^    Status Table::Open(const Options &options,$/;"	f	class:leveldb::Table
+ReadFilter	table/table.cc	/^    void Table::ReadFilter(const Slice &filter_handle_value, int regionId)$/;"	f	class:leveldb::Table
+ReadFilters	table/table.cc	/^    void Table::ReadFilters(std::vector< Slice > &filter_handle_values, int n)$/;"	f	class:leveldb::Table
+ReadMeta	table/table.cc	/^    void Table::ReadMeta(const Footer &footer, int add_filter_num)$/;"	f	class:leveldb::Table
+ReleaseBlock	table/table.cc	/^    static void ReleaseBlock(void *arg, void *h)$/;"	f	namespace:leveldb
+RemoveFilters	table/table.cc	/^    size_t Table::RemoveFilters(int n, int regionId)$/;"	f	class:leveldb::Table
+Rep	table/table.cc	/^    struct Table::Rep$/;"	s	class:leveldb::Table	file:
+base_lg_	table/table.cc	/^        size_t base_lg_;$/;"	m	struct:leveldb::Table::Rep	file:
+cache_id	table/table.cc	/^        uint64_t cache_id;$/;"	m	struct:leveldb::Table::Rep	file:
+file	table/table.cc	/^        RandomAccessFile *file;$/;"	m	struct:leveldb::Table::Rep	file:
+filter	table/table.cc	/^        FilterBlockReader *filter;$/;"	m	struct:leveldb::Table::Rep	file:
+filter_datas	table/table.cc	/^        std::vector<std::vector<Slice>> filter_datas; \/\/ be careful about vector memory overhead$/;"	m	struct:leveldb::Table::Rep	file:
+filter_handles	table/table.cc	/^        std::vector<Slice> filter_handles;    \/\/use string instead of slice$/;"	m	struct:leveldb::Table::Rep	file:
+getCurrFilterNum	table/table.cc	/^    int Table::getCurrFilterNum(int regionId)$/;"	f	class:leveldb::Table
+getCurrFiltersSize	table/table.cc	/^    size_t Table::getCurrFiltersSize()$/;"	f	class:leveldb::Table
+getRegionNum	table/table.cc	/^    int Table::getRegionNum()$/;"	f	class:leveldb::Table
+index_block	table/table.cc	/^        Block *index_block;$/;"	m	struct:leveldb::Table::Rep	file:
+leveldb	table/table.cc	/^namespace leveldb$/;"	n	file:
+meta	table/table.cc	/^        Block *meta = NULL;$/;"	m	struct:leveldb::Table::Rep	file:
+metaindex_handle	table/table.cc	/^        BlockHandle metaindex_handle;  \/\/ Handle to metaindex_block: saved from footer$/;"	m	struct:leveldb::Table::Rep	file:
+offsets_	table/table.cc	/^        std::vector<uint32_t> offsets_;$/;"	m	struct:leveldb::Table::Rep	file:
+options	table/table.cc	/^        Options options;$/;"	m	struct:leveldb::Table::Rep	file:
+status	table/table.cc	/^        Status status;$/;"	m	struct:leveldb::Table::Rep	file:
+~Rep	table/table.cc	/^        ~Rep()$/;"	f	struct:leveldb::Table::Rep
+~Table	table/table.cc	/^    Table::~Table()$/;"	f	class:leveldb::Table
 Abandon	table/table_builder.cc	/^void TableBuilder::Abandon() {$/;"	f	class:leveldb::TableBuilder
 Add	table/table_builder.cc	/^void TableBuilder::Add(const Slice& key, const Slice& value) {$/;"	f	class:leveldb::TableBuilder
 ChangeOptions	table/table_builder.cc	/^Status TableBuilder::ChangeOptions(const Options& options) {$/;"	f	class:leveldb::TableBuilder
@@ -2576,14 +2591,14 @@ TEST	util/arena_test.cc	/^TEST(ArenaTest, Empty) {$/;"	f	namespace:leveldb
 TEST	util/arena_test.cc	/^TEST(ArenaTest, Simple) {$/;"	f	namespace:leveldb
 leveldb	util/arena_test.cc	/^namespace leveldb {$/;"	n	file:
 main	util/arena_test.cc	/^int main(int argc, char** argv) {$/;"	f
-BloomFilterPolicy	util/bloom.cc	/^  explicit BloomFilterPolicy(int bits_per_key)$/;"	f	class:leveldb::__anon30::BloomFilterPolicy
-BloomFilterPolicy	util/bloom.cc	/^class BloomFilterPolicy : public FilterPolicy {$/;"	c	namespace:leveldb::__anon30	file:
-BloomHash	util/bloom.cc	/^static uint32_t BloomHash(const Slice& key) {$/;"	f	namespace:leveldb::__anon30
-CreateFilter	util/bloom.cc	/^  virtual void CreateFilter(const Slice* keys, int n, std::string* dst) const {$/;"	f	class:leveldb::__anon30::BloomFilterPolicy
-KeyMayMatch	util/bloom.cc	/^  virtual bool KeyMayMatch(const Slice& key, const Slice& bloom_filter) const {$/;"	f	class:leveldb::__anon30::BloomFilterPolicy
-Name	util/bloom.cc	/^  virtual const char* Name() const {$/;"	f	class:leveldb::__anon30::BloomFilterPolicy
-bits_per_key_	util/bloom.cc	/^  size_t bits_per_key_;$/;"	m	class:leveldb::__anon30::BloomFilterPolicy	file:
-k_	util/bloom.cc	/^  size_t k_;$/;"	m	class:leveldb::__anon30::BloomFilterPolicy	file:
+BloomFilterPolicy	util/bloom.cc	/^  explicit BloomFilterPolicy(int bits_per_key)$/;"	f	class:leveldb::__anon34::BloomFilterPolicy
+BloomFilterPolicy	util/bloom.cc	/^class BloomFilterPolicy : public FilterPolicy {$/;"	c	namespace:leveldb::__anon34	file:
+BloomHash	util/bloom.cc	/^static uint32_t BloomHash(const Slice& key) {$/;"	f	namespace:leveldb::__anon34
+CreateFilter	util/bloom.cc	/^  virtual void CreateFilter(const Slice* keys, int n, std::string* dst) const {$/;"	f	class:leveldb::__anon34::BloomFilterPolicy
+KeyMayMatch	util/bloom.cc	/^  virtual bool KeyMayMatch(const Slice& key, const Slice& bloom_filter) const {$/;"	f	class:leveldb::__anon34::BloomFilterPolicy
+Name	util/bloom.cc	/^  virtual const char* Name() const {$/;"	f	class:leveldb::__anon34::BloomFilterPolicy
+bits_per_key_	util/bloom.cc	/^  size_t bits_per_key_;$/;"	m	class:leveldb::__anon34::BloomFilterPolicy	file:
+k_	util/bloom.cc	/^  size_t k_;$/;"	m	class:leveldb::__anon34::BloomFilterPolicy	file:
 leveldb	util/bloom.cc	/^namespace leveldb {$/;"	n	file:
 Add	util/bloom_test.cc	/^  void Add(const Slice& s) {$/;"	f	class:leveldb::BloomTest
 BloomTest	util/bloom_test.cc	/^  BloomTest() : policy_(NewBloomFilterPolicy(bits_per_key_per_filter,8)),filters_(NULL) { Reset(); }$/;"	f	class:leveldb::BloomTest
@@ -2608,72 +2623,72 @@ leveldb	util/bloom_test.cc	/^namespace leveldb {$/;"	n	file:
 main	util/bloom_test.cc	/^int main(int argc, char** argv) {$/;"	f
 policy_	util/bloom_test.cc	/^  const FilterPolicy* policy_;$/;"	m	class:leveldb::BloomTest	file:
 ~BloomTest	util/bloom_test.cc	/^  ~BloomTest() {$/;"	f	class:leveldb::BloomTest
-Erase	util/cache.cc	/^  virtual void Erase(const Slice& key) {$/;"	f	class:leveldb::__anon31::ShardedLRUCache
-Erase	util/cache.cc	/^void LRUCache::Erase(const Slice& key, uint32_t hash) {$/;"	f	class:leveldb::__anon31::LRUCache
-FindPointer	util/cache.cc	/^  LRUHandle** FindPointer(const Slice& key, uint32_t hash) {$/;"	f	class:leveldb::__anon31::HandleTable	file:
-FinishErase	util/cache.cc	/^bool LRUCache::FinishErase(LRUHandle* e) {$/;"	f	class:leveldb::__anon31::LRUCache
-HandleTable	util/cache.cc	/^  HandleTable() : length_(0), elems_(0), list_(NULL) { Resize(); }$/;"	f	class:leveldb::__anon31::HandleTable
-HandleTable	util/cache.cc	/^class HandleTable {$/;"	c	namespace:leveldb::__anon31	file:
-HashSlice	util/cache.cc	/^  static inline uint32_t HashSlice(const Slice& s) {$/;"	f	class:leveldb::__anon31::ShardedLRUCache	file:
-Insert	util/cache.cc	/^  LRUHandle* Insert(LRUHandle* h) {$/;"	f	class:leveldb::__anon31::HandleTable
-Insert	util/cache.cc	/^  virtual Handle* Insert(const Slice& key, void* value, size_t charge,$/;"	f	class:leveldb::__anon31::ShardedLRUCache
-Insert	util/cache.cc	/^Cache::Handle* LRUCache::Insert($/;"	f	class:leveldb::__anon31::LRUCache
-LRUCache	util/cache.cc	/^LRUCache::LRUCache()$/;"	f	class:leveldb::__anon31::LRUCache
-LRUCache	util/cache.cc	/^class LRUCache {$/;"	c	namespace:leveldb::__anon31	file:
-LRUHandle	util/cache.cc	/^struct LRUHandle {$/;"	s	namespace:leveldb::__anon31	file:
-LRU_Append	util/cache.cc	/^void LRUCache::LRU_Append(LRUHandle* list, LRUHandle* e) {$/;"	f	class:leveldb::__anon31::LRUCache
-LRU_Remove	util/cache.cc	/^void LRUCache::LRU_Remove(LRUHandle* e) {$/;"	f	class:leveldb::__anon31::LRUCache
-Lookup	util/cache.cc	/^  LRUHandle* Lookup(const Slice& key, uint32_t hash) {$/;"	f	class:leveldb::__anon31::HandleTable
-Lookup	util/cache.cc	/^  virtual Handle* Lookup(const Slice& key) {$/;"	f	class:leveldb::__anon31::ShardedLRUCache
-Lookup	util/cache.cc	/^Cache::Handle* LRUCache::Lookup(const Slice& key, uint32_t hash) {$/;"	f	class:leveldb::__anon31::LRUCache
-NewId	util/cache.cc	/^  virtual uint64_t NewId() {$/;"	f	class:leveldb::__anon31::ShardedLRUCache
+Erase	util/cache.cc	/^  virtual void Erase(const Slice& key) {$/;"	f	class:leveldb::__anon30::ShardedLRUCache
+Erase	util/cache.cc	/^void LRUCache::Erase(const Slice& key, uint32_t hash) {$/;"	f	class:leveldb::__anon30::LRUCache
+FindPointer	util/cache.cc	/^  LRUHandle** FindPointer(const Slice& key, uint32_t hash) {$/;"	f	class:leveldb::__anon30::HandleTable	file:
+FinishErase	util/cache.cc	/^bool LRUCache::FinishErase(LRUHandle* e) {$/;"	f	class:leveldb::__anon30::LRUCache
+HandleTable	util/cache.cc	/^  HandleTable() : length_(0), elems_(0), list_(NULL) { Resize(); }$/;"	f	class:leveldb::__anon30::HandleTable
+HandleTable	util/cache.cc	/^class HandleTable {$/;"	c	namespace:leveldb::__anon30	file:
+HashSlice	util/cache.cc	/^  static inline uint32_t HashSlice(const Slice& s) {$/;"	f	class:leveldb::__anon30::ShardedLRUCache	file:
+Insert	util/cache.cc	/^  LRUHandle* Insert(LRUHandle* h) {$/;"	f	class:leveldb::__anon30::HandleTable
+Insert	util/cache.cc	/^  virtual Handle* Insert(const Slice& key, void* value, size_t charge,$/;"	f	class:leveldb::__anon30::ShardedLRUCache
+Insert	util/cache.cc	/^Cache::Handle* LRUCache::Insert($/;"	f	class:leveldb::__anon30::LRUCache
+LRUCache	util/cache.cc	/^LRUCache::LRUCache()$/;"	f	class:leveldb::__anon30::LRUCache
+LRUCache	util/cache.cc	/^class LRUCache {$/;"	c	namespace:leveldb::__anon30	file:
+LRUHandle	util/cache.cc	/^struct LRUHandle {$/;"	s	namespace:leveldb::__anon30	file:
+LRU_Append	util/cache.cc	/^void LRUCache::LRU_Append(LRUHandle* list, LRUHandle* e) {$/;"	f	class:leveldb::__anon30::LRUCache
+LRU_Remove	util/cache.cc	/^void LRUCache::LRU_Remove(LRUHandle* e) {$/;"	f	class:leveldb::__anon30::LRUCache
+Lookup	util/cache.cc	/^  LRUHandle* Lookup(const Slice& key, uint32_t hash) {$/;"	f	class:leveldb::__anon30::HandleTable
+Lookup	util/cache.cc	/^  virtual Handle* Lookup(const Slice& key) {$/;"	f	class:leveldb::__anon30::ShardedLRUCache
+Lookup	util/cache.cc	/^Cache::Handle* LRUCache::Lookup(const Slice& key, uint32_t hash) {$/;"	f	class:leveldb::__anon30::LRUCache
+NewId	util/cache.cc	/^  virtual uint64_t NewId() {$/;"	f	class:leveldb::__anon30::ShardedLRUCache
 NewLRUCache	util/cache.cc	/^Cache* NewLRUCache(size_t capacity) {$/;"	f	namespace:leveldb
-Prune	util/cache.cc	/^  virtual void Prune() {$/;"	f	class:leveldb::__anon31::ShardedLRUCache
-Prune	util/cache.cc	/^void LRUCache::Prune() {$/;"	f	class:leveldb::__anon31::LRUCache
-Ref	util/cache.cc	/^void LRUCache::Ref(LRUHandle* e) {$/;"	f	class:leveldb::__anon31::LRUCache
-Release	util/cache.cc	/^  virtual void Release(Handle* handle) {$/;"	f	class:leveldb::__anon31::ShardedLRUCache
-Release	util/cache.cc	/^void LRUCache::Release(Cache::Handle* handle) {$/;"	f	class:leveldb::__anon31::LRUCache
-Remove	util/cache.cc	/^  LRUHandle* Remove(const Slice& key, uint32_t hash) {$/;"	f	class:leveldb::__anon31::HandleTable
-Resize	util/cache.cc	/^  void Resize() {$/;"	f	class:leveldb::__anon31::HandleTable	file:
-SetCapacity	util/cache.cc	/^  void SetCapacity(size_t capacity) { capacity_ = capacity; }$/;"	f	class:leveldb::__anon31::LRUCache
-Shard	util/cache.cc	/^  static uint32_t Shard(uint32_t hash) {$/;"	f	class:leveldb::__anon31::ShardedLRUCache	file:
-ShardedLRUCache	util/cache.cc	/^  explicit ShardedLRUCache(size_t capacity)$/;"	f	class:leveldb::__anon31::ShardedLRUCache
-ShardedLRUCache	util/cache.cc	/^class ShardedLRUCache : public Cache {$/;"	c	namespace:leveldb::__anon31	file:
-TotalCharge	util/cache.cc	/^  size_t TotalCharge() const {$/;"	f	class:leveldb::__anon31::LRUCache
-TotalCharge	util/cache.cc	/^  virtual size_t TotalCharge() const {$/;"	f	class:leveldb::__anon31::ShardedLRUCache
-Unref	util/cache.cc	/^void LRUCache::Unref(LRUHandle* e) {$/;"	f	class:leveldb::__anon31::LRUCache
-Value	util/cache.cc	/^  virtual void* Value(Handle* handle) {$/;"	f	class:leveldb::__anon31::ShardedLRUCache
-capacity_	util/cache.cc	/^  size_t capacity_;$/;"	m	class:leveldb::__anon31::LRUCache	file:
-charge	util/cache.cc	/^  size_t charge;      \/\/ TODO(opt): Only allow uint32_t?$/;"	m	struct:leveldb::__anon31::LRUHandle	file:
-deleter	util/cache.cc	/^  void (*deleter)(const Slice&, void* value);$/;"	m	struct:leveldb::__anon31::LRUHandle	file:
-elems_	util/cache.cc	/^  uint32_t elems_;$/;"	m	class:leveldb::__anon31::HandleTable	file:
-hash	util/cache.cc	/^  uint32_t hash;      \/\/ Hash of key(); used for fast sharding and comparisons$/;"	m	struct:leveldb::__anon31::LRUHandle	file:
-id_mutex_	util/cache.cc	/^  port::Mutex id_mutex_;$/;"	m	class:leveldb::__anon31::ShardedLRUCache	file:
-in_cache	util/cache.cc	/^  bool in_cache;      \/\/ Whether entry is in the cache.$/;"	m	struct:leveldb::__anon31::LRUHandle	file:
-in_use_	util/cache.cc	/^  LRUHandle in_use_;$/;"	m	class:leveldb::__anon31::LRUCache	file:
-kNumShardBits	util/cache.cc	/^static const int kNumShardBits = 4;$/;"	m	namespace:leveldb::__anon31	file:
-kNumShards	util/cache.cc	/^static const int kNumShards = 1 << kNumShardBits;$/;"	m	namespace:leveldb::__anon31	file:
-key	util/cache.cc	/^  Slice key() const {$/;"	f	struct:leveldb::__anon31::LRUHandle
-key_data	util/cache.cc	/^  char key_data[1];   \/\/ Beginning of key$/;"	m	struct:leveldb::__anon31::LRUHandle	file:
-key_length	util/cache.cc	/^  size_t key_length;$/;"	m	struct:leveldb::__anon31::LRUHandle	file:
-last_id_	util/cache.cc	/^  uint64_t last_id_;$/;"	m	class:leveldb::__anon31::ShardedLRUCache	file:
-length_	util/cache.cc	/^  uint32_t length_;$/;"	m	class:leveldb::__anon31::HandleTable	file:
+Prune	util/cache.cc	/^  virtual void Prune() {$/;"	f	class:leveldb::__anon30::ShardedLRUCache
+Prune	util/cache.cc	/^void LRUCache::Prune() {$/;"	f	class:leveldb::__anon30::LRUCache
+Ref	util/cache.cc	/^void LRUCache::Ref(LRUHandle* e) {$/;"	f	class:leveldb::__anon30::LRUCache
+Release	util/cache.cc	/^  virtual void Release(Handle* handle) {$/;"	f	class:leveldb::__anon30::ShardedLRUCache
+Release	util/cache.cc	/^void LRUCache::Release(Cache::Handle* handle) {$/;"	f	class:leveldb::__anon30::LRUCache
+Remove	util/cache.cc	/^  LRUHandle* Remove(const Slice& key, uint32_t hash) {$/;"	f	class:leveldb::__anon30::HandleTable
+Resize	util/cache.cc	/^  void Resize() {$/;"	f	class:leveldb::__anon30::HandleTable	file:
+SetCapacity	util/cache.cc	/^  void SetCapacity(size_t capacity) { capacity_ = capacity; }$/;"	f	class:leveldb::__anon30::LRUCache
+Shard	util/cache.cc	/^  static uint32_t Shard(uint32_t hash) {$/;"	f	class:leveldb::__anon30::ShardedLRUCache	file:
+ShardedLRUCache	util/cache.cc	/^  explicit ShardedLRUCache(size_t capacity)$/;"	f	class:leveldb::__anon30::ShardedLRUCache
+ShardedLRUCache	util/cache.cc	/^class ShardedLRUCache : public Cache {$/;"	c	namespace:leveldb::__anon30	file:
+TotalCharge	util/cache.cc	/^  size_t TotalCharge() const {$/;"	f	class:leveldb::__anon30::LRUCache
+TotalCharge	util/cache.cc	/^  virtual size_t TotalCharge() const {$/;"	f	class:leveldb::__anon30::ShardedLRUCache
+Unref	util/cache.cc	/^void LRUCache::Unref(LRUHandle* e) {$/;"	f	class:leveldb::__anon30::LRUCache
+Value	util/cache.cc	/^  virtual void* Value(Handle* handle) {$/;"	f	class:leveldb::__anon30::ShardedLRUCache
+capacity_	util/cache.cc	/^  size_t capacity_;$/;"	m	class:leveldb::__anon30::LRUCache	file:
+charge	util/cache.cc	/^  size_t charge;      \/\/ TODO(opt): Only allow uint32_t?$/;"	m	struct:leveldb::__anon30::LRUHandle	file:
+deleter	util/cache.cc	/^  void (*deleter)(const Slice&, void* value);$/;"	m	struct:leveldb::__anon30::LRUHandle	file:
+elems_	util/cache.cc	/^  uint32_t elems_;$/;"	m	class:leveldb::__anon30::HandleTable	file:
+hash	util/cache.cc	/^  uint32_t hash;      \/\/ Hash of key(); used for fast sharding and comparisons$/;"	m	struct:leveldb::__anon30::LRUHandle	file:
+id_mutex_	util/cache.cc	/^  port::Mutex id_mutex_;$/;"	m	class:leveldb::__anon30::ShardedLRUCache	file:
+in_cache	util/cache.cc	/^  bool in_cache;      \/\/ Whether entry is in the cache.$/;"	m	struct:leveldb::__anon30::LRUHandle	file:
+in_use_	util/cache.cc	/^  LRUHandle in_use_;$/;"	m	class:leveldb::__anon30::LRUCache	file:
+kNumShardBits	util/cache.cc	/^static const int kNumShardBits = 4;$/;"	m	namespace:leveldb::__anon30	file:
+kNumShards	util/cache.cc	/^static const int kNumShards = 1 << kNumShardBits;$/;"	m	namespace:leveldb::__anon30	file:
+key	util/cache.cc	/^  Slice key() const {$/;"	f	struct:leveldb::__anon30::LRUHandle
+key_data	util/cache.cc	/^  char key_data[1];   \/\/ Beginning of key$/;"	m	struct:leveldb::__anon30::LRUHandle	file:
+key_length	util/cache.cc	/^  size_t key_length;$/;"	m	struct:leveldb::__anon30::LRUHandle	file:
+last_id_	util/cache.cc	/^  uint64_t last_id_;$/;"	m	class:leveldb::__anon30::ShardedLRUCache	file:
+length_	util/cache.cc	/^  uint32_t length_;$/;"	m	class:leveldb::__anon30::HandleTable	file:
 leveldb	util/cache.cc	/^namespace leveldb {$/;"	n	file:
-list_	util/cache.cc	/^  LRUHandle** list_;$/;"	m	class:leveldb::__anon31::HandleTable	file:
-lru_	util/cache.cc	/^  LRUHandle lru_;$/;"	m	class:leveldb::__anon31::LRUCache	file:
-mutex_	util/cache.cc	/^  mutable port::Mutex mutex_;$/;"	m	class:leveldb::__anon31::LRUCache	file:
-next	util/cache.cc	/^  LRUHandle* next;$/;"	m	struct:leveldb::__anon31::LRUHandle	file:
-next_hash	util/cache.cc	/^  LRUHandle* next_hash;$/;"	m	struct:leveldb::__anon31::LRUHandle	file:
-prev	util/cache.cc	/^  LRUHandle* prev;$/;"	m	struct:leveldb::__anon31::LRUHandle	file:
-refs	util/cache.cc	/^  uint32_t refs;      \/\/ References, including cache reference, if present.$/;"	m	struct:leveldb::__anon31::LRUHandle	file:
-shard_	util/cache.cc	/^  LRUCache shard_[kNumShards];$/;"	m	class:leveldb::__anon31::ShardedLRUCache	file:
-table_	util/cache.cc	/^  HandleTable table_;$/;"	m	class:leveldb::__anon31::LRUCache	file:
-usage_	util/cache.cc	/^  size_t usage_;$/;"	m	class:leveldb::__anon31::LRUCache	file:
-value	util/cache.cc	/^  void* value;$/;"	m	struct:leveldb::__anon31::LRUHandle	file:
+list_	util/cache.cc	/^  LRUHandle** list_;$/;"	m	class:leveldb::__anon30::HandleTable	file:
+lru_	util/cache.cc	/^  LRUHandle lru_;$/;"	m	class:leveldb::__anon30::LRUCache	file:
+mutex_	util/cache.cc	/^  mutable port::Mutex mutex_;$/;"	m	class:leveldb::__anon30::LRUCache	file:
+next	util/cache.cc	/^  LRUHandle* next;$/;"	m	struct:leveldb::__anon30::LRUHandle	file:
+next_hash	util/cache.cc	/^  LRUHandle* next_hash;$/;"	m	struct:leveldb::__anon30::LRUHandle	file:
+prev	util/cache.cc	/^  LRUHandle* prev;$/;"	m	struct:leveldb::__anon30::LRUHandle	file:
+refs	util/cache.cc	/^  uint32_t refs;      \/\/ References, including cache reference, if present.$/;"	m	struct:leveldb::__anon30::LRUHandle	file:
+shard_	util/cache.cc	/^  LRUCache shard_[kNumShards];$/;"	m	class:leveldb::__anon30::ShardedLRUCache	file:
+table_	util/cache.cc	/^  HandleTable table_;$/;"	m	class:leveldb::__anon30::LRUCache	file:
+usage_	util/cache.cc	/^  size_t usage_;$/;"	m	class:leveldb::__anon30::LRUCache	file:
+value	util/cache.cc	/^  void* value;$/;"	m	struct:leveldb::__anon30::LRUHandle	file:
 ~Cache	util/cache.cc	/^Cache::~Cache() {$/;"	f	class:leveldb::Cache
-~HandleTable	util/cache.cc	/^  ~HandleTable() { delete[] list_; }$/;"	f	class:leveldb::__anon31::HandleTable
-~LRUCache	util/cache.cc	/^LRUCache::~LRUCache() {$/;"	f	class:leveldb::__anon31::LRUCache
-~ShardedLRUCache	util/cache.cc	/^  virtual ~ShardedLRUCache() { }$/;"	f	class:leveldb::__anon31::ShardedLRUCache
+~HandleTable	util/cache.cc	/^  ~HandleTable() { delete[] list_; }$/;"	f	class:leveldb::__anon30::HandleTable
+~LRUCache	util/cache.cc	/^LRUCache::~LRUCache() {$/;"	f	class:leveldb::__anon30::LRUCache
+~ShardedLRUCache	util/cache.cc	/^  virtual ~ShardedLRUCache() { }$/;"	f	class:leveldb::__anon30::ShardedLRUCache
 CacheTest	util/cache_test.cc	/^  CacheTest() : cache_(NewLRUCache(kCacheSize)) {$/;"	f	class:leveldb::CacheTest
 CacheTest	util/cache_test.cc	/^class CacheTest {$/;"	c	namespace:leveldb	file:
 DecodeKey	util/cache_test.cc	/^static int DecodeKey(const Slice& k) {$/;"	f	namespace:leveldb
@@ -2791,93 +2806,93 @@ leveldb	util/env.cc	/^namespace leveldb {$/;"	n	file:
 ~RandomAccessFile	util/env.cc	/^RandomAccessFile::~RandomAccessFile() {$/;"	f	class:leveldb::RandomAccessFile
 ~SequentialFile	util/env.cc	/^SequentialFile::~SequentialFile() {$/;"	f	class:leveldb::SequentialFile
 ~WritableFile	util/env.cc	/^WritableFile::~WritableFile() {$/;"	f	class:leveldb::WritableFile
-Acquire	util/env_posix.cc	/^  bool Acquire() {$/;"	f	class:leveldb::__anon35::Limiter
+Acquire	util/env_posix.cc	/^  bool Acquire() {$/;"	f	class:leveldb::__anon31::Limiter
 AlignedBuffer	util/env_posix.cc	/^    AlignedBuffer(size_t alignment)$/;"	f	class:leveldb::AlignedBuffer
 AlignedBuffer	util/env_posix.cc	/^class AlignedBuffer{$/;"	c	namespace:leveldb	file:
 Alignment	util/env_posix.cc	/^   void Alignment(size_t alignment) {$/;"	f	class:leveldb::AlignedBuffer
 AllocateNewBuffer	util/env_posix.cc	/^   void AllocateNewBuffer(size_t requested_capacity, bool copy_data = false) {$/;"	f	class:leveldb::AlignedBuffer
-Append	util/env_posix.cc	/^  virtual Status Append(const Slice& data) {$/;"	f	class:leveldb::__anon35::PosixWritableFile
-BGItem	util/env_posix.cc	/^  struct BGItem { void* arg; void (*function)(void*); };$/;"	s	class:leveldb::__anon35::PosixEnv	file:
-BGQueue	util/env_posix.cc	/^  typedef std::deque<BGItem> BGQueue;$/;"	t	class:leveldb::__anon35::PosixEnv	file:
-BGThread	util/env_posix.cc	/^void PosixEnv::BGThread() {$/;"	f	class:leveldb::__anon35::PosixEnv
-BGThreadWrapper	util/env_posix.cc	/^  static void* BGThreadWrapper(void* arg) {$/;"	f	class:leveldb::__anon35::PosixEnv	file:
-Close	util/env_posix.cc	/^  virtual Status Close() {$/;"	f	class:leveldb::__anon35::PosixWritableFile
-CreateDir	util/env_posix.cc	/^  virtual Status CreateDir(const std::string& name) {$/;"	f	class:leveldb::__anon35::PosixEnv
+Append	util/env_posix.cc	/^  virtual Status Append(const Slice& data) {$/;"	f	class:leveldb::__anon31::PosixWritableFile
+BGItem	util/env_posix.cc	/^  struct BGItem { void* arg; void (*function)(void*); };$/;"	s	class:leveldb::__anon31::PosixEnv	file:
+BGQueue	util/env_posix.cc	/^  typedef std::deque<BGItem> BGQueue;$/;"	t	class:leveldb::__anon31::PosixEnv	file:
+BGThread	util/env_posix.cc	/^void PosixEnv::BGThread() {$/;"	f	class:leveldb::__anon31::PosixEnv
+BGThreadWrapper	util/env_posix.cc	/^  static void* BGThreadWrapper(void* arg) {$/;"	f	class:leveldb::__anon31::PosixEnv	file:
+Close	util/env_posix.cc	/^  virtual Status Close() {$/;"	f	class:leveldb::__anon31::PosixWritableFile
+CreateDir	util/env_posix.cc	/^  virtual Status CreateDir(const std::string& name) {$/;"	f	class:leveldb::__anon31::PosixEnv
 Default	util/env_posix.cc	/^Env* Env::Default() {$/;"	f	class:leveldb::Env
-DeleteDir	util/env_posix.cc	/^  virtual Status DeleteDir(const std::string& name) {$/;"	f	class:leveldb::__anon35::PosixEnv
-DeleteFile	util/env_posix.cc	/^  virtual Status DeleteFile(const std::string& fname) {$/;"	f	class:leveldb::__anon35::PosixEnv
-FileExists	util/env_posix.cc	/^  virtual bool FileExists(const std::string& fname) {$/;"	f	class:leveldb::__anon35::PosixEnv
-Flush	util/env_posix.cc	/^  virtual Status Flush() {$/;"	f	class:leveldb::__anon35::PosixWritableFile
+DeleteDir	util/env_posix.cc	/^  virtual Status DeleteDir(const std::string& name) {$/;"	f	class:leveldb::__anon31::PosixEnv
+DeleteFile	util/env_posix.cc	/^  virtual Status DeleteFile(const std::string& fname) {$/;"	f	class:leveldb::__anon31::PosixEnv
+FileExists	util/env_posix.cc	/^  virtual bool FileExists(const std::string& fname) {$/;"	f	class:leveldb::__anon31::PosixEnv
+Flush	util/env_posix.cc	/^  virtual Status Flush() {$/;"	f	class:leveldb::__anon31::PosixWritableFile
 FreeAlignedBuffers	util/env_posix.cc	/^  static void FreeAlignedBuffers(){$/;"	f	class:leveldb::AlignedBuffer
 GetAlignedBuffer	util/env_posix.cc	/^  static inline AlignedBuffer* GetAlignedBuffer(){$/;"	f	class:leveldb::AlignedBuffer
-GetAllowed	util/env_posix.cc	/^  intptr_t GetAllowed() const {$/;"	f	class:leveldb::__anon35::Limiter	file:
-GetChildren	util/env_posix.cc	/^  virtual Status GetChildren(const std::string& dir,$/;"	f	class:leveldb::__anon35::PosixEnv
-GetFileSize	util/env_posix.cc	/^  virtual Status GetFileSize(const std::string& fname, uint64_t* size) {$/;"	f	class:leveldb::__anon35::PosixEnv
-GetTestDirectory	util/env_posix.cc	/^  virtual Status GetTestDirectory(std::string* result) {$/;"	f	class:leveldb::__anon35::PosixEnv
+GetAllowed	util/env_posix.cc	/^  intptr_t GetAllowed() const {$/;"	f	class:leveldb::__anon31::Limiter	file:
+GetChildren	util/env_posix.cc	/^  virtual Status GetChildren(const std::string& dir,$/;"	f	class:leveldb::__anon31::PosixEnv
+GetFileSize	util/env_posix.cc	/^  virtual Status GetFileSize(const std::string& fname, uint64_t* size) {$/;"	f	class:leveldb::__anon31::PosixEnv
+GetTestDirectory	util/env_posix.cc	/^  virtual Status GetTestDirectory(std::string* result) {$/;"	f	class:leveldb::__anon31::PosixEnv
 InitDefaultEnv	util/env_posix.cc	/^static void InitDefaultEnv() { default_env = new PosixEnv; }$/;"	f	namespace:leveldb
-Insert	util/env_posix.cc	/^  bool Insert(const std::string& fname) {$/;"	f	class:leveldb::__anon35::PosixLockTable
-Limiter	util/env_posix.cc	/^  Limiter(intptr_t n) {$/;"	f	class:leveldb::__anon35::Limiter
-Limiter	util/env_posix.cc	/^class Limiter {$/;"	c	namespace:leveldb::__anon35	file:
-LockFile	util/env_posix.cc	/^  virtual Status LockFile(const std::string& fname, FileLock** lock) {$/;"	f	class:leveldb::__anon35::PosixEnv
-LockOrUnlock	util/env_posix.cc	/^static int LockOrUnlock(int fd, bool lock) {$/;"	f	namespace:leveldb::__anon35
-MaxMmaps	util/env_posix.cc	/^static int MaxMmaps() {$/;"	f	namespace:leveldb::__anon35
-MaxOpenFiles	util/env_posix.cc	/^static intptr_t MaxOpenFiles() {$/;"	f	namespace:leveldb::__anon35
-NewAppendableFile	util/env_posix.cc	/^  virtual Status NewAppendableFile(const std::string& fname,$/;"	f	class:leveldb::__anon35::PosixEnv
-NewBufferedRandomAccessFile	util/env_posix.cc	/^  virtual Status NewBufferedRandomAccessFile(const std::string& fname,$/;"	f	class:leveldb::__anon35::PosixEnv
-NewLogger	util/env_posix.cc	/^  virtual Status NewLogger(const std::string& fname, Logger** result) {$/;"	f	class:leveldb::__anon35::PosixEnv
-NewRandomAccessFile	util/env_posix.cc	/^  virtual Status NewRandomAccessFile(const std::string& fname,$/;"	f	class:leveldb::__anon35::PosixEnv
-NewSequentialFile	util/env_posix.cc	/^  virtual Status NewSequentialFile(const std::string& fname,$/;"	f	class:leveldb::__anon35::PosixEnv
-NewWritableFile	util/env_posix.cc	/^  virtual Status NewWritableFile(const std::string& fname,$/;"	f	class:leveldb::__anon35::PosixEnv
-NowMicros	util/env_posix.cc	/^  virtual uint64_t NowMicros() {$/;"	f	class:leveldb::__anon35::PosixEnv
-PosixBufferedRandomAccessFile	util/env_posix.cc	/^  PosixBufferedRandomAccessFile(const std::string& fname, int fd, Limiter* limiter)$/;"	f	class:leveldb::__anon35::PosixBufferedRandomAccessFile
-PosixBufferedRandomAccessFile	util/env_posix.cc	/^class PosixBufferedRandomAccessFile:public RandomAccessFile{$/;"	c	namespace:leveldb::__anon35	file:
-PosixEnv	util/env_posix.cc	/^PosixEnv::PosixEnv()$/;"	f	class:leveldb::__anon35::PosixEnv
-PosixEnv	util/env_posix.cc	/^class PosixEnv : public Env {$/;"	c	namespace:leveldb::__anon35	file:
-PosixError	util/env_posix.cc	/^static Status PosixError(const std::string& context, int err_number) {$/;"	f	namespace:leveldb::__anon35
-PosixFileLock	util/env_posix.cc	/^class PosixFileLock : public FileLock {$/;"	c	namespace:leveldb::__anon35	file:
-PosixLockTable	util/env_posix.cc	/^class PosixLockTable {$/;"	c	namespace:leveldb::__anon35	file:
-PosixMmapReadableFile	util/env_posix.cc	/^  PosixMmapReadableFile(const std::string& fname, void* base, size_t length,$/;"	f	class:leveldb::__anon35::PosixMmapReadableFile
-PosixMmapReadableFile	util/env_posix.cc	/^class PosixMmapReadableFile: public RandomAccessFile {$/;"	c	namespace:leveldb::__anon35	file:
-PosixRandomAccessFile	util/env_posix.cc	/^  PosixRandomAccessFile(const std::string& fname, int fd, Limiter* limiter,bool direct_IO_flag=false)$/;"	f	class:leveldb::__anon35::PosixRandomAccessFile
-PosixRandomAccessFile	util/env_posix.cc	/^class PosixRandomAccessFile: public RandomAccessFile {$/;"	c	namespace:leveldb::__anon35	file:
-PosixSequentialFile	util/env_posix.cc	/^  PosixSequentialFile(const std::string& fname, FILE* f)$/;"	f	class:leveldb::__anon35::PosixSequentialFile
-PosixSequentialFile	util/env_posix.cc	/^class PosixSequentialFile: public SequentialFile {$/;"	c	namespace:leveldb::__anon35	file:
-PosixWritableFile	util/env_posix.cc	/^  PosixWritableFile(const std::string& fname, FILE* f)$/;"	f	class:leveldb::__anon35::PosixWritableFile
-PosixWritableFile	util/env_posix.cc	/^class PosixWritableFile : public WritableFile {$/;"	c	namespace:leveldb::__anon35	file:
-PthreadCall	util/env_posix.cc	/^  void PthreadCall(const char* label, int result) {$/;"	f	class:leveldb::__anon35::PosixEnv	file:
+Insert	util/env_posix.cc	/^  bool Insert(const std::string& fname) {$/;"	f	class:leveldb::__anon31::PosixLockTable
+Limiter	util/env_posix.cc	/^  Limiter(intptr_t n) {$/;"	f	class:leveldb::__anon31::Limiter
+Limiter	util/env_posix.cc	/^class Limiter {$/;"	c	namespace:leveldb::__anon31	file:
+LockFile	util/env_posix.cc	/^  virtual Status LockFile(const std::string& fname, FileLock** lock) {$/;"	f	class:leveldb::__anon31::PosixEnv
+LockOrUnlock	util/env_posix.cc	/^static int LockOrUnlock(int fd, bool lock) {$/;"	f	namespace:leveldb::__anon31
+MaxMmaps	util/env_posix.cc	/^static int MaxMmaps() {$/;"	f	namespace:leveldb::__anon31
+MaxOpenFiles	util/env_posix.cc	/^static intptr_t MaxOpenFiles() {$/;"	f	namespace:leveldb::__anon31
+NewAppendableFile	util/env_posix.cc	/^  virtual Status NewAppendableFile(const std::string& fname,$/;"	f	class:leveldb::__anon31::PosixEnv
+NewBufferedRandomAccessFile	util/env_posix.cc	/^  virtual Status NewBufferedRandomAccessFile(const std::string& fname,$/;"	f	class:leveldb::__anon31::PosixEnv
+NewLogger	util/env_posix.cc	/^  virtual Status NewLogger(const std::string& fname, Logger** result) {$/;"	f	class:leveldb::__anon31::PosixEnv
+NewRandomAccessFile	util/env_posix.cc	/^  virtual Status NewRandomAccessFile(const std::string& fname,$/;"	f	class:leveldb::__anon31::PosixEnv
+NewSequentialFile	util/env_posix.cc	/^  virtual Status NewSequentialFile(const std::string& fname,$/;"	f	class:leveldb::__anon31::PosixEnv
+NewWritableFile	util/env_posix.cc	/^  virtual Status NewWritableFile(const std::string& fname,$/;"	f	class:leveldb::__anon31::PosixEnv
+NowMicros	util/env_posix.cc	/^  virtual uint64_t NowMicros() {$/;"	f	class:leveldb::__anon31::PosixEnv
+PosixBufferedRandomAccessFile	util/env_posix.cc	/^  PosixBufferedRandomAccessFile(const std::string& fname, int fd, Limiter* limiter)$/;"	f	class:leveldb::__anon31::PosixBufferedRandomAccessFile
+PosixBufferedRandomAccessFile	util/env_posix.cc	/^class PosixBufferedRandomAccessFile:public RandomAccessFile{$/;"	c	namespace:leveldb::__anon31	file:
+PosixEnv	util/env_posix.cc	/^PosixEnv::PosixEnv()$/;"	f	class:leveldb::__anon31::PosixEnv
+PosixEnv	util/env_posix.cc	/^class PosixEnv : public Env {$/;"	c	namespace:leveldb::__anon31	file:
+PosixError	util/env_posix.cc	/^static Status PosixError(const std::string& context, int err_number) {$/;"	f	namespace:leveldb::__anon31
+PosixFileLock	util/env_posix.cc	/^class PosixFileLock : public FileLock {$/;"	c	namespace:leveldb::__anon31	file:
+PosixLockTable	util/env_posix.cc	/^class PosixLockTable {$/;"	c	namespace:leveldb::__anon31	file:
+PosixMmapReadableFile	util/env_posix.cc	/^  PosixMmapReadableFile(const std::string& fname, void* base, size_t length,$/;"	f	class:leveldb::__anon31::PosixMmapReadableFile
+PosixMmapReadableFile	util/env_posix.cc	/^class PosixMmapReadableFile: public RandomAccessFile {$/;"	c	namespace:leveldb::__anon31	file:
+PosixRandomAccessFile	util/env_posix.cc	/^  PosixRandomAccessFile(const std::string& fname, int fd, Limiter* limiter,bool direct_IO_flag=false)$/;"	f	class:leveldb::__anon31::PosixRandomAccessFile
+PosixRandomAccessFile	util/env_posix.cc	/^class PosixRandomAccessFile: public RandomAccessFile {$/;"	c	namespace:leveldb::__anon31	file:
+PosixSequentialFile	util/env_posix.cc	/^  PosixSequentialFile(const std::string& fname, FILE* f)$/;"	f	class:leveldb::__anon31::PosixSequentialFile
+PosixSequentialFile	util/env_posix.cc	/^class PosixSequentialFile: public SequentialFile {$/;"	c	namespace:leveldb::__anon31	file:
+PosixWritableFile	util/env_posix.cc	/^  PosixWritableFile(const std::string& fname, FILE* f)$/;"	f	class:leveldb::__anon31::PosixWritableFile
+PosixWritableFile	util/env_posix.cc	/^class PosixWritableFile : public WritableFile {$/;"	c	namespace:leveldb::__anon31	file:
+PthreadCall	util/env_posix.cc	/^  void PthreadCall(const char* label, int result) {$/;"	f	class:leveldb::__anon31::PosixEnv	file:
 Read	util/env_posix.cc	/^  inline void Read(char *dest,size_t offset, size_t read_size){$/;"	f	class:leveldb::AlignedBuffer
-Read	util/env_posix.cc	/^  virtual Status Read(size_t n, Slice* result, char* scratch) {$/;"	f	class:leveldb::__anon35::PosixSequentialFile
-Read	util/env_posix.cc	/^  virtual Status Read(uint64_t offset, size_t n, Slice* result,$/;"	f	class:leveldb::__anon35::PosixBufferedRandomAccessFile
-Read	util/env_posix.cc	/^  virtual Status Read(uint64_t offset, size_t n, Slice* result,$/;"	f	class:leveldb::__anon35::PosixMmapReadableFile
-Read	util/env_posix.cc	/^  virtual Status Read(uint64_t offset, size_t n, Slice* result,$/;"	f	class:leveldb::__anon35::PosixRandomAccessFile
-Reads	util/env_posix.cc	/^    virtual Status Reads(uint64_t offset, size_t n, Slice  results[],$/;"	f	class:leveldb::__anon35::PosixBufferedRandomAccessFile
-Reads	util/env_posix.cc	/^   virtual Status Reads(uint64_t offset, size_t n, Slice  results[],$/;"	f	class:leveldb::__anon35::PosixRandomAccessFile
-Release	util/env_posix.cc	/^  void Release() {$/;"	f	class:leveldb::__anon35::Limiter
-Remove	util/env_posix.cc	/^  void Remove(const std::string& fname) {$/;"	f	class:leveldb::__anon35::PosixLockTable
-RenameFile	util/env_posix.cc	/^  virtual Status RenameFile(const std::string& src, const std::string& target) {$/;"	f	class:leveldb::__anon35::PosixEnv
+Read	util/env_posix.cc	/^  virtual Status Read(size_t n, Slice* result, char* scratch) {$/;"	f	class:leveldb::__anon31::PosixSequentialFile
+Read	util/env_posix.cc	/^  virtual Status Read(uint64_t offset, size_t n, Slice* result,$/;"	f	class:leveldb::__anon31::PosixBufferedRandomAccessFile
+Read	util/env_posix.cc	/^  virtual Status Read(uint64_t offset, size_t n, Slice* result,$/;"	f	class:leveldb::__anon31::PosixMmapReadableFile
+Read	util/env_posix.cc	/^  virtual Status Read(uint64_t offset, size_t n, Slice* result,$/;"	f	class:leveldb::__anon31::PosixRandomAccessFile
+Reads	util/env_posix.cc	/^    virtual Status Reads(uint64_t offset, size_t n, Slice  results[],$/;"	f	class:leveldb::__anon31::PosixBufferedRandomAccessFile
+Reads	util/env_posix.cc	/^   virtual Status Reads(uint64_t offset, size_t n, Slice  results[],$/;"	f	class:leveldb::__anon31::PosixRandomAccessFile
+Release	util/env_posix.cc	/^  void Release() {$/;"	f	class:leveldb::__anon31::Limiter
+Remove	util/env_posix.cc	/^  void Remove(const std::string& fname) {$/;"	f	class:leveldb::__anon31::PosixLockTable
+RenameFile	util/env_posix.cc	/^  virtual Status RenameFile(const std::string& src, const std::string& target) {$/;"	f	class:leveldb::__anon31::PosixEnv
 Roundup	util/env_posix.cc	/^inline size_t Roundup(size_t x, size_t y) {$/;"	f	namespace:leveldb
-Schedule	util/env_posix.cc	/^void PosixEnv::Schedule(void (*function)(void*), void* arg) {$/;"	f	class:leveldb::__anon35::PosixEnv
-SetAllowed	util/env_posix.cc	/^  void SetAllowed(intptr_t v) {$/;"	f	class:leveldb::__anon35::Limiter	file:
+Schedule	util/env_posix.cc	/^void PosixEnv::Schedule(void (*function)(void*), void* arg) {$/;"	f	class:leveldb::__anon31::PosixEnv
+SetAllowed	util/env_posix.cc	/^  void SetAllowed(intptr_t v) {$/;"	f	class:leveldb::__anon31::Limiter	file:
 SetReadOnlyFDLimit	util/env_posix.cc	/^void EnvPosixTestHelper::SetReadOnlyFDLimit(int limit) {$/;"	f	class:leveldb::EnvPosixTestHelper
 SetReadOnlyMMapLimit	util/env_posix.cc	/^void EnvPosixTestHelper::SetReadOnlyMMapLimit(int limit) {$/;"	f	class:leveldb::EnvPosixTestHelper
-Skip	util/env_posix.cc	/^  virtual Status Skip(uint64_t n) {$/;"	f	class:leveldb::__anon35::PosixSequentialFile
-SleepForMicroseconds	util/env_posix.cc	/^  virtual void SleepForMicroseconds(int micros) {$/;"	f	class:leveldb::__anon35::PosixEnv
-StartThread	util/env_posix.cc	/^void PosixEnv::StartThread(void (*function)(void* arg), void* arg) {$/;"	f	class:leveldb::__anon35::PosixEnv
-StartThreadState	util/env_posix.cc	/^struct StartThreadState {$/;"	s	namespace:leveldb::__anon35::__anon36	file:
-StartThreadWrapper	util/env_posix.cc	/^static void* StartThreadWrapper(void* arg) {$/;"	f	namespace:leveldb::__anon35
-Sync	util/env_posix.cc	/^  virtual Status Sync() {$/;"	f	class:leveldb::__anon35::PosixWritableFile
-SyncDirIfManifest	util/env_posix.cc	/^  Status SyncDirIfManifest() {$/;"	f	class:leveldb::__anon35::PosixWritableFile
+Skip	util/env_posix.cc	/^  virtual Status Skip(uint64_t n) {$/;"	f	class:leveldb::__anon31::PosixSequentialFile
+SleepForMicroseconds	util/env_posix.cc	/^  virtual void SleepForMicroseconds(int micros) {$/;"	f	class:leveldb::__anon31::PosixEnv
+StartThread	util/env_posix.cc	/^void PosixEnv::StartThread(void (*function)(void* arg), void* arg) {$/;"	f	class:leveldb::__anon31::PosixEnv
+StartThreadState	util/env_posix.cc	/^struct StartThreadState {$/;"	s	namespace:leveldb::__anon31::__anon32	file:
+StartThreadWrapper	util/env_posix.cc	/^static void* StartThreadWrapper(void* arg) {$/;"	f	namespace:leveldb::__anon31
+Sync	util/env_posix.cc	/^  virtual Status Sync() {$/;"	f	class:leveldb::__anon31::PosixWritableFile
+SyncDirIfManifest	util/env_posix.cc	/^  Status SyncDirIfManifest() {$/;"	f	class:leveldb::__anon31::PosixWritableFile
 TruncateToPageBoundary	util/env_posix.cc	/^inline size_t TruncateToPageBoundary(size_t page_size, size_t s) {$/;"	f	namespace:leveldb
 UngetAlignedBuffer	util/env_posix.cc	/^  static inline void UngetAlignedBuffer(AlignedBuffer *ab){$/;"	f	class:leveldb::AlignedBuffer
-UnlockFile	util/env_posix.cc	/^  virtual Status UnlockFile(FileLock* lock) {$/;"	f	class:leveldb::__anon35::PosixEnv
+UnlockFile	util/env_posix.cc	/^  virtual Status UnlockFile(FileLock* lock) {$/;"	f	class:leveldb::__anon31::PosixEnv
 abfs	util/env_posix.cc	/^  static std::vector<AlignedBuffer*> abfs;$/;"	m	class:leveldb::AlignedBuffer	file:
 abfs	util/env_posix.cc	/^std::vector<AlignedBuffer*> AlignedBuffer::abfs;$/;"	m	class:leveldb::AlignedBuffer	file:
 alignment_	util/env_posix.cc	/^    size_t alignment_;$/;"	m	class:leveldb::AlignedBuffer	file:
-allowed_	util/env_posix.cc	/^  port::AtomicPointer allowed_;$/;"	m	class:leveldb::__anon35::Limiter	file:
-arg	util/env_posix.cc	/^  struct BGItem { void* arg; void (*function)(void*); };$/;"	m	struct:leveldb::__anon35::PosixEnv::BGItem	file:
-arg	util/env_posix.cc	/^  void* arg;$/;"	m	struct:leveldb::__anon35::__anon36::StartThreadState	file:
-bgsignal_	util/env_posix.cc	/^  pthread_cond_t bgsignal_;$/;"	m	class:leveldb::__anon35::PosixEnv	file:
-bgthread_	util/env_posix.cc	/^  pthread_t bgthread_;$/;"	m	class:leveldb::__anon35::PosixEnv	file:
+allowed_	util/env_posix.cc	/^  port::AtomicPointer allowed_;$/;"	m	class:leveldb::__anon31::Limiter	file:
+arg	util/env_posix.cc	/^  struct BGItem { void* arg; void (*function)(void*); };$/;"	m	struct:leveldb::__anon31::PosixEnv::BGItem	file:
+arg	util/env_posix.cc	/^  void* arg;$/;"	m	struct:leveldb::__anon31::__anon32::StartThreadState	file:
+bgsignal_	util/env_posix.cc	/^  pthread_cond_t bgsignal_;$/;"	m	class:leveldb::__anon31::PosixEnv	file:
+bgthread_	util/env_posix.cc	/^  pthread_t bgthread_;$/;"	m	class:leveldb::__anon31::PosixEnv	file:
 buffer_mutex	util/env_posix.cc	/^  static SpinMutex buffer_mutex;$/;"	m	class:leveldb::AlignedBuffer	file:
 buffer_mutex	util/env_posix.cc	/^SpinMutex AlignedBuffer::buffer_mutex;$/;"	m	class:leveldb::AlignedBuffer	file:
 buffer_nums	util/env_posix.cc	/^  static const int buffer_nums;$/;"	m	class:leveldb::AlignedBuffer	file:
@@ -2886,50 +2901,50 @@ bufstart_	util/env_posix.cc	/^    char* bufstart_;$/;"	m	class:leveldb::AlignedB
 capacity_	util/env_posix.cc	/^    size_t capacity_;$/;"	m	class:leveldb::AlignedBuffer	file:
 cursize_	util/env_posix.cc	/^    size_t cursize_;$/;"	m	class:leveldb::AlignedBuffer	file:
 default_env	util/env_posix.cc	/^static Env* default_env;$/;"	m	namespace:leveldb	file:
-direct_IO_flag_	util/env_posix.cc	/^   bool direct_IO_flag_;$/;"	m	class:leveldb::__anon35::PosixRandomAccessFile	file:
-fd_	util/env_posix.cc	/^  int fd_;$/;"	m	class:leveldb::__anon35::PosixBufferedRandomAccessFile	file:
-fd_	util/env_posix.cc	/^  int fd_;$/;"	m	class:leveldb::__anon35::PosixFileLock	file:
-fd_	util/env_posix.cc	/^  int fd_;$/;"	m	class:leveldb::__anon35::PosixRandomAccessFile	file:
-fd_limit_	util/env_posix.cc	/^  Limiter fd_limit_;$/;"	m	class:leveldb::__anon35::PosixEnv	file:
-file_	util/env_posix.cc	/^  FILE* file_;$/;"	m	class:leveldb::__anon35::PosixSequentialFile	file:
-file_	util/env_posix.cc	/^  FILE* file_;$/;"	m	class:leveldb::__anon35::PosixWritableFile	file:
-filename_	util/env_posix.cc	/^  std::string filename_;$/;"	m	class:leveldb::__anon35::PosixBufferedRandomAccessFile	file:
-filename_	util/env_posix.cc	/^  std::string filename_;$/;"	m	class:leveldb::__anon35::PosixMmapReadableFile	file:
-filename_	util/env_posix.cc	/^  std::string filename_;$/;"	m	class:leveldb::__anon35::PosixRandomAccessFile	file:
-filename_	util/env_posix.cc	/^  std::string filename_;$/;"	m	class:leveldb::__anon35::PosixSequentialFile	file:
-filename_	util/env_posix.cc	/^  std::string filename_;$/;"	m	class:leveldb::__anon35::PosixWritableFile	file:
-function	util/env_posix.cc	/^  struct BGItem { void* arg; void (*function)(void*); };$/;"	m	struct:leveldb::__anon35::PosixEnv::BGItem	file:
-gettid	util/env_posix.cc	/^  static uint64_t gettid() {$/;"	f	class:leveldb::__anon35::PosixEnv
+direct_IO_flag_	util/env_posix.cc	/^   bool direct_IO_flag_;$/;"	m	class:leveldb::__anon31::PosixRandomAccessFile	file:
+fd_	util/env_posix.cc	/^  int fd_;$/;"	m	class:leveldb::__anon31::PosixBufferedRandomAccessFile	file:
+fd_	util/env_posix.cc	/^  int fd_;$/;"	m	class:leveldb::__anon31::PosixFileLock	file:
+fd_	util/env_posix.cc	/^  int fd_;$/;"	m	class:leveldb::__anon31::PosixRandomAccessFile	file:
+fd_limit_	util/env_posix.cc	/^  Limiter fd_limit_;$/;"	m	class:leveldb::__anon31::PosixEnv	file:
+file_	util/env_posix.cc	/^  FILE* file_;$/;"	m	class:leveldb::__anon31::PosixSequentialFile	file:
+file_	util/env_posix.cc	/^  FILE* file_;$/;"	m	class:leveldb::__anon31::PosixWritableFile	file:
+filename_	util/env_posix.cc	/^  std::string filename_;$/;"	m	class:leveldb::__anon31::PosixBufferedRandomAccessFile	file:
+filename_	util/env_posix.cc	/^  std::string filename_;$/;"	m	class:leveldb::__anon31::PosixMmapReadableFile	file:
+filename_	util/env_posix.cc	/^  std::string filename_;$/;"	m	class:leveldb::__anon31::PosixRandomAccessFile	file:
+filename_	util/env_posix.cc	/^  std::string filename_;$/;"	m	class:leveldb::__anon31::PosixSequentialFile	file:
+filename_	util/env_posix.cc	/^  std::string filename_;$/;"	m	class:leveldb::__anon31::PosixWritableFile	file:
+function	util/env_posix.cc	/^  struct BGItem { void* arg; void (*function)(void*); };$/;"	m	struct:leveldb::__anon31::PosixEnv::BGItem	file:
+gettid	util/env_posix.cc	/^  static uint64_t gettid() {$/;"	f	class:leveldb::__anon31::PosixEnv
 initialized	util/env_posix.cc	/^  static std::atomic<bool> initialized;$/;"	m	class:leveldb::AlignedBuffer	file:
-length_	util/env_posix.cc	/^  size_t length_;$/;"	m	class:leveldb::__anon35::PosixMmapReadableFile	file:
+length_	util/env_posix.cc	/^  size_t length_;$/;"	m	class:leveldb::__anon31::PosixMmapReadableFile	file:
 leveldb	util/env_posix.cc	/^namespace leveldb {$/;"	n	file:
-limiter_	util/env_posix.cc	/^  Limiter* limiter_;$/;"	m	class:leveldb::__anon35::PosixBufferedRandomAccessFile	file:
-limiter_	util/env_posix.cc	/^  Limiter* limiter_;$/;"	m	class:leveldb::__anon35::PosixMmapReadableFile	file:
-limiter_	util/env_posix.cc	/^  Limiter* limiter_;$/;"	m	class:leveldb::__anon35::PosixRandomAccessFile	file:
-locked_files_	util/env_posix.cc	/^  std::set<std::string> locked_files_;$/;"	m	class:leveldb::__anon35::PosixLockTable	file:
-locks_	util/env_posix.cc	/^  PosixLockTable locks_;$/;"	m	class:leveldb::__anon35::PosixEnv	file:
-mmap_limit	util/env_posix.cc	/^static int mmap_limit = -1;$/;"	m	namespace:leveldb::__anon35	file:
-mmap_limit_	util/env_posix.cc	/^  Limiter mmap_limit_;$/;"	m	class:leveldb::__anon35::PosixEnv	file:
-mmapped_region_	util/env_posix.cc	/^  void* mmapped_region_;$/;"	m	class:leveldb::__anon35::PosixMmapReadableFile	file:
-mu_	util/env_posix.cc	/^  port::Mutex mu_;$/;"	m	class:leveldb::__anon35::Limiter	file:
-mu_	util/env_posix.cc	/^  port::Mutex mu_;$/;"	m	class:leveldb::__anon35::PosixLockTable	file:
-mu_	util/env_posix.cc	/^  pthread_mutex_t mu_;$/;"	m	class:leveldb::__anon35::PosixEnv	file:
-name_	util/env_posix.cc	/^  std::string name_;$/;"	m	class:leveldb::__anon35::PosixFileLock	file:
+limiter_	util/env_posix.cc	/^  Limiter* limiter_;$/;"	m	class:leveldb::__anon31::PosixBufferedRandomAccessFile	file:
+limiter_	util/env_posix.cc	/^  Limiter* limiter_;$/;"	m	class:leveldb::__anon31::PosixMmapReadableFile	file:
+limiter_	util/env_posix.cc	/^  Limiter* limiter_;$/;"	m	class:leveldb::__anon31::PosixRandomAccessFile	file:
+locked_files_	util/env_posix.cc	/^  std::set<std::string> locked_files_;$/;"	m	class:leveldb::__anon31::PosixLockTable	file:
+locks_	util/env_posix.cc	/^  PosixLockTable locks_;$/;"	m	class:leveldb::__anon31::PosixEnv	file:
+mmap_limit	util/env_posix.cc	/^static int mmap_limit = -1;$/;"	m	namespace:leveldb::__anon31	file:
+mmap_limit_	util/env_posix.cc	/^  Limiter mmap_limit_;$/;"	m	class:leveldb::__anon31::PosixEnv	file:
+mmapped_region_	util/env_posix.cc	/^  void* mmapped_region_;$/;"	m	class:leveldb::__anon31::PosixMmapReadableFile	file:
+mu_	util/env_posix.cc	/^  port::Mutex mu_;$/;"	m	class:leveldb::__anon31::Limiter	file:
+mu_	util/env_posix.cc	/^  port::Mutex mu_;$/;"	m	class:leveldb::__anon31::PosixLockTable	file:
+mu_	util/env_posix.cc	/^  pthread_mutex_t mu_;$/;"	m	class:leveldb::__anon31::PosixEnv	file:
+name_	util/env_posix.cc	/^  std::string name_;$/;"	m	class:leveldb::__anon31::PosixFileLock	file:
 newEnv	util/env_posix.cc	/^Env* newEnv() { return new PosixEnv;}$/;"	f	namespace:leveldb
 once	util/env_posix.cc	/^static pthread_once_t once = PTHREAD_ONCE_INIT;$/;"	m	namespace:leveldb	file:
-open_read_only_file_limit	util/env_posix.cc	/^static int open_read_only_file_limit = -1;$/;"	m	namespace:leveldb::__anon35	file:
-queue_	util/env_posix.cc	/^  BGQueue queue_;$/;"	m	class:leveldb::__anon35::PosixEnv	file:
-started_bgthread_	util/env_posix.cc	/^  bool started_bgthread_;$/;"	m	class:leveldb::__anon35::PosixEnv	file:
-temporary_fd_	util/env_posix.cc	/^  bool temporary_fd_;  \/\/ If true, fd_ is -1 and we open on every read.$/;"	m	class:leveldb::__anon35::PosixBufferedRandomAccessFile	file:
-temporary_fd_	util/env_posix.cc	/^  bool temporary_fd_;  \/\/ If true, fd_ is -1 and we open on every read.$/;"	m	class:leveldb::__anon35::PosixRandomAccessFile	file:
-user_function	util/env_posix.cc	/^  void (*user_function)(void*);$/;"	m	struct:leveldb::__anon35::__anon36::StartThreadState	file:
+open_read_only_file_limit	util/env_posix.cc	/^static int open_read_only_file_limit = -1;$/;"	m	namespace:leveldb::__anon31	file:
+queue_	util/env_posix.cc	/^  BGQueue queue_;$/;"	m	class:leveldb::__anon31::PosixEnv	file:
+started_bgthread_	util/env_posix.cc	/^  bool started_bgthread_;$/;"	m	class:leveldb::__anon31::PosixEnv	file:
+temporary_fd_	util/env_posix.cc	/^  bool temporary_fd_;  \/\/ If true, fd_ is -1 and we open on every read.$/;"	m	class:leveldb::__anon31::PosixBufferedRandomAccessFile	file:
+temporary_fd_	util/env_posix.cc	/^  bool temporary_fd_;  \/\/ If true, fd_ is -1 and we open on every read.$/;"	m	class:leveldb::__anon31::PosixRandomAccessFile	file:
+user_function	util/env_posix.cc	/^  void (*user_function)(void*);$/;"	m	struct:leveldb::__anon31::__anon32::StartThreadState	file:
 ~AlignedBuffer	util/env_posix.cc	/^   ~AlignedBuffer(){$/;"	f	class:leveldb::AlignedBuffer
-~PosixBufferedRandomAccessFile	util/env_posix.cc	/^  virtual ~PosixBufferedRandomAccessFile() {$/;"	f	class:leveldb::__anon35::PosixBufferedRandomAccessFile
-~PosixEnv	util/env_posix.cc	/^  virtual ~PosixEnv() {$/;"	f	class:leveldb::__anon35::PosixEnv
-~PosixMmapReadableFile	util/env_posix.cc	/^  virtual ~PosixMmapReadableFile() {$/;"	f	class:leveldb::__anon35::PosixMmapReadableFile
-~PosixRandomAccessFile	util/env_posix.cc	/^  virtual ~PosixRandomAccessFile() {$/;"	f	class:leveldb::__anon35::PosixRandomAccessFile
-~PosixSequentialFile	util/env_posix.cc	/^  virtual ~PosixSequentialFile() { fclose(file_); }$/;"	f	class:leveldb::__anon35::PosixSequentialFile
-~PosixWritableFile	util/env_posix.cc	/^  ~PosixWritableFile() {$/;"	f	class:leveldb::__anon35::PosixWritableFile
+~PosixBufferedRandomAccessFile	util/env_posix.cc	/^  virtual ~PosixBufferedRandomAccessFile() {$/;"	f	class:leveldb::__anon31::PosixBufferedRandomAccessFile
+~PosixEnv	util/env_posix.cc	/^  virtual ~PosixEnv() {$/;"	f	class:leveldb::__anon31::PosixEnv
+~PosixMmapReadableFile	util/env_posix.cc	/^  virtual ~PosixMmapReadableFile() {$/;"	f	class:leveldb::__anon31::PosixMmapReadableFile
+~PosixRandomAccessFile	util/env_posix.cc	/^  virtual ~PosixRandomAccessFile() {$/;"	f	class:leveldb::__anon31::PosixRandomAccessFile
+~PosixSequentialFile	util/env_posix.cc	/^  virtual ~PosixSequentialFile() { fclose(file_); }$/;"	f	class:leveldb::__anon31::PosixSequentialFile
+~PosixWritableFile	util/env_posix.cc	/^  ~PosixWritableFile() {$/;"	f	class:leveldb::__anon31::PosixWritableFile
 EnvPosixTest	util/env_posix_test.cc	/^  EnvPosixTest() : env_(Env::Default()) { }$/;"	f	class:leveldb::EnvPosixTest
 EnvPosixTest	util/env_posix_test.cc	/^class EnvPosixTest {$/;"	c	namespace:leveldb	file:
 SetFileLimits	util/env_posix_test.cc	/^  static void SetFileLimits(int read_only_file_limit, int mmap_limit) {$/;"	f	class:leveldb::EnvPosixTest
@@ -3005,145 +3020,148 @@ NumberToString	util/logging.cc	/^std::string NumberToString(uint64_t num) {$/;"	
 leveldb	util/logging.cc	/^namespace leveldb {$/;"	n	file:
 STORAGE_LEVELDB_UTIL_LOGGING_H_	util/logging.h	9;"	d
 leveldb	util/logging.h	/^namespace leveldb {$/;"	n
-BloomHash	util/multi_bloom.cc	/^static uint32_t BloomHash(const Slice& key,int id) {$/;"	f	namespace:leveldb::__anon32
-ChildBloomFilterPolicy	util/multi_bloom.cc	/^  explicit ChildBloomFilterPolicy(int bits_per_key,int id)$/;"	f	class:leveldb::__anon32::ChildBloomFilterPolicy
-ChildBloomFilterPolicy	util/multi_bloom.cc	/^class ChildBloomFilterPolicy : public FilterPolicy {$/;"	c	namespace:leveldb::__anon32	file:
-CreateFilter	util/multi_bloom.cc	/^	virtual void CreateFilter(const Slice * keys,int n, std::string *dst) const{$/;"	f	class:leveldb::__anon32::MultiFilter
-CreateFilter	util/multi_bloom.cc	/^	virtual void CreateFilter(const Slice *keys,int n,std::list<std::string> &dsts) const {$/;"	f	class:leveldb::__anon32::MultiFilter
-CreateFilter	util/multi_bloom.cc	/^  virtual void CreateFilter(const Slice *keys,int n,std::list<std::string> &dsts) const {$/;"	f	class:leveldb::__anon32::ChildBloomFilterPolicy
-CreateFilter	util/multi_bloom.cc	/^  virtual void CreateFilter(const Slice* keys, int n, std::string* dst) const {$/;"	f	class:leveldb::__anon32::ChildBloomFilterPolicy
-CreateFilterArg	util/multi_bloom.cc	/^struct CreateFilterArg{$/;"	s	namespace:leveldb::__anon32	file:
-CreateFilter_T	util/multi_bloom.cc	/^	static void* CreateFilter_T(void *arg){$/;"	f	class:leveldb::__anon32::MultiFilter
-KeyMayMatch	util/multi_bloom.cc	/^	virtual bool KeyMayMatch(const Slice& key, const Slice& bloom_filter) const{$/;"	f	class:leveldb::__anon32::MultiFilter
-KeyMayMatch	util/multi_bloom.cc	/^	virtual bool KeyMayMatch(const Slice& key, const Slice& bloom_filter,int id) const{$/;"	f	class:leveldb::__anon32::MultiFilter
-KeyMayMatch	util/multi_bloom.cc	/^  virtual bool KeyMayMatch(const Slice& key, const Slice& bloom_filter) const {$/;"	f	class:leveldb::__anon32::ChildBloomFilterPolicy
-KeyMayMatchFilters	util/multi_bloom.cc	/^	virtual bool KeyMayMatchFilters(const Slice& key, const std::list<Slice> &filter_strs) const{$/;"	f	class:leveldb::__anon32::MultiFilter
-KeyMayMatchFilters	util/multi_bloom.cc	/^  virtual bool KeyMayMatchFilters(const Slice& key, const std::list<leveldb::Slice>& filters) const {$/;"	f	class:leveldb::__anon32::ChildBloomFilterPolicy
-MultiFilter	util/multi_bloom.cc	/^	explicit MultiFilter(int bits_per_key_per_filter[],int bits_per_key):bits_per_key_(bits_per_key){$/;"	f	class:leveldb::__anon32::MultiFilter
-MultiFilter	util/multi_bloom.cc	/^class MultiFilter:public FilterPolicy{$/;"	c	namespace:leveldb::__anon32	file:
-Name	util/multi_bloom.cc	/^	virtual const char* Name() const{$/;"	f	class:leveldb::__anon32::MultiFilter
-Name	util/multi_bloom.cc	/^  virtual const char* Name() const {$/;"	f	class:leveldb::__anon32::ChildBloomFilterPolicy
+BloomHash	util/multi_bloom.cc	/^static uint32_t BloomHash(const Slice& key,int id) {$/;"	f	namespace:leveldb::__anon35
+ChildBloomFilterPolicy	util/multi_bloom.cc	/^  explicit ChildBloomFilterPolicy(int bits_per_key,int id)$/;"	f	class:leveldb::__anon35::ChildBloomFilterPolicy
+ChildBloomFilterPolicy	util/multi_bloom.cc	/^class ChildBloomFilterPolicy : public FilterPolicy {$/;"	c	namespace:leveldb::__anon35	file:
+CreateFilter	util/multi_bloom.cc	/^	virtual void CreateFilter(const Slice * keys,int n, std::string *dst) const{$/;"	f	class:leveldb::__anon35::MultiFilter
+CreateFilter	util/multi_bloom.cc	/^	virtual void CreateFilter(const Slice *keys,int n,std::list<std::string> &dsts) const {$/;"	f	class:leveldb::__anon35::MultiFilter
+CreateFilter	util/multi_bloom.cc	/^  virtual void CreateFilter(const Slice *keys,int n,std::list<std::string> &dsts) const {$/;"	f	class:leveldb::__anon35::ChildBloomFilterPolicy
+CreateFilter	util/multi_bloom.cc	/^  virtual void CreateFilter(const Slice* keys, int n, std::string* dst) const {$/;"	f	class:leveldb::__anon35::ChildBloomFilterPolicy
+CreateFilterArg	util/multi_bloom.cc	/^struct CreateFilterArg{$/;"	s	namespace:leveldb::__anon35	file:
+CreateFilter_T	util/multi_bloom.cc	/^	static void* CreateFilter_T(void *arg){$/;"	f	class:leveldb::__anon35::MultiFilter
+KeyMayMatch	util/multi_bloom.cc	/^	virtual bool KeyMayMatch(const Slice& key, const Slice& bloom_filter) const{$/;"	f	class:leveldb::__anon35::MultiFilter
+KeyMayMatch	util/multi_bloom.cc	/^	virtual bool KeyMayMatch(const Slice& key, const Slice& bloom_filter,int id) const{$/;"	f	class:leveldb::__anon35::MultiFilter
+KeyMayMatch	util/multi_bloom.cc	/^  virtual bool KeyMayMatch(const Slice& key, const Slice& bloom_filter) const {$/;"	f	class:leveldb::__anon35::ChildBloomFilterPolicy
+KeyMayMatchFilters	util/multi_bloom.cc	/^	virtual bool KeyMayMatchFilters(const Slice& key, const std::list<Slice> &filter_strs) const{$/;"	f	class:leveldb::__anon35::MultiFilter
+KeyMayMatchFilters	util/multi_bloom.cc	/^  virtual bool KeyMayMatchFilters(const Slice& key, const std::list<leveldb::Slice>& filters) const {$/;"	f	class:leveldb::__anon35::ChildBloomFilterPolicy
+MultiFilter	util/multi_bloom.cc	/^	explicit MultiFilter(int bits_per_key_per_filter[],int bits_per_key):bits_per_key_(bits_per_key){$/;"	f	class:leveldb::__anon35::MultiFilter
+MultiFilter	util/multi_bloom.cc	/^class MultiFilter:public FilterPolicy{$/;"	c	namespace:leveldb::__anon35	file:
+Name	util/multi_bloom.cc	/^	virtual const char* Name() const{$/;"	f	class:leveldb::__anon35::MultiFilter
+Name	util/multi_bloom.cc	/^  virtual const char* Name() const {$/;"	f	class:leveldb::__anon35::ChildBloomFilterPolicy
 NewBloomFilterPolicy	util/multi_bloom.cc	/^const FilterPolicy *NewBloomFilterPolicy(int *){$/;"	f	namespace:leveldb
 NewBloomFilterPolicy	util/multi_bloom.cc	/^const FilterPolicy *NewBloomFilterPolicy(int){$/;"	f	namespace:leveldb
 NewBloomFilterPolicy	util/multi_bloom.cc	/^const FilterPolicy* NewBloomFilterPolicy(int bits_per_key_per_filter[],int bits_per_key) {$/;"	f	namespace:leveldb
-bits_per_key_	util/multi_bloom.cc	/^	size_t bits_per_key_;$/;"	m	class:leveldb::__anon32::MultiFilter	file:
-bits_per_key_	util/multi_bloom.cc	/^  size_t bits_per_key_;$/;"	m	class:leveldb::__anon32::ChildBloomFilterPolicy	file:
-cfas	util/multi_bloom.cc	/^	static CreateFilterArg *cfas;$/;"	m	class:leveldb::__anon32::MultiFilter	file:
-ch	util/multi_bloom.cc	/^	  ChildBloomFilterPolicy *ch;$/;"	m	struct:leveldb::__anon32::CreateFilterArg	file:
-curr_completed_filter_num_	util/multi_bloom.cc	/^	static std::atomic<int> curr_completed_filter_num_;$/;"	m	class:leveldb::__anon32::MultiFilter	file:
-dst	util/multi_bloom.cc	/^	  std::string *dst;$/;"	m	struct:leveldb::__anon32::CreateFilterArg	file:
-end_thread	util/multi_bloom.cc	/^	static bool end_thread;$/;"	m	class:leveldb::__anon32::MultiFilter	file:
-filled_	util/multi_bloom.cc	/^        static std::atomic<bool> filled_[16];$/;"	m	class:leveldb::__anon32::MultiFilter	file:
-filled_	util/multi_bloom.cc	/^std::atomic<bool>  MultiFilter::filled_[16];$/;"	m	class:leveldb::__anon32::MultiFilter	file:
-filterNums	util/multi_bloom.cc	/^  virtual int filterNums() const{$/;"	f	class:leveldb::__anon32::ChildBloomFilterPolicy
-filter_num_	util/multi_bloom.cc	/^	static int filter_num_;$/;"	m	class:leveldb::__anon32::MultiFilter	file:
-filter_num_	util/multi_bloom.cc	/^int MultiFilter::filter_num_ = 0;$/;"	m	class:leveldb::__anon32::MultiFilter	file:
-filters	util/multi_bloom.cc	/^	std::vector<ChildBloomFilterPolicy*> filters;$/;"	m	class:leveldb::__anon32::MultiFilter	file:
+bits_per_key_	util/multi_bloom.cc	/^	size_t bits_per_key_;$/;"	m	class:leveldb::__anon35::MultiFilter	file:
+bits_per_key_	util/multi_bloom.cc	/^  size_t bits_per_key_;$/;"	m	class:leveldb::__anon35::ChildBloomFilterPolicy	file:
+cfas	util/multi_bloom.cc	/^	static CreateFilterArg *cfas;$/;"	m	class:leveldb::__anon35::MultiFilter	file:
+ch	util/multi_bloom.cc	/^	  ChildBloomFilterPolicy *ch;$/;"	m	struct:leveldb::__anon35::CreateFilterArg	file:
+curr_completed_filter_num_	util/multi_bloom.cc	/^	static std::atomic<int> curr_completed_filter_num_;$/;"	m	class:leveldb::__anon35::MultiFilter	file:
+dst	util/multi_bloom.cc	/^	  std::string *dst;$/;"	m	struct:leveldb::__anon35::CreateFilterArg	file:
+end_thread	util/multi_bloom.cc	/^	static bool end_thread;$/;"	m	class:leveldb::__anon35::MultiFilter	file:
+filled_	util/multi_bloom.cc	/^        static std::atomic<bool> filled_[16];$/;"	m	class:leveldb::__anon35::MultiFilter	file:
+filled_	util/multi_bloom.cc	/^std::atomic<bool>  MultiFilter::filled_[16];$/;"	m	class:leveldb::__anon35::MultiFilter	file:
+filterNums	util/multi_bloom.cc	/^  virtual int filterNums() const{$/;"	f	class:leveldb::__anon35::ChildBloomFilterPolicy
+filter_num_	util/multi_bloom.cc	/^	static int filter_num_;$/;"	m	class:leveldb::__anon35::MultiFilter	file:
+filter_num_	util/multi_bloom.cc	/^int MultiFilter::filter_num_ = 0;$/;"	m	class:leveldb::__anon35::MultiFilter	file:
+filters	util/multi_bloom.cc	/^	std::vector<ChildBloomFilterPolicy*> filters;$/;"	m	class:leveldb::__anon35::MultiFilter	file:
 handle_error_en	util/multi_bloom.cc	19;"	d	file:
-id_	util/multi_bloom.cc	/^  int id_; \/\/begin from 0$/;"	m	class:leveldb::__anon32::ChildBloomFilterPolicy	file:
-k_	util/multi_bloom.cc	/^  size_t k_;$/;"	m	class:leveldb::__anon32::ChildBloomFilterPolicy	file:
-keys_	util/multi_bloom.cc	/^	static const Slice *keys_;$/;"	m	class:leveldb::__anon32::MultiFilter	file:
+id_	util/multi_bloom.cc	/^  int id_; \/\/begin from 0$/;"	m	class:leveldb::__anon35::ChildBloomFilterPolicy	file:
+k_	util/multi_bloom.cc	/^  size_t k_;$/;"	m	class:leveldb::__anon35::ChildBloomFilterPolicy	file:
+keys_	util/multi_bloom.cc	/^	static const Slice *keys_;$/;"	m	class:leveldb::__anon35::MultiFilter	file:
 leveldb	util/multi_bloom.cc	/^namespace leveldb {$/;"	n	file:
-n_	util/multi_bloom.cc	/^	static int n_;$/;"	m	class:leveldb::__anon32::MultiFilter	file:
-pids_	util/multi_bloom.cc	/^	static pthread_t pids_[16];$/;"	m	class:leveldb::__anon32::MultiFilter	file:
-pids_	util/multi_bloom.cc	/^pthread_t MultiFilter::pids_[16];$/;"	m	class:leveldb::__anon32::MultiFilter	file:
-~MultiFilter	util/multi_bloom.cc	/^	virtual ~MultiFilter(){$/;"	f	class:leveldb::__anon32::MultiFilter
-BGShrinkUsage	util/multi_queue.cc	/^void MultiQueue::BGShrinkUsage(void *mq){$/;"	f	class:leveldb::__anon33::MultiQueue
-BackgroudShrinkUsage	util/multi_queue.cc	/^void MultiQueue::BackgroudShrinkUsage()$/;"	f	class:leveldb::__anon33::MultiQueue
-Erase	util/multi_queue.cc	/^void MultiQueue::Erase(const Slice& key)$/;"	f	class:leveldb::__anon33::MultiQueue
-Erase	util/multi_queue.cc	/^void MultiQueue::Erase(const Slice& key, uint32_t hash)$/;"	f	class:leveldb::__anon33::MultiQueue
-FalsePositive	util/multi_queue.cc	/^inline double MultiQueue::FalsePositive(LRUQueueHandle* e)$/;"	f	class:leveldb::__anon33::MultiQueue
-FindPointer	util/multi_queue.cc	/^  LRUQueueHandle** FindPointer(const Slice& key, uint32_t hash) {$/;"	f	class:leveldb::__anon33::HandleTable	file:
-FinishErase	util/multi_queue.cc	/^bool MultiQueue::FinishErase(LRUQueueHandle* e) {$/;"	f	class:leveldb::__anon33::MultiQueue
-ForceShrinking	util/multi_queue.cc	/^void MultiQueue::ForceShrinking()$/;"	f	class:leveldb::__anon33::MultiQueue
-GetLRUFreCount	util/multi_queue.cc	/^inline uint64_t MultiQueue::GetLRUFreCount() const{$/;"	f	class:leveldb::__anon33::MultiQueue
-HandleTable	util/multi_queue.cc	/^  HandleTable() : length_(0), elems_(0), list_(NULL) { Resize(); }$/;"	f	class:leveldb::__anon33::HandleTable
-HandleTable	util/multi_queue.cc	/^class HandleTable {   \/\/ a list store LRUQueueHandle's address , don't care queue id$/;"	c	namespace:leveldb::__anon33	file:
-HashSlice	util/multi_queue.cc	/^     static inline uint32_t HashSlice(const Slice& s) {$/;"	f	class:leveldb::__anon33::MultiQueue
-Insert	util/multi_queue.cc	/^  LRUQueueHandle* Insert(LRUQueueHandle* h) {$/;"	f	class:leveldb::__anon33::HandleTable
-Insert	util/multi_queue.cc	/^Cache::Handle* MultiQueue::Insert(const Slice& key, uint32_t hash, void* value, size_t charge, void (*deleter)(const Slice& key, void* value),bool type)$/;"	f	class:leveldb::__anon33::MultiQueue
-Insert	util/multi_queue.cc	/^Cache::Handle* MultiQueue::Insert(const Slice& key, void* value, size_t charge, void (*deleter)(const Slice& key, void* value)){$/;"	f	class:leveldb::__anon33::MultiQueue
-Insert	util/multi_queue.cc	/^Cache::Handle* MultiQueue::Insert(const Slice& key, void* value, size_t charge, void (*deleter)(const Slice& key, void* value), bool type)$/;"	f	class:leveldb::__anon33::MultiQueue
-IsCacheFull	util/multi_queue.cc	/^inline bool MultiQueue::IsCacheFull() const{$/;"	f	class:leveldb::__anon33::MultiQueue
-LRUQueueHandle	util/multi_queue.cc	/^    struct LRUQueueHandle {$/;"	s	namespace:leveldb::__anon33	file:
-LRU_Append	util/multi_queue.cc	/^void MultiQueue::LRU_Append(LRUQueueHandle* list, LRUQueueHandle* e)$/;"	f	class:leveldb::__anon33::MultiQueue
-LRU_Remove	util/multi_queue.cc	/^void MultiQueue::LRU_Remove(LRUQueueHandle* e)$/;"	f	class:leveldb::__anon33::MultiQueue
-LRU_Status	util/multi_queue.cc	/^std::string MultiQueue::LRU_Status()$/;"	f	class:leveldb::__anon33::MultiQueue
-Lookup	util/multi_queue.cc	/^  LRUQueueHandle* Lookup(const Slice& key, uint32_t hash) {$/;"	f	class:leveldb::__anon33::HandleTable
-Lookup	util/multi_queue.cc	/^Cache::Handle *MultiQueue::Lookup(const Slice& key){$/;"	f	class:leveldb::__anon33::MultiQueue
-Lookup	util/multi_queue.cc	/^Cache::Handle *MultiQueue::Lookup(const Slice& key,bool Get){$/;"	f	class:leveldb::__anon33::MultiQueue
-Lookup	util/multi_queue.cc	/^Cache::Handle* MultiQueue::Lookup(const Slice& key, uint32_t hash,bool Get)$/;"	f	class:leveldb::__anon33::MultiQueue
-LookupFreCount	util/multi_queue.cc	/^uint64_t MultiQueue::LookupFreCount(const Slice& key)$/;"	f	class:leveldb::__anon33::MultiQueue
-MayBeShrinkUsage	util/multi_queue.cc	/^void MultiQueue::MayBeShrinkUsage(){$/;"	f	class:leveldb::__anon33::MultiQueue
-MultiQueue	util/multi_queue.cc	/^MultiQueue::MultiQueue(size_t capacity,int lrus_num,int base_num,uint64_t life_time,double fr,double sr,double cr,int lg_b,double s_r):capacity_(capacity),lrus_num_(lrus_num),base_num_(base_num),life_time_(life_time),shrinking_(false)$/;"	f	class:leveldb::__anon33::MultiQueue
-MultiQueue	util/multi_queue.cc	/^class MultiQueue:public Cache{$/;"	c	namespace:leveldb::__anon33	file:
-NewId	util/multi_queue.cc	/^uint64_t MultiQueue::NewId()$/;"	f	class:leveldb::__anon33::MultiQueue
-NewMultiQueue	util/multi_queue.cc	/^Cache* NewMultiQueue(size_t capacity,int lrus_num,int base_num,uint64_t life_time,double force_shrink_ratio,double slow_shrink_ratio,double change_ratio,int lg_b,double s_r){$/;"	f	namespace:leveldb
-Num_Queue	util/multi_queue.cc	/^inline uint64_t MultiQueue::Num_Queue(int queue_id,uint64_t fre_count)$/;"	f	class:leveldb::__anon33::MultiQueue
-Prune	util/multi_queue.cc	/^     void Prune(){} \/\/do nothing$/;"	f	class:leveldb::__anon33::MultiQueue
-RecomputeExp	util/multi_queue.cc	/^void MultiQueue::RecomputeExp(LRUQueueHandle *e)$/;"	f	class:leveldb::__anon33::MultiQueue
-Ref	util/multi_queue.cc	/^void MultiQueue::Ref(LRUQueueHandle* e,bool addFreCount)$/;"	f	class:leveldb::__anon33::MultiQueue
-Release	util/multi_queue.cc	/^void MultiQueue::Release(Cache::Handle* handle) {$/;"	f	class:leveldb::__anon33::MultiQueue
-Remove	util/multi_queue.cc	/^  LRUQueueHandle* Remove(const Slice& key, uint32_t hash) {$/;"	f	class:leveldb::__anon33::HandleTable
-Resize	util/multi_queue.cc	/^  void Resize() {$/;"	f	class:leveldb::__anon33::HandleTable	file:
-SetFreCount	util/multi_queue.cc	/^void MultiQueue::SetFreCount(const Slice &key,uint64_t freCount){$/;"	f	class:leveldb::__anon33::MultiQueue
-ShrinkLRU	util/multi_queue.cc	/^inline bool MultiQueue::ShrinkLRU(int k,int64_t remove_charge[],bool force)$/;"	f	class:leveldb::__anon33::MultiQueue
-SlowShrinking	util/multi_queue.cc	/^void MultiQueue::SlowShrinking(){$/;"	f	class:leveldb::__anon33::MultiQueue
-TotalCharge	util/multi_queue.cc	/^size_t MultiQueue::TotalCharge() const$/;"	f	class:leveldb::__anon33::MultiQueue
-Unref	util/multi_queue.cc	/^void MultiQueue::Unref(LRUQueueHandle* e)$/;"	f	class:leveldb::__anon33::MultiQueue
-Value	util/multi_queue.cc	/^void* MultiQueue::Value(Cache::Handle* handle)$/;"	f	class:leveldb::__anon33::MultiQueue
-addCurrentTime	util/multi_queue.cc	/^     void inline addCurrentTime(){$/;"	f	class:leveldb::__anon33::MultiQueue
-base_fre_counts	util/multi_queue.cc	/^     static uint64_t base_fre_counts[10];$/;"	m	class:leveldb::__anon33::MultiQueue	file:
-base_fre_counts	util/multi_queue.cc	/^uint64_t MultiQueue::base_fre_counts[10]={4,10,28,82,243,730};$/;"	m	class:leveldb::MultiQueue	file:
-base_num_	util/multi_queue.cc	/^    int base_num_ ;$/;"	m	class:leveldb::__anon33::MultiQueue	file:
-bits_per_key_per_filter_	util/multi_queue.cc	/^    std::vector<size_t> bits_per_key_per_filter_;  \/\/begin from 0 bits$/;"	m	class:leveldb::__anon33::MultiQueue	file:
-capacity_	util/multi_queue.cc	/^    size_t capacity_;$/;"	m	class:leveldb::__anon33::MultiQueue	file:
-change_ratio	util/multi_queue.cc	/^    double change_ratio;$/;"	m	class:leveldb::__anon33::MultiQueue	file:
-charge	util/multi_queue.cc	/^    size_t charge;      \/\/ TODO(opt): Only allow uint32_t?$/;"	m	struct:leveldb::__anon33::LRUQueueHandle	file:
-charges_	util/multi_queue.cc	/^    size_t *charges_;$/;"	m	class:leveldb::__anon33::MultiQueue	file:
-current_time_	util/multi_queue.cc	/^    uint64_t current_time_;$/;"	m	class:leveldb::__anon33::MultiQueue	file:
-deleter	util/multi_queue.cc	/^    void (*deleter)(const Slice&, void* value);$/;"	m	struct:leveldb::__anon33::LRUQueueHandle	file:
-elems_	util/multi_queue.cc	/^  uint32_t elems_;$/;"	m	class:leveldb::__anon33::HandleTable	file:
-expection_	util/multi_queue.cc	/^    double expection_;$/;"	m	class:leveldb::__anon33::MultiQueue	file:
-expire_time	util/multi_queue.cc	/^    uint64_t expire_time; \/\/expire_time = current_time_ + life_time_$/;"	m	struct:leveldb::__anon33::LRUQueueHandle	file:
-force_shrink_ratio	util/multi_queue.cc	/^    double force_shrink_ratio;$/;"	m	class:leveldb::__anon33::MultiQueue	file:
-fps	util/multi_queue.cc	/^    std::vector<double> fps;$/;"	m	class:leveldb::__anon33::MultiQueue	file:
-fre_count	util/multi_queue.cc	/^    uint64_t fre_count;   \/\/frequency count $/;"	m	struct:leveldb::__anon33::LRUQueueHandle	file:
-hash	util/multi_queue.cc	/^    uint32_t hash;      \/\/ Hash of key(); used for fast sharding and comparisons$/;"	m	struct:leveldb::__anon33::LRUQueueHandle	file:
-in_cache	util/multi_queue.cc	/^    bool in_cache;      \/\/ Whether entry is in the cache.$/;"	m	struct:leveldb::__anon33::LRUQueueHandle	file:
-in_use_	util/multi_queue.cc	/^    LRUQueueHandle in_use_;$/;"	m	class:leveldb::__anon33::MultiQueue	file:
-insert_count	util/multi_queue.cc	/^    int insert_count;$/;"	m	class:leveldb::__anon33::MultiQueue	file:
-key	util/multi_queue.cc	/^    Slice key() const {$/;"	f	struct:leveldb::__anon33::LRUQueueHandle
-key_data	util/multi_queue.cc	/^    char key_data[1];   \/\/ Beginning of key$/;"	m	struct:leveldb::__anon33::LRUQueueHandle	file:
-key_length	util/multi_queue.cc	/^    size_t key_length;$/;"	m	struct:leveldb::__anon33::LRUQueueHandle	file:
-last_id_	util/multi_queue.cc	/^    std::atomic<uint64_t> last_id_;$/;"	m	class:leveldb::__anon33::MultiQueue	file:
-length_	util/multi_queue.cc	/^  uint32_t length_;$/;"	m	class:leveldb::__anon33::HandleTable	file:
-leveldb	util/multi_queue.cc	/^namespace leveldb {$/;"	n	file:
-life_time_	util/multi_queue.cc	/^    uint64_t life_time_;  $/;"	m	class:leveldb::__anon33::MultiQueue	file:
-list_	util/multi_queue.cc	/^  LRUQueueHandle** list_;$/;"	m	class:leveldb::__anon33::HandleTable	file:
-log_base	util/multi_queue.cc	/^    const double log_base;$/;"	m	class:leveldb::__anon33::MultiQueue	file:
-lru_lens_	util/multi_queue.cc	/^    std::vector<size_t> lru_lens_;$/;"	m	class:leveldb::__anon33::MultiQueue	file:
-lrus_	util/multi_queue.cc	/^    LRUQueueHandle *lrus_;$/;"	m	class:leveldb::__anon33::MultiQueue	file:
-lrus_num_	util/multi_queue.cc	/^    int lrus_num_;$/;"	m	class:leveldb::__anon33::MultiQueue	file:
-mq_env	util/multi_queue.cc	/^      static Env* mq_env;$/;"	m	class:leveldb::__anon33::MultiQueue	file:
-mq_env	util/multi_queue.cc	/^Env* MultiQueue::mq_env;$/;"	m	class:leveldb::MultiQueue	file:
-mutex_	util/multi_queue.cc	/^    mutable leveldb::SpinMutex mutex_;  \/\/for hashtable ,usage_ and e$/;"	m	class:leveldb::__anon33::MultiQueue	file:
-next	util/multi_queue.cc	/^    LRUQueueHandle* next;$/;"	m	struct:leveldb::__anon33::LRUQueueHandle	file:
-next_hash	util/multi_queue.cc	/^    LRUQueueHandle* next_hash;$/;"	m	struct:leveldb::__anon33::LRUQueueHandle	file:
-prev	util/multi_queue.cc	/^    LRUQueueHandle* prev;$/;"	m	struct:leveldb::__anon33::LRUQueueHandle	file:
-queue_id	util/multi_queue.cc	/^    uint16_t queue_id;   \/\/ queue id  start from 0  and 0 means 0 filter $/;"	m	struct:leveldb::__anon33::LRUQueueHandle	file:
-refs	util/multi_queue.cc	/^    uint32_t refs;      \/\/ References, including cache reference, if present.$/;"	m	struct:leveldb::__anon33::LRUQueueHandle	file:
-shrinking_	util/multi_queue.cc	/^    std::atomic<bool> shrinking_;  \/\/shrinking usage?$/;"	m	class:leveldb::__anon33::MultiQueue	file:
-shutting_down_	util/multi_queue.cc	/^    std::atomic<bool> shutting_down_;$/;"	m	class:leveldb::__anon33::MultiQueue	file:
-slow_ratio	util/multi_queue.cc	/^    double slow_ratio;$/;"	m	class:leveldb::__anon33::MultiQueue	file:
-slow_shrink_ratio	util/multi_queue.cc	/^    double slow_shrink_ratio;$/;"	m	class:leveldb::__anon33::MultiQueue	file:
-sum_lru_len	util/multi_queue.cc	/^    atomic<size_t> sum_lru_len;$/;"	m	class:leveldb::__anon33::MultiQueue	file:
-table_	util/multi_queue.cc	/^    HandleTable table_;$/;"	m	class:leveldb::__anon33::MultiQueue	file:
-type	util/multi_queue.cc	/^    bool type;			\/\/"true” represents  tableandfile$/;"	m	struct:leveldb::__anon33::LRUQueueHandle	file:
-usage_	util/multi_queue.cc	/^    std::atomic<size_t> usage_;$/;"	m	class:leveldb::__anon33::MultiQueue	file:
-value	util/multi_queue.cc	/^    void* value;$/;"	m	struct:leveldb::__anon33::LRUQueueHandle	file:
-~HandleTable	util/multi_queue.cc	/^  ~HandleTable() { delete[] list_; }$/;"	f	class:leveldb::__anon33::HandleTable
-~MultiQueue	util/multi_queue.cc	/^MultiQueue::~MultiQueue()$/;"	f	class:leveldb::__anon33::MultiQueue
+n_	util/multi_bloom.cc	/^	static int n_;$/;"	m	class:leveldb::__anon35::MultiFilter	file:
+pids_	util/multi_bloom.cc	/^	static pthread_t pids_[16];$/;"	m	class:leveldb::__anon35::MultiFilter	file:
+pids_	util/multi_bloom.cc	/^pthread_t MultiFilter::pids_[16];$/;"	m	class:leveldb::__anon35::MultiFilter	file:
+~MultiFilter	util/multi_bloom.cc	/^	virtual ~MultiFilter(){$/;"	f	class:leveldb::__anon35::MultiFilter
+BGShrinkUsage	util/multi_queue.cc	/^        void MultiQueue::BGShrinkUsage(void *mq)$/;"	f	class:leveldb::multiqueue_ns::MultiQueue
+BackgroudShrinkUsage	util/multi_queue.cc	/^        void MultiQueue::BackgroudShrinkUsage()$/;"	f	class:leveldb::multiqueue_ns::MultiQueue
+Erase	util/multi_queue.cc	/^        void MultiQueue::Erase(const Slice &key)$/;"	f	class:leveldb::multiqueue_ns::MultiQueue
+Erase	util/multi_queue.cc	/^        void MultiQueue::Erase(const Slice &key, uint32_t hash)$/;"	f	class:leveldb::multiqueue_ns::MultiQueue
+FalsePositive	util/multi_queue.cc	/^        inline double MultiQueue::FalsePositive(LRUQueueHandle *e)$/;"	f	class:leveldb::multiqueue_ns::MultiQueue
+FindPointer	util/multi_queue.cc	/^            LRUQueueHandle **FindPointer(const Slice &key, uint32_t hash)$/;"	f	class:leveldb::multiqueue_ns::HandleTable	file:
+FinishErase	util/multi_queue.cc	/^        bool MultiQueue::FinishErase(LRUQueueHandle *e)$/;"	f	class:leveldb::multiqueue_ns::MultiQueue
+ForceShrinking	util/multi_queue.cc	/^        void MultiQueue::ForceShrinking()$/;"	f	class:leveldb::multiqueue_ns::MultiQueue
+GetLRUFreCount	util/multi_queue.cc	/^        inline uint64_t MultiQueue::GetLRUFreCount() const$/;"	f	class:leveldb::multiqueue_ns::MultiQueue
+HandleTable	util/multi_queue.cc	/^            HandleTable() : length_(0), elems_(0), list_(NULL)$/;"	f	class:leveldb::multiqueue_ns::HandleTable
+HandleTable	util/multi_queue.cc	/^        class HandleTable     \/\/ a list store LRUQueueHandle's address , don't care queue id$/;"	c	namespace:leveldb::multiqueue_ns	file:
+HashSlice	util/multi_queue.cc	/^            static inline uint32_t HashSlice(const Slice &s)$/;"	f	class:leveldb::multiqueue_ns::MultiQueue
+Insert	util/multi_queue.cc	/^            LRUQueueHandle *Insert(LRUQueueHandle *h)$/;"	f	class:leveldb::multiqueue_ns::HandleTable
+Insert	util/multi_queue.cc	/^        Cache::Handle *MultiQueue::Insert(const Slice &key, uint32_t hash, void *value, size_t charge, void (*deleter)(const Slice &key, void *value), bool type)$/;"	f	class:leveldb::multiqueue_ns::MultiQueue
+Insert	util/multi_queue.cc	/^        Cache::Handle *MultiQueue::Insert(const Slice &key, void *value, size_t charge, void (*deleter)(const Slice &key, void *value))$/;"	f	class:leveldb::multiqueue_ns::MultiQueue
+Insert	util/multi_queue.cc	/^        Cache::Handle *MultiQueue::Insert(const Slice &key, void *value, size_t charge, void (*deleter)(const Slice &key, void *value), bool type)$/;"	f	class:leveldb::multiqueue_ns::MultiQueue
+IsCacheFull	util/multi_queue.cc	/^        inline bool MultiQueue::IsCacheFull() const$/;"	f	class:leveldb::multiqueue_ns::MultiQueue
+LRUQueueHandle	util/multi_queue.cc	/^        struct LRUQueueHandle$/;"	s	namespace:leveldb::multiqueue_ns	file:
+LRU_Append	util/multi_queue.cc	/^        void MultiQueue::LRU_Append(LRUQueueHandle *list, LRUQueueHandle *e)$/;"	f	class:leveldb::multiqueue_ns::MultiQueue
+LRU_Remove	util/multi_queue.cc	/^        void MultiQueue::LRU_Remove(LRUQueueHandle *e)$/;"	f	class:leveldb::multiqueue_ns::MultiQueue
+LRU_Status	util/multi_queue.cc	/^        std::string MultiQueue::LRU_Status()$/;"	f	class:leveldb::multiqueue_ns::MultiQueue
+Lookup	util/multi_queue.cc	/^            LRUQueueHandle *Lookup(const Slice &key, uint32_t hash)$/;"	f	class:leveldb::multiqueue_ns::HandleTable
+Lookup	util/multi_queue.cc	/^        Cache::Handle *MultiQueue::Lookup(const Slice &key)$/;"	f	class:leveldb::multiqueue_ns::MultiQueue
+Lookup	util/multi_queue.cc	/^        Cache::Handle *MultiQueue::Lookup(const Slice &key, bool Get)$/;"	f	class:leveldb::multiqueue_ns::MultiQueue
+Lookup	util/multi_queue.cc	/^        Cache::Handle *MultiQueue::Lookup(const Slice &key, uint32_t hash, bool Get)$/;"	f	class:leveldb::multiqueue_ns::MultiQueue
+LookupFreCount	util/multi_queue.cc	/^        uint64_t MultiQueue::LookupFreCount(const Slice &key)$/;"	f	class:leveldb::multiqueue_ns::MultiQueue
+MayBeShrinkUsage	util/multi_queue.cc	/^        void MultiQueue::MayBeShrinkUsage()$/;"	f	class:leveldb::multiqueue_ns::MultiQueue
+MultiQueue	util/multi_queue.cc	/^        MultiQueue::MultiQueue(size_t capacity, int lrus_num, int base_num, uint64_t life_time, double fr, double sr, double cr, int lg_b, double s_r): capacity_(capacity), lrus_num_(lrus_num), base_num_(base_num), life_time_(life_time), shrinking_(false)$/;"	f	class:leveldb::multiqueue_ns::MultiQueue
+MultiQueue	util/multi_queue.cc	/^        class MultiQueue: public Cache$/;"	c	namespace:leveldb::multiqueue_ns	file:
+NewId	util/multi_queue.cc	/^        uint64_t MultiQueue::NewId()$/;"	f	class:leveldb::multiqueue_ns::MultiQueue
+NewMultiQueue	util/multi_queue.cc	/^    Cache *NewMultiQueue(size_t capacity, int lrus_num, int base_num, uint64_t life_time, double force_shrink_ratio, double slow_shrink_ratio, double change_ratio, int lg_b, double s_r)$/;"	f	namespace:leveldb
+Num_Queue	util/multi_queue.cc	/^        inline uint64_t MultiQueue::Num_Queue(int queue_id, uint64_t fre_count)$/;"	f	class:leveldb::multiqueue_ns::MultiQueue
+Prune	util/multi_queue.cc	/^            void Prune() {} \/\/do nothing$/;"	f	class:leveldb::multiqueue_ns::MultiQueue
+RecomputeExp	util/multi_queue.cc	/^        void MultiQueue::RecomputeExp(LRUQueueHandle *e)$/;"	f	class:leveldb::multiqueue_ns::MultiQueue
+Ref	util/multi_queue.cc	/^        void MultiQueue::Ref(LRUQueueHandle *e, bool addFreCount)$/;"	f	class:leveldb::multiqueue_ns::MultiQueue
+Release	util/multi_queue.cc	/^        void MultiQueue::Release(Cache::Handle *handle)$/;"	f	class:leveldb::multiqueue_ns::MultiQueue
+Remove	util/multi_queue.cc	/^            LRUQueueHandle *Remove(const Slice &key, uint32_t hash)$/;"	f	class:leveldb::multiqueue_ns::HandleTable
+Resize	util/multi_queue.cc	/^            void Resize()$/;"	f	class:leveldb::multiqueue_ns::HandleTable	file:
+SetFreCount	util/multi_queue.cc	/^        void MultiQueue::SetFreCount(const Slice &key, uint64_t freCount)$/;"	f	class:leveldb::multiqueue_ns::MultiQueue
+ShrinkLRU	util/multi_queue.cc	/^        inline bool MultiQueue::ShrinkLRU(int k, int64_t remove_charge[], bool force)$/;"	f	class:leveldb::multiqueue_ns::MultiQueue
+SlowShrinking	util/multi_queue.cc	/^        void MultiQueue::SlowShrinking()$/;"	f	class:leveldb::multiqueue_ns::MultiQueue
+TotalCharge	util/multi_queue.cc	/^        size_t MultiQueue::TotalCharge() const$/;"	f	class:leveldb::multiqueue_ns::MultiQueue
+Unref	util/multi_queue.cc	/^        void MultiQueue::Unref(LRUQueueHandle *e)$/;"	f	class:leveldb::multiqueue_ns::MultiQueue
+Value	util/multi_queue.cc	/^        void *MultiQueue::Value(Cache::Handle *handle)$/;"	f	class:leveldb::multiqueue_ns::MultiQueue
+addCurrentTime	util/multi_queue.cc	/^            void inline addCurrentTime()$/;"	f	class:leveldb::multiqueue_ns::MultiQueue
+base_fre_counts	util/multi_queue.cc	/^            static uint64_t base_fre_counts[10];$/;"	m	class:leveldb::multiqueue_ns::MultiQueue	file:
+base_fre_counts	util/multi_queue.cc	/^    uint64_t multiqueue_ns::MultiQueue::base_fre_counts[10] = {4, 10, 28, 82, 243, 730};$/;"	m	class:leveldb::multiqueue_ns::MultiQueue	file:
+base_num_	util/multi_queue.cc	/^            int base_num_ ;$/;"	m	class:leveldb::multiqueue_ns::MultiQueue	file:
+bits_per_key_per_filter_	util/multi_queue.cc	/^            std::vector<size_t> bits_per_key_per_filter_;  \/\/begin from 0 bits$/;"	m	class:leveldb::multiqueue_ns::MultiQueue	file:
+capacity_	util/multi_queue.cc	/^            size_t capacity_;$/;"	m	class:leveldb::multiqueue_ns::MultiQueue	file:
+change_ratio	util/multi_queue.cc	/^            double change_ratio;$/;"	m	class:leveldb::multiqueue_ns::MultiQueue	file:
+charge	util/multi_queue.cc	/^            size_t charge;      \/\/ TODO(opt): Only allow uint32_t?$/;"	m	struct:leveldb::multiqueue_ns::LRUQueueHandle	file:
+charges_	util/multi_queue.cc	/^            size_t *charges_;$/;"	m	class:leveldb::multiqueue_ns::MultiQueue	file:
+current_time_	util/multi_queue.cc	/^            uint64_t current_time_;$/;"	m	class:leveldb::multiqueue_ns::MultiQueue	file:
+deleter	util/multi_queue.cc	/^            void (*deleter)(const Slice &, void *value);$/;"	m	struct:leveldb::multiqueue_ns::LRUQueueHandle	file:
+elems_	util/multi_queue.cc	/^            uint32_t elems_;$/;"	m	class:leveldb::multiqueue_ns::HandleTable	file:
+expection_	util/multi_queue.cc	/^            double expection_;$/;"	m	class:leveldb::multiqueue_ns::MultiQueue	file:
+expire_time	util/multi_queue.cc	/^            uint64_t expire_time; \/\/expire_time = current_time_ + life_time_$/;"	m	struct:leveldb::multiqueue_ns::LRUQueueHandle	file:
+force_shrink_ratio	util/multi_queue.cc	/^            double force_shrink_ratio;$/;"	m	class:leveldb::multiqueue_ns::MultiQueue	file:
+fps	util/multi_queue.cc	/^            std::vector<double> fps;$/;"	m	class:leveldb::multiqueue_ns::MultiQueue	file:
+fre_count	util/multi_queue.cc	/^            uint64_t fre_count;   \/\/frequency count$/;"	m	struct:leveldb::multiqueue_ns::LRUQueueHandle	file:
+hash	util/multi_queue.cc	/^            uint32_t hash;      \/\/ Hash of key(); used for fast sharding and comparisons$/;"	m	struct:leveldb::multiqueue_ns::LRUQueueHandle	file:
+in_cache	util/multi_queue.cc	/^            bool in_cache;      \/\/ Whether entry is in the cache.$/;"	m	struct:leveldb::multiqueue_ns::LRUQueueHandle	file:
+in_use_	util/multi_queue.cc	/^            LRUQueueHandle in_use_;$/;"	m	class:leveldb::multiqueue_ns::MultiQueue	file:
+insert_count	util/multi_queue.cc	/^            int insert_count;$/;"	m	class:leveldb::multiqueue_ns::MultiQueue	file:
+key	util/multi_queue.cc	/^            Slice key() const$/;"	f	struct:leveldb::multiqueue_ns::LRUQueueHandle
+key_data	util/multi_queue.cc	/^            char key_data[1];   \/\/ Beginning of key$/;"	m	struct:leveldb::multiqueue_ns::LRUQueueHandle	file:
+key_length	util/multi_queue.cc	/^            size_t key_length;$/;"	m	struct:leveldb::multiqueue_ns::LRUQueueHandle	file:
+last_id_	util/multi_queue.cc	/^            std::atomic<uint64_t> last_id_;$/;"	m	class:leveldb::multiqueue_ns::MultiQueue	file:
+length_	util/multi_queue.cc	/^            uint32_t length_;$/;"	m	class:leveldb::multiqueue_ns::HandleTable	file:
+leveldb	util/multi_queue.cc	/^namespace leveldb$/;"	n	file:
+life_time_	util/multi_queue.cc	/^            uint64_t life_time_;$/;"	m	class:leveldb::multiqueue_ns::MultiQueue	file:
+list_	util/multi_queue.cc	/^            LRUQueueHandle **list_;$/;"	m	class:leveldb::multiqueue_ns::HandleTable	file:
+log_base	util/multi_queue.cc	/^            const double log_base;$/;"	m	class:leveldb::multiqueue_ns::MultiQueue	file:
+lru_lens_	util/multi_queue.cc	/^            std::vector<size_t> lru_lens_;$/;"	m	class:leveldb::multiqueue_ns::MultiQueue	file:
+lrus_	util/multi_queue.cc	/^            LRUQueueHandle *lrus_;$/;"	m	class:leveldb::multiqueue_ns::MultiQueue	file:
+lrus_num_	util/multi_queue.cc	/^            int lrus_num_;$/;"	m	class:leveldb::multiqueue_ns::MultiQueue	file:
+mq_env	util/multi_queue.cc	/^            static Env *mq_env;$/;"	m	class:leveldb::multiqueue_ns::MultiQueue	file:
+mq_env	util/multi_queue.cc	/^    Env *multiqueue_ns::MultiQueue::mq_env;$/;"	m	class:leveldb::multiqueue_ns::MultiQueue	file:
+multiqueue_ns	util/multi_queue.cc	/^    namespace multiqueue_ns$/;"	n	namespace:leveldb	file:
+mutex_	util/multi_queue.cc	/^            mutable leveldb::SpinMutex mutex_;  \/\/for hashtable ,usage_ and e$/;"	m	class:leveldb::multiqueue_ns::MultiQueue	file:
+next	util/multi_queue.cc	/^            LRUQueueHandle *next;$/;"	m	struct:leveldb::multiqueue_ns::LRUQueueHandle	file:
+next_hash	util/multi_queue.cc	/^            LRUQueueHandle *next_hash;$/;"	m	struct:leveldb::multiqueue_ns::LRUQueueHandle	file:
+prev	util/multi_queue.cc	/^            LRUQueueHandle *prev;$/;"	m	struct:leveldb::multiqueue_ns::LRUQueueHandle	file:
+queue_id	util/multi_queue.cc	/^            uint16_t queue_id;   \/\/ queue id  start from 0  and 0 means 0 filter$/;"	m	struct:leveldb::multiqueue_ns::LRUQueueHandle	file:
+refs	util/multi_queue.cc	/^            uint32_t refs;      \/\/ References, including cache reference, if present.$/;"	m	struct:leveldb::multiqueue_ns::LRUQueueHandle	file:
+shrinking_	util/multi_queue.cc	/^            std::atomic<bool> shrinking_;  \/\/shrinking usage?$/;"	m	class:leveldb::multiqueue_ns::MultiQueue	file:
+shutting_down_	util/multi_queue.cc	/^            std::atomic<bool> shutting_down_;$/;"	m	class:leveldb::multiqueue_ns::MultiQueue	file:
+slow_ratio	util/multi_queue.cc	/^            double slow_ratio;$/;"	m	class:leveldb::multiqueue_ns::MultiQueue	file:
+slow_shrink_ratio	util/multi_queue.cc	/^            double slow_shrink_ratio;$/;"	m	class:leveldb::multiqueue_ns::MultiQueue	file:
+sum_lru_len	util/multi_queue.cc	/^            atomic<size_t> sum_lru_len;$/;"	m	class:leveldb::multiqueue_ns::MultiQueue	file:
+table_	util/multi_queue.cc	/^            HandleTable table_;$/;"	m	class:leveldb::multiqueue_ns::MultiQueue	file:
+type	util/multi_queue.cc	/^            bool type;      \/\/"true” represents  tableandfile$/;"	m	struct:leveldb::multiqueue_ns::LRUQueueHandle	file:
+usage_	util/multi_queue.cc	/^            std::atomic<size_t> usage_;$/;"	m	class:leveldb::multiqueue_ns::MultiQueue	file:
+value	util/multi_queue.cc	/^            void *value;$/;"	m	struct:leveldb::multiqueue_ns::LRUQueueHandle	file:
+value_id	util/multi_queue.cc	/^            uint32_t value_id;$/;"	m	struct:leveldb::multiqueue_ns::LRUQueueHandle	file:
+value_refs	util/multi_queue.cc	/^            uint32_t value_refs;$/;"	m	struct:leveldb::multiqueue_ns::LRUQueueHandle	file:
+~HandleTable	util/multi_queue.cc	/^            ~HandleTable()$/;"	f	class:leveldb::multiqueue_ns::HandleTable
+~MultiQueue	util/multi_queue.cc	/^        MultiQueue::~MultiQueue()$/;"	f	class:leveldb::multiqueue_ns::MultiQueue
 EXCLUSIVE_LOCK_FUNCTION	util/mutexlock.h	/^  explicit MutexLock(port::Mutex *mu) EXCLUSIVE_LOCK_FUNCTION(mu)$/;"	f	class:leveldb::MutexLock
 EXCLUSIVE_LOCK_FUNCTION	util/mutexlock.h	/^  explicit SpinMutexLock(SpinMutex *mu) EXCLUSIVE_LOCK_FUNCTION(mu)$/;"	f	class:leveldb::SpinMutexLock
 MutexLock	util/mutexlock.h	/^class SCOPED_LOCKABLE MutexLock {$/;"	c	namespace:leveldb
@@ -3218,14 +3236,14 @@ statistics_	util/stop_watch.h	/^	Statistics *statistics_;$/;"	m	class:leveldb::S
 RandomSeed	util/testharness.cc	/^int RandomSeed() {$/;"	f	namespace:leveldb::test
 RegisterTest	util/testharness.cc	/^bool RegisterTest(const char* base, const char* name, void (*func)()) {$/;"	f	namespace:leveldb::test
 RunAllTests	util/testharness.cc	/^int RunAllTests() {$/;"	f	namespace:leveldb::test
-Test	util/testharness.cc	/^struct Test {$/;"	s	namespace:leveldb::test::__anon34	file:
+Test	util/testharness.cc	/^struct Test {$/;"	s	namespace:leveldb::test::__anon33	file:
 TmpDir	util/testharness.cc	/^std::string TmpDir() {$/;"	f	namespace:leveldb::test
-base	util/testharness.cc	/^  const char* base;$/;"	m	struct:leveldb::test::__anon34::Test	file:
-func	util/testharness.cc	/^  void (*func)();$/;"	m	struct:leveldb::test::__anon34::Test	file:
+base	util/testharness.cc	/^  const char* base;$/;"	m	struct:leveldb::test::__anon33::Test	file:
+func	util/testharness.cc	/^  void (*func)();$/;"	m	struct:leveldb::test::__anon33::Test	file:
 leveldb	util/testharness.cc	/^namespace leveldb {$/;"	n	file:
-name	util/testharness.cc	/^  const char* name;$/;"	m	struct:leveldb::test::__anon34::Test	file:
+name	util/testharness.cc	/^  const char* name;$/;"	m	struct:leveldb::test::__anon33::Test	file:
 test	util/testharness.cc	/^namespace test {$/;"	n	namespace:leveldb	file:
-tests	util/testharness.cc	/^std::vector<Test>* tests;$/;"	m	namespace:leveldb::test::__anon34	file:
+tests	util/testharness.cc	/^std::vector<Test>* tests;$/;"	m	namespace:leveldb::test::__anon33	file:
 ASSERT_EQ	util/testharness.h	107;"	d
 ASSERT_GE	util/testharness.h	109;"	d
 ASSERT_GT	util/testharness.h	110;"	d

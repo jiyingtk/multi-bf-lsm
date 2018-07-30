@@ -415,12 +415,14 @@ Status Version::Get(const ReadOptions& options,
       s = vset_->table_cache_->Get(options, f->number, f->file_size,
                                    ikey, &saver, SaveValue);
      
+    #ifndef MULTI_THREAD_MODE
       FileExtraMetaData* file_extra_ = files_extra_[level][f->number];
       assert(file_extra_);
       file_extra_->latency_sum += Env::Default()->NowMicros() - start_micros;
       file_extra_->count += 1;
 
       options.access_compacted_file_nums += (file_extra_->is_compacted ? 1 : 0);
+    #endif
 
       if (!s.ok()) {
         return s;

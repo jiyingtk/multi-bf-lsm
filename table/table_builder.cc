@@ -224,16 +224,21 @@ Status TableBuilder::Finish() {
   if (ok()) {
     BlockBuilder meta_index_block(&r->options);
     if (r->filter_block != NULL) {
+  std::string key = "filter.0offsets";
+  std::string *offsets = r->filter_block->getOffsets();
+  meta_index_block.Add(key, *offsets);
+  delete offsets;
+  
       // Add mapping from "filter.Name" to location of filter data
-	char id[]={'1',0};
-	for(auto handle_iter = filter_block_handles.begin() ; handle_iter != filter_block_handles.end() ; handle_iter++){
-	    std::string key = "filter." + std::string(id);	//TODO::key may should add filter id
-	    key.append(r->options.filter_policy->Name());
-	    std::string handle_encoding;
-	    handle_iter->EncodeTo(&handle_encoding);
-	    meta_index_block.Add(key, handle_encoding);
-	    id[0]++;
-	}
+  char id[]={'1',0};
+  for(auto handle_iter = filter_block_handles.begin() ; handle_iter != filter_block_handles.end() ; handle_iter++){
+      std::string key = "filter." + std::string(id);  //TODO::key may should add filter id
+      key.append(r->options.filter_policy->Name());
+      std::string handle_encoding;
+      handle_iter->EncodeTo(&handle_encoding);
+      meta_index_block.Add(key, handle_encoding);
+      id[0]++;
+  }
     }
 
     // TODO(postrelease): Add stats and other meta blocks

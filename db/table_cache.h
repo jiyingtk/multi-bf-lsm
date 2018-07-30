@@ -20,13 +20,14 @@ namespace leveldb {
 struct TableAndFile {
   RandomAccessFile* file;
   Table* table;
+  uint32_t refs;
 };
 class Env;
 class VersionSet;
 class Version;
 class TableCache {
  public:
-  TableCache(const std::string& dbname, const Options* options, int entries);
+  TableCache(const std::string& dbname, const Options* options, size_t entries);
   ~TableCache();
 
   // Return an iterator for the specified file number (the corresponding

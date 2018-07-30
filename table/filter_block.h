@@ -34,7 +34,7 @@ class FilterBlockBuilder {
   void StartBlock(uint64_t block_offset);
   void AddKey(const Slice& key);
   std::list<std::string> &Finish();
-
+  std::string* getOffsets();
  private:
   void GenerateFilter();
 
@@ -55,27 +55,32 @@ class FilterBlockBuilder {
 class FilterBlockReader {
  public:
  // REQUIRES: "contents" and *policy must stay live while *this is live.
-  FilterBlockReader(const FilterPolicy* policy, const Slice& contents);
+  FilterBlockReader(const FilterPolicy* policy, int regionNum, int regionFilters_, int base_lg, std::vector<uint32_t> *filter_offsets);
+  ~FilterBlockReader();
   bool KeyMayMatch(uint64_t block_offset, const Slice& key);
-  void AddFilter(Slice& contents);
-  void RemoveFilters(int n);
-  inline int getCurrFiltersNum(){
-    return curr_num_of_filters_;  
+  void AddFilter(Slice& contents, int regionId);
+  size_t RemoveFilters(int n, int regionId);
+  inline int getCurrFiltersNum(int regionId){
+    return curr_num_of_filters_regions_[regionId];  
   }
   double getCurrFpr();
   static bool end_thread;
  private:
   const FilterPolicy* policy_;
-  std::vector<const char*> datas_;    // Pointer to filter data (at block-start)
-  std::vector<const char*> offsets_;  // Pointer to beginning of offset array (at block-end)
+  std::vector<std::vector<const char*>> datas_;    // Pointer to filter data (at block-start)
+  // std::vector<const char*> offsets_;  // Pointer to beginning of offset array (at block-end)
   size_t num_;          // Number of entries in offset array
   size_t base_lg_;      // Encoding parameter (see kFilterBaseLg in .cc file)
   int max_num_of_filters_;
   int curr_num_of_filters_;
-  void readFilters(const Slice& contents);
+  int *curr_num_of_filters_regions_;
+  int num_regions;
+  int regionFilters;
+  std::vector<uint32_t> filter_offsets_;
+  // void readFilters(const Slice& contents);
   static std::atomic<bool> start_matches[8];
   static bool matches[8];
-  static std::vector<const char*> *filter_offsets;
+  std::vector<uint32_t> *filter_offsets;
   static std::vector<const char*> *filter_datas;
   static int filter_index;
   static bool pthread_created;

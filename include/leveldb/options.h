@@ -47,7 +47,8 @@ typedef struct OptionExp{
     uint64_t fp_stat_num;
     double l0_base_ratio;
     bool force_disable_compaction;
-    OptionExp():no_cache_io_(false),seek_compaction_(false),stats_(nullptr),filter_capacity_ratio(1.0),base_num(64),life_time(50),findAllTable(false),setFreCountInCompaction(false),
+    uint64_t freq_divide_size;
+    OptionExp():no_cache_io_(false),seek_compaction_(false),stats_(nullptr),filter_capacity_ratio(1.0),base_num(64),life_time(50),findAllTable(false),setFreCountInCompaction(false), freq_divide_size(8192), //2097152(2MB), 134217728(128MB)
     force_shrink_ratio(1.1),slow_shrink_ratio(0.95),change_ratio(0.001),log_base(3),init_filter_nums(2),slow_ratio(0.5),size_ratio(2),add_filter(true),fp_stat_num(10000),l0_base_ratio(1.0),force_disable_compaction(false){};
 }OptionExp;
 // Options to control the behavior of a database (passed to DB::Open)
@@ -195,6 +196,7 @@ struct ReadOptions {
   mutable unsigned short access_file_nums;
   mutable unsigned short access_compacted_file_nums;
   mutable double total_fpr;
+  mutable uint64_t file_number;
  
   // If "snapshot" is non-NULL, read as of the supplied snapshot
   // (which must belong to the DB that is being read and which must
@@ -203,8 +205,6 @@ struct ReadOptions {
   // Default: NULL
   const Snapshot* snapshot;
   
-  static const uint64_t freq_divide_size = 2097152;
-
   ReadOptions()
       : verify_checksums(false),isLevel0(false),
         fill_cache(true),
