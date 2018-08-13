@@ -21,7 +21,7 @@ namespace leveldb {
 // Original:Generate new filter every 2KB of data
 //TODO: increase kFilterBaseLg
 //FULL-filter
-static const size_t kFilterBaseLg = 11;  //try every 64KB of data
+static const size_t kFilterBaseLg = 16;  //try every 64KB of data
 static const size_t kFilterBase = 1 << kFilterBaseLg;
 
 FilterBlockBuilder::FilterBlockBuilder(const FilterPolicy* policy)
@@ -196,6 +196,10 @@ FilterBlockReader::FilterBlockReader(const FilterPolicy* policy,
       num_(filter_offsets_->size()), num_regions(regionNum), filter_offsets(filter_offsets_),
       base_lg_(base_lg), max_num_of_filters_(policy->filterNums()){
 
+  if (regionNum == 0) {
+    handle_error_en(1, "filter block size is too large\n");
+  }
+
   datas_.clear();
   for (int i = 0; i < num_regions; i++) {
     std::vector<const char *> region_data;
@@ -268,9 +272,9 @@ bool FilterBlockReader::KeyMayMatch(uint64_t block_offset, const Slice &key)
 {
   uint64_t index = block_offset >> base_lg_;
   std::list<Slice> filters;
-  if (index < num_)
+  int regionId = index / regionFilters;
+  if (index < num_ && curr_num_of_filters_regions_[regionId] > 0)
   {
-      int regionId = index / regionFilters;
       for(int i = 0 ; i < curr_num_of_filters_regions_[regionId] ; i++)
       {
           uint32_t start = (*filter_offsets)[index];

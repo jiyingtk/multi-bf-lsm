@@ -11,7 +11,7 @@ DEVICE_CFLAGS	Makefile	/^DEVICE_CFLAGS = -isysroot "$(DEVICESDK)" -arch armv6 -a
 DEVICE_LIBOBJECTS	Makefile	/^DEVICE_LIBOBJECTS := $(addprefix $(DEVICE_OUTDIR)\/, $(SOURCES:.cc=.o))$/;"	m
 DEVICE_MEMENVOBJECTS	Makefile	/^DEVICE_MEMENVOBJECTS := $(addprefix $(DEVICE_OUTDIR)\/, $(MEMENV_SOURCES:.cc=.o))$/;"	m
 DEVICE_OUTDIR	Makefile	/^DEVICE_OUTDIR=out-ios-arm$/;"	m
-OPT	Makefile	/^OPT ?= -g2 -DMULTI_THREAD_MODE$/;"	m
+OPT	Makefile	/^OPT ?= -g2$/;"	m
 PROGNAMES	Makefile	/^PROGNAMES := $(notdir $(TESTS) $(UTILS))$/;"	m
 SHARED_ALLOBJS	Makefile	/^SHARED_ALLOBJS := $(SHARED_LIBOBJECTS) $(SHARED_MEMENVOBJECTS) $(TESTHARNESS)$/;"	m
 SHARED_LIB1	Makefile	/^SHARED_LIB1 = libleveldb.$(PLATFORM_SHARED_EXT)$/;"	m
@@ -1775,6 +1775,7 @@ leveldb_t	include/leveldb/c.h	/^typedef struct leveldb_t               leveldb_t
 leveldb_writablefile_t	include/leveldb/c.h	/^typedef struct leveldb_writablefile_t  leveldb_writablefile_t;$/;"	t	typeref:struct:leveldb_writablefile_t
 leveldb_writebatch_t	include/leveldb/c.h	/^typedef struct leveldb_writebatch_t    leveldb_writebatch_t;$/;"	t	typeref:struct:leveldb_writebatch_t
 leveldb_writeoptions_t	include/leveldb/c.h	/^typedef struct leveldb_writeoptions_t  leveldb_writeoptions_t;$/;"	t	typeref:struct:leveldb_writeoptions_t
+AllocFilterNums	include/leveldb/cache.h	/^  virtual int AllocFilterNums(int freq) {}$/;"	f	class:leveldb::Cache
 Cache	include/leveldb/cache.h	/^  Cache() { }$/;"	f	class:leveldb::Cache
 Cache	include/leveldb/cache.h	/^class Cache {$/;"	c	namespace:leveldb
 GetLRUFreCount	include/leveldb/cache.h	/^  virtual uint64_t GetLRUFreCount() const{} $/;"	f	class:leveldb::Cache
@@ -1791,6 +1792,7 @@ addCurrentTime	include/leveldb/cache.h	/^  virtual void addCurrentTime(){}$/;"	f
 leveldb	include/leveldb/cache.h	/^namespace leveldb {$/;"	n
 rep_	include/leveldb/cache.h	/^  Rep* rep_;$/;"	m	class:leveldb::Cache
 Comparator	include/leveldb/comparator.h	/^class Comparator {$/;"	c	namespace:leveldb
+FindShortSuccessorBeginWith	include/leveldb/comparator.h	/^  virtual void FindShortSuccessorBeginWith(std::string* key, size_t pos) const {$/;"	f	class:leveldb::Comparator
 STORAGE_LEVELDB_INCLUDE_COMPARATOR_H_	include/leveldb/comparator.h	6;"	d
 leveldb	include/leveldb/comparator.h	/^namespace leveldb {$/;"	n
 DB	include/leveldb/db.h	/^  DB() { }$/;"	f	class:leveldb::DB
@@ -1868,6 +1870,7 @@ Cleanup	include/leveldb/iterator.h	/^  struct Cleanup {$/;"	s	class:leveldb::Ite
 CleanupFunction	include/leveldb/iterator.h	/^  typedef void (*CleanupFunction)(void* arg1, void* arg2);$/;"	t	class:leveldb::Iterator
 Iterator	include/leveldb/iterator.h	/^class Iterator {$/;"	c	namespace:leveldb
 STORAGE_LEVELDB_INCLUDE_ITERATOR_H_	include/leveldb/iterator.h	16;"	d
+SeekByValue	include/leveldb/iterator.h	/^  virtual void SeekByValue(uint64_t target) {};$/;"	f	class:leveldb::Iterator
 arg1	include/leveldb/iterator.h	/^    void* arg1;$/;"	m	struct:leveldb::Iterator::Cleanup
 arg2	include/leveldb/iterator.h	/^    void* arg2;$/;"	m	struct:leveldb::Iterator::Cleanup
 cleanup_	include/leveldb/iterator.h	/^  Cleanup cleanup_;$/;"	m	class:leveldb::Iterator
@@ -1875,7 +1878,7 @@ function	include/leveldb/iterator.h	/^    CleanupFunction function;$/;"	m	struct
 leveldb	include/leveldb/iterator.h	/^namespace leveldb {$/;"	n
 next	include/leveldb/iterator.h	/^    Cleanup* next;$/;"	m	struct:leveldb::Iterator::Cleanup
 CompressionType	include/leveldb/options.h	/^enum CompressionType {$/;"	g	namespace:leveldb
-OptionExp	include/leveldb/options.h	/^    OptionExp():no_cache_io_(false),seek_compaction_(false),stats_(nullptr),filter_capacity_ratio(1.0),base_num(64),life_time(50),findAllTable(false),setFreCountInCompaction(false), freq_divide_size(2097152),$/;"	f	struct:leveldb::OptionExp
+OptionExp	include/leveldb/options.h	/^    OptionExp():no_cache_io_(false),seek_compaction_(false),key_value_size(1000),stats_(nullptr),filter_capacity_ratio(1.0),base_num(64),life_time(50),findAllTable(false),setFreCountInCompaction(false), freq_divide_size(8192), region_divide_size(8192), \/\/2097152(2MB), 134217728(128MB)$/;"	f	struct:leveldb::OptionExp
 OptionExp	include/leveldb/options.h	/^typedef struct OptionExp{$/;"	s	namespace:leveldb
 OptionExp	include/leveldb/options.h	/^}OptionExp;$/;"	t	namespace:leveldb	typeref:struct:leveldb::OptionExp
 Options	include/leveldb/options.h	/^struct Options {$/;"	s	namespace:leveldb
@@ -1909,8 +1912,10 @@ freq_divide_size	include/leveldb/options.h	/^    uint64_t freq_divide_size;$/;"	
 info_log	include/leveldb/options.h	/^  Logger* info_log;$/;"	m	struct:leveldb::Options
 init_filter_nums	include/leveldb/options.h	/^    int init_filter_nums;$/;"	m	struct:leveldb::OptionExp
 isLevel0	include/leveldb/options.h	/^  bool isLevel0;  \/\/new file isLevel0?$/;"	m	struct:leveldb::ReadOptions
+kFilterBaseLg	include/leveldb/options.h	/^    size_t kFilterBaseLg;$/;"	m	struct:leveldb::OptionExp
 kNoCompression	include/leveldb/options.h	/^  kNoCompression     = 0x0,$/;"	e	enum:leveldb::CompressionType
 kSnappyCompression	include/leveldb/options.h	/^  kSnappyCompression = 0x1$/;"	e	enum:leveldb::CompressionType
+key_value_size	include/leveldb/options.h	/^    int key_value_size;$/;"	m	struct:leveldb::OptionExp
 l0_base_ratio	include/leveldb/options.h	/^    double l0_base_ratio;$/;"	m	struct:leveldb::OptionExp
 leveldb	include/leveldb/options.h	/^namespace leveldb {$/;"	n
 life_time	include/leveldb/options.h	/^    uint64_t life_time;$/;"	m	struct:leveldb::OptionExp
@@ -1922,6 +1927,7 @@ no_cache_io_	include/leveldb/options.h	/^    bool no_cache_io_;$/;"	m	struct:lev
 opEp_	include/leveldb/options.h	/^  struct OptionExp opEp_;$/;"	m	struct:leveldb::Options	typeref:struct:leveldb::Options::OptionExp
 paranoid_checks	include/leveldb/options.h	/^  bool paranoid_checks;$/;"	m	struct:leveldb::Options
 read_file_nums	include/leveldb/options.h	/^  mutable unsigned short read_file_nums;$/;"	m	struct:leveldb::ReadOptions
+region_divide_size	include/leveldb/options.h	/^    uint64_t region_divide_size;$/;"	m	struct:leveldb::OptionExp
 reuse_logs	include/leveldb/options.h	/^  bool reuse_logs;$/;"	m	struct:leveldb::Options
 seek_compaction_	include/leveldb/options.h	/^    bool seek_compaction_;$/;"	m	struct:leveldb::OptionExp
 setFreCountInCompaction	include/leveldb/options.h	/^    bool setFreCountInCompaction;$/;"	m	struct:leveldb::OptionExp
@@ -1943,6 +1949,7 @@ Slice	include/leveldb/slice.h	/^class Slice {$/;"	c	namespace:leveldb
 ToString	include/leveldb/slice.h	/^  std::string ToString() const { return std::string(data_, size_); }$/;"	f	class:leveldb::Slice
 clear	include/leveldb/slice.h	/^  void clear() { data_ = ""; size_ = 0; }$/;"	f	class:leveldb::Slice
 compare	include/leveldb/slice.h	/^inline int Slice::compare(const Slice& b) const {$/;"	f	class:leveldb::Slice
+copy	include/leveldb/slice.h	/^  Slice copy() {$/;"	f	class:leveldb::Slice
 data	include/leveldb/slice.h	/^  const char* data() const { return data_; }$/;"	f	class:leveldb::Slice
 data_	include/leveldb/slice.h	/^  const char* data_;$/;"	m	class:leveldb::Slice
 empty	include/leveldb/slice.h	/^  bool empty() const { return size_ == 0; }$/;"	f	class:leveldb::Slice
@@ -2006,9 +2013,18 @@ leveldb	include/leveldb/table.h	/^namespace leveldb {$/;"	n
 rep_	include/leveldb/table.h	/^  Rep* rep_;$/;"	m	class:leveldb::Table
 STORAGE_LEVELDB_INCLUDE_TABLE_BUILDER_H_	include/leveldb/table_builder.h	14;"	d
 TableBuilder	include/leveldb/table_builder.h	/^class TableBuilder {$/;"	c	namespace:leveldb
+TableMetaData	include/leveldb/table_builder.h	/^struct TableMetaData {$/;"	s	namespace:leveldb
+filter_data	include/leveldb/table_builder.h	/^  Slice filter_data[16];$/;"	m	struct:leveldb::TableMetaData
+filter_num	include/leveldb/table_builder.h	/^  int filter_num;$/;"	m	struct:leveldb::TableMetaData
+index_data	include/leveldb/table_builder.h	/^  Slice index_data;$/;"	m	struct:leveldb::TableMetaData
 leveldb	include/leveldb/table_builder.h	/^namespace leveldb {$/;"	n
+load_filter_num	include/leveldb/table_builder.h	/^  int *load_filter_num;$/;"	m	struct:leveldb::TableMetaData
+metaindex_data	include/leveldb/table_builder.h	/^  Slice metaindex_data;$/;"	m	struct:leveldb::TableMetaData
 ok	include/leveldb/table_builder.h	/^  bool ok() const { return status().ok(); }$/;"	f	class:leveldb::TableBuilder
+region_num	include/leveldb/table_builder.h	/^  int region_num;$/;"	m	struct:leveldb::TableMetaData
 rep_	include/leveldb/table_builder.h	/^  Rep* rep_;$/;"	m	class:leveldb::TableBuilder
+tableMetaData_	include/leveldb/table_builder.h	/^  TableMetaData* tableMetaData_;$/;"	m	class:leveldb::TableBuilder
+~TableMetaData	include/leveldb/table_builder.h	/^  ~TableMetaData() {$/;"	f	struct:leveldb::TableMetaData
 ThreadPool	include/leveldb/threadpool.h	/^class ThreadPool {$/;"	c	namespace:leveldb
 leveldb	include/leveldb/threadpool.h	/^namespace leveldb {$/;"	n
 ~ThreadPool	include/leveldb/threadpool.h	/^  virtual ~ThreadPool() {}$/;"	f	class:leveldb::ThreadPool
@@ -2149,6 +2165,7 @@ NumRestarts	table/block.cc	/^inline uint32_t Block::NumRestarts() const {$/;"	f	
 ParseNextKey	table/block.cc	/^  bool ParseNextKey() {$/;"	f	class:leveldb::Block::Iter	file:
 Prev	table/block.cc	/^  virtual void Prev() {$/;"	f	class:leveldb::Block::Iter
 Seek	table/block.cc	/^  virtual void Seek(const Slice& target) {$/;"	f	class:leveldb::Block::Iter
+SeekByValue	table/block.cc	/^  virtual void SeekByValue(uint64_t target) {$/;"	f	class:leveldb::Block::Iter
 SeekToFirst	table/block.cc	/^  virtual void SeekToFirst() {$/;"	f	class:leveldb::Block::Iter
 SeekToLast	table/block.cc	/^  virtual void SeekToLast() {$/;"	f	class:leveldb::Block::Iter
 SeekToRestartPoint	table/block.cc	/^  void SeekToRestartPoint(uint32_t index) {$/;"	f	class:leveldb::Block::Iter	file:
@@ -2200,7 +2217,7 @@ Finish	table/filter_block.cc	/^std::list<std::string>& FilterBlockBuilder::Finis
 GenerateFilter	table/filter_block.cc	/^void FilterBlockBuilder::GenerateFilter() {$/;"	f	class:leveldb::FilterBlockBuilder
 KeyMayMatch	table/filter_block.cc	/^bool FilterBlockReader::KeyMayMatch(uint64_t block_offset, const Slice &key)$/;"	f	class:leveldb::FilterBlockReader
 KeyMayMatch_Thread	table/filter_block.cc	/^void *FilterBlockReader::KeyMayMatch_Thread(void* arg)$/;"	f	class:leveldb::FilterBlockReader
-RemoveFilters	table/filter_block.cc	/^void FilterBlockReader::RemoveFilters(int n, int regionId)$/;"	f	class:leveldb::FilterBlockReader
+RemoveFilters	table/filter_block.cc	/^size_t FilterBlockReader::RemoveFilters(int n, int regionId)$/;"	f	class:leveldb::FilterBlockReader
 StartBlock	table/filter_block.cc	/^void FilterBlockBuilder::StartBlock(uint64_t block_offset) {$/;"	f	class:leveldb::FilterBlockBuilder
 filter_datas	table/filter_block.cc	/^std::vector<const char*> *FilterBlockReader::filter_datas = NULL;$/;"	m	class:leveldb::FilterBlockReader	file:
 filter_key	table/filter_block.cc	/^Slice FilterBlockReader::filter_key;$/;"	m	class:leveldb::FilterBlockReader	file:
@@ -2208,7 +2225,7 @@ getCurrFpr	table/filter_block.cc	/^double FilterBlockReader::getCurrFpr() {$/;"	
 getOffsets	table/filter_block.cc	/^std::string* FilterBlockBuilder::getOffsets() {$/;"	f	class:leveldb::FilterBlockBuilder
 handle_error_en	table/filter_block.cc	14;"	d	file:
 kFilterBase	table/filter_block.cc	/^static const size_t kFilterBase = 1 << kFilterBaseLg;$/;"	m	namespace:leveldb	file:
-kFilterBaseLg	table/filter_block.cc	/^static const size_t kFilterBaseLg = 11;  \/\/try every 64KB of data$/;"	m	namespace:leveldb	file:
+kFilterBaseLg	table/filter_block.cc	/^static const size_t kFilterBaseLg = 16;  \/\/try every 64KB of data$/;"	m	namespace:leveldb	file:
 leveldb	table/filter_block.cc	/^namespace leveldb {$/;"	n	file:
 matches	table/filter_block.cc	/^bool FilterBlockReader::matches[8];$/;"	m	class:leveldb::FilterBlockReader	file:
 pids_	table/filter_block.cc	/^pthread_t FilterBlockReader::pids_[8];$/;"	m	class:leveldb::FilterBlockReader	file:
@@ -2361,9 +2378,9 @@ InternalGet	table/table.cc	/^    Status Table::InternalGet(const ReadOptions &op
 LRU_Fre_Count	table/table.cc	/^    uint64_t Table::LRU_Fre_Count = 0;$/;"	m	class:leveldb::Table	file:
 NewIterator	table/table.cc	/^    Iterator *Table::NewIterator(const ReadOptions &options) const$/;"	f	class:leveldb::Table
 Open	table/table.cc	/^    Status Table::Open(const Options &options,$/;"	f	class:leveldb::Table
-ReadFilter	table/table.cc	/^    void Table::ReadFilter(const Slice &filter_handle_value, int regionId)$/;"	f	class:leveldb::Table
-ReadFilters	table/table.cc	/^    void Table::ReadFilters(std::vector< Slice > &filter_handle_values, int n)$/;"	f	class:leveldb::Table
-ReadMeta	table/table.cc	/^    void Table::ReadMeta(const Footer &footer, int add_filter_num)$/;"	f	class:leveldb::Table
+ReadFilter	table/table.cc	/^    size_t Table::ReadFilter(const Slice &filter_handle_value, int regionId)$/;"	f	class:leveldb::Table
+ReadFilters	table/table.cc	/^    void Table::ReadFilters(std::vector< Slice > &filter_handle_values, size_t * &charge, int n, TableMetaData *tableMetaData)$/;"	f	class:leveldb::Table
+ReadMeta	table/table.cc	/^    void Table::ReadMeta(const Footer &footer, size_t * &charge, int add_filter_num, TableMetaData *tableMetaData)$/;"	f	class:leveldb::Table
 ReleaseBlock	table/table.cc	/^    static void ReleaseBlock(void *arg, void *h)$/;"	f	namespace:leveldb
 RemoveFilters	table/table.cc	/^    size_t Table::RemoveFilters(int n, int regionId)$/;"	f	class:leveldb::Table
 Rep	table/table.cc	/^    struct Table::Rep$/;"	s	class:leveldb::Table	file:
@@ -2374,7 +2391,9 @@ filter	table/table.cc	/^        FilterBlockReader *filter;$/;"	m	struct:leveldb:
 filter_datas	table/table.cc	/^        std::vector<std::vector<Slice>> filter_datas; \/\/ be careful about vector memory overhead$/;"	m	struct:leveldb::Table::Rep	file:
 filter_handles	table/table.cc	/^        std::vector<Slice> filter_handles;    \/\/use string instead of slice$/;"	m	struct:leveldb::Table::Rep	file:
 getCurrFilterNum	table/table.cc	/^    int Table::getCurrFilterNum(int regionId)$/;"	f	class:leveldb::Table
-getCurrFiltersSize	table/table.cc	/^    size_t Table::getCurrFiltersSize()$/;"	f	class:leveldb::Table
+getCurrFiltersSize	table/table.cc	/^    size_t Table::getCurrFiltersSize(int regionId)$/;"	f	class:leveldb::Table
+getRegionKeyRanges	table/table.cc	/^    void Table::getRegionKeyRanges(std::vector<Slice> &region_keys) {$/;"	f	class:leveldb::Table
+getRegionKeyRangesByStr	table/table.cc	/^    void Table::getRegionKeyRangesByStr(const Options *options, Slice &index_content, std::vector<Slice> &region_keys) {$/;"	f	class:leveldb::Table
 getRegionNum	table/table.cc	/^    int Table::getRegionNum()$/;"	f	class:leveldb::Table
 index_block	table/table.cc	/^        Block *index_block;$/;"	m	struct:leveldb::Table::Rep	file:
 leveldb	table/table.cc	/^namespace leveldb$/;"	n	file:
@@ -2757,6 +2776,7 @@ BytewiseComparatorImpl	util/comparator.cc	/^  BytewiseComparatorImpl() { }$/;"	f
 BytewiseComparatorImpl	util/comparator.cc	/^class BytewiseComparatorImpl : public Comparator {$/;"	c	namespace:leveldb::__anon28	file:
 Compare	util/comparator.cc	/^  virtual int Compare(const Slice& a, const Slice& b) const {$/;"	f	class:leveldb::__anon28::BytewiseComparatorImpl
 FindShortSuccessor	util/comparator.cc	/^  virtual void FindShortSuccessor(std::string* key) const {$/;"	f	class:leveldb::__anon28::BytewiseComparatorImpl
+FindShortSuccessorBeginWith	util/comparator.cc	/^  virtual void FindShortSuccessorBeginWith(std::string* key, size_t pos) const {$/;"	f	class:leveldb::__anon28::BytewiseComparatorImpl
 FindShortestSeparator	util/comparator.cc	/^  virtual void FindShortestSeparator($/;"	f	class:leveldb::__anon28::BytewiseComparatorImpl
 InitModule	util/comparator.cc	/^static void InitModule() {$/;"	f	namespace:leveldb
 Name	util/comparator.cc	/^  virtual const char* Name() const {$/;"	f	class:leveldb::__anon28::BytewiseComparatorImpl
@@ -3063,6 +3083,7 @@ n_	util/multi_bloom.cc	/^	static int n_;$/;"	m	class:leveldb::__anon35::MultiFil
 pids_	util/multi_bloom.cc	/^	static pthread_t pids_[16];$/;"	m	class:leveldb::__anon35::MultiFilter	file:
 pids_	util/multi_bloom.cc	/^pthread_t MultiFilter::pids_[16];$/;"	m	class:leveldb::__anon35::MultiFilter	file:
 ~MultiFilter	util/multi_bloom.cc	/^	virtual ~MultiFilter(){$/;"	f	class:leveldb::__anon35::MultiFilter
+AllocFilterNums	util/multi_queue.cc	/^        int MultiQueue::AllocFilterNums(int freq) {$/;"	f	class:leveldb::multiqueue_ns::MultiQueue
 BGShrinkUsage	util/multi_queue.cc	/^        void MultiQueue::BGShrinkUsage(void *mq)$/;"	f	class:leveldb::multiqueue_ns::MultiQueue
 BackgroudShrinkUsage	util/multi_queue.cc	/^        void MultiQueue::BackgroudShrinkUsage()$/;"	f	class:leveldb::multiqueue_ns::MultiQueue
 Erase	util/multi_queue.cc	/^        void MultiQueue::Erase(const Slice &key)$/;"	f	class:leveldb::multiqueue_ns::MultiQueue
@@ -3111,7 +3132,8 @@ addCurrentTime	util/multi_queue.cc	/^            void inline addCurrentTime()$/;
 base_fre_counts	util/multi_queue.cc	/^            static uint64_t base_fre_counts[10];$/;"	m	class:leveldb::multiqueue_ns::MultiQueue	file:
 base_fre_counts	util/multi_queue.cc	/^    uint64_t multiqueue_ns::MultiQueue::base_fre_counts[10] = {4, 10, 28, 82, 243, 730};$/;"	m	class:leveldb::multiqueue_ns::MultiQueue	file:
 base_num_	util/multi_queue.cc	/^            int base_num_ ;$/;"	m	class:leveldb::multiqueue_ns::MultiQueue	file:
-bits_per_key_per_filter_	util/multi_queue.cc	/^            std::vector<size_t> bits_per_key_per_filter_;  \/\/begin from 0 bits$/;"	m	class:leveldb::multiqueue_ns::MultiQueue	file:
+bits_per_key_per_filter_	util/multi_queue.cc	/^            std::vector<size_t> bits_per_key_per_filter_, bits_per_key_per_filter_sum;  \/\/begin from 0 bits$/;"	m	class:leveldb::multiqueue_ns::MultiQueue	file:
+bits_per_key_per_filter_sum	util/multi_queue.cc	/^            std::vector<size_t> bits_per_key_per_filter_, bits_per_key_per_filter_sum;  \/\/begin from 0 bits$/;"	m	class:leveldb::multiqueue_ns::MultiQueue	file:
 capacity_	util/multi_queue.cc	/^            size_t capacity_;$/;"	m	class:leveldb::multiqueue_ns::MultiQueue	file:
 change_ratio	util/multi_queue.cc	/^            double change_ratio;$/;"	m	class:leveldb::multiqueue_ns::MultiQueue	file:
 charge	util/multi_queue.cc	/^            size_t charge;      \/\/ TODO(opt): Only allow uint32_t?$/;"	m	struct:leveldb::multiqueue_ns::LRUQueueHandle	file:
@@ -3153,6 +3175,7 @@ shrinking_	util/multi_queue.cc	/^            std::atomic<bool> shrinking_;  \/\/
 shutting_down_	util/multi_queue.cc	/^            std::atomic<bool> shutting_down_;$/;"	m	class:leveldb::multiqueue_ns::MultiQueue	file:
 slow_ratio	util/multi_queue.cc	/^            double slow_ratio;$/;"	m	class:leveldb::multiqueue_ns::MultiQueue	file:
 slow_shrink_ratio	util/multi_queue.cc	/^            double slow_shrink_ratio;$/;"	m	class:leveldb::multiqueue_ns::MultiQueue	file:
+sum_freqs_	util/multi_queue.cc	/^            std::vector<size_t> sum_freqs_;$/;"	m	class:leveldb::multiqueue_ns::MultiQueue	file:
 sum_lru_len	util/multi_queue.cc	/^            atomic<size_t> sum_lru_len;$/;"	m	class:leveldb::multiqueue_ns::MultiQueue	file:
 table_	util/multi_queue.cc	/^            HandleTable table_;$/;"	m	class:leveldb::multiqueue_ns::MultiQueue	file:
 type	util/multi_queue.cc	/^            bool type;      \/\/"true” represents  tableandfile$/;"	m	struct:leveldb::multiqueue_ns::LRUQueueHandle	file:

@@ -31,6 +31,7 @@ typedef struct OptionExp{
     bool no_cache_io_;
     int lrus_num_;
     int base_num;
+    int key_value_size;
     uint64_t life_time;
     double filter_capacity_ratio;
     bool findAllTable;
@@ -48,8 +49,10 @@ typedef struct OptionExp{
     double l0_base_ratio;
     bool force_disable_compaction;
     uint64_t freq_divide_size;
-    OptionExp():no_cache_io_(false),seek_compaction_(false),stats_(nullptr),filter_capacity_ratio(1.0),base_num(64),life_time(50),findAllTable(false),setFreCountInCompaction(false), freq_divide_size(8192), //2097152(2MB), 134217728(128MB)
-    force_shrink_ratio(1.1),slow_shrink_ratio(0.95),change_ratio(0.001),log_base(3),init_filter_nums(2),slow_ratio(0.5),size_ratio(2),add_filter(true),fp_stat_num(10000),l0_base_ratio(1.0),force_disable_compaction(false){};
+    uint64_t region_divide_size;
+    size_t kFilterBaseLg;
+    OptionExp():no_cache_io_(false),seek_compaction_(false),key_value_size(1000),stats_(nullptr),filter_capacity_ratio(1.0),base_num(64),life_time(50),findAllTable(false),setFreCountInCompaction(false), freq_divide_size(8192), region_divide_size(8192), //2097152(2MB), 134217728(128MB)
+    force_shrink_ratio(1.1),slow_shrink_ratio(0.95),change_ratio(0.001),log_base(3),init_filter_nums(2),slow_ratio(0.5),size_ratio(2),add_filter(true),fp_stat_num(10000),l0_base_ratio(1.0),force_disable_compaction(false),kFilterBaseLg(16){};
 }OptionExp;
 // Options to control the behavior of a database (passed to DB::Open)
 struct Options {
@@ -188,6 +191,7 @@ struct ReadOptions {
   // Default: false
   bool verify_checksums;
   bool isLevel0;  //new file isLevel0?
+  mutable int file_level;
   // Should the data read for this iteration be cached in memory?
   // Callers may wish to set this field to false for bulk scans.
   // Default: true
@@ -206,7 +210,7 @@ struct ReadOptions {
   const Snapshot* snapshot;
   
   ReadOptions()
-      : verify_checksums(false),isLevel0(false),
+      : verify_checksums(false),isLevel0(false),file_level(1),
         fill_cache(true),
         snapshot(NULL),read_file_nums(0),total_fpr(0) {
   }

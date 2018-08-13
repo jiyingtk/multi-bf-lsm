@@ -87,7 +87,8 @@ void InternalKeyComparator::FindShortestSeparator(
 void InternalKeyComparator::FindShortSuccessor(std::string* key) const {
   Slice user_key = ExtractUserKey(*key);
   std::string tmp(user_key.data(), user_key.size());
-  user_comparator_->FindShortSuccessor(&tmp);
+  // user_comparator_->FindShortSuccessor(&tmp);
+  user_comparator_->FindShortSuccessorBeginWith(&tmp, 8);
   if (tmp.size() < user_key.size() &&
       user_comparator_->Compare(user_key, tmp) < 0) {
     // User key has become shorter physically, but larger logically.

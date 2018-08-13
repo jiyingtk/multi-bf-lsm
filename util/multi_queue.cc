@@ -39,6 +39,8 @@ namespace leveldb
             bool type;      //"true” represents  tableandfile
             uint32_t value_id;
             uint32_t value_refs;
+            bool is_split;
+            LRUQueueHandle *table_handle;
 
             char key_data[1];   // Beginning of key
 
@@ -232,6 +234,7 @@ namespace leveldb
             //Dummy heads of LRU list.
             LRUQueueHandle *lrus_;
             std::vector<size_t> lru_lens_;
+            std::vector<size_t> sum_freqs_;
             atomic<size_t> sum_lru_len;
             HandleTable table_;
             size_t capacity_;
@@ -247,7 +250,7 @@ namespace leveldb
             double slow_ratio;
             double expection_;
             std::vector<double> fps;
-            std::vector<size_t> bits_per_key_per_filter_;  //begin from 0 bits
+            std::vector<size_t> bits_per_key_per_filter_, bits_per_key_per_filter_sum;  //begin from 0 bits
             const double log_base;
         public:
             MultiQueue(size_t capacity, int lrus_num = 1, int base_num = 64, uint64_t life_time = 50, double fr = 1.1, double sr = .95, double cr = 0.001, int lg_b = 3, double s_r = 0.5);
@@ -261,6 +264,8 @@ namespace leveldb
             Cache::Handle *Lookup(const Slice &key, bool Get);
             uint64_t LookupFreCount(const Slice &key);
             void SetFreCount(const Slice &key, uint64_t freCount);
+            int AllocFilterNums(int freq);
+
             void Release(Cache::Handle *handle);
             virtual Handle *Insert(const Slice &key, void *value, size_t charge,
                                    void (*deleter)(const Slice &key, void *value)) ;
@@ -299,6 +304,7 @@ namespace leveldb
             void QuickShrinking();
             void ForceShrinking();
             void RecomputeExp(LRUQueueHandle *e);
+            void RecomputeExpTable(LRUQueueHandle *e);
             double FalsePositive(LRUQueueHandle *e);
             static uint64_t base_fre_counts[10];
             static Env *mq_env;
@@ -314,12 +320,14 @@ namespace leveldb
             in_use_.queue_id = lrus_num; //lrus_num = filter_num + 1
             lrus_ = new LRUQueueHandle[lrus_num];
             lru_lens_.resize(lrus_num);
+            sum_freqs_.resize(lrus_num);
             for(int i = 0 ; i  < lrus_num ; ++i)
             {
                 lrus_[i].next = &lrus_[i];
                 lrus_[i].prev = &lrus_[i];
                 lrus_[i].queue_id = i;
                 lru_lens_[i] = 0;
+                sum_freqs_[i] = 0;
                 //base_fre_counts[i] = base_sum + 1 ;
                 //base_sum = base_sum*lg_b;
             }
@@ -329,12 +337,14 @@ namespace leveldb
             int sum_bits = 0;
             fps.push_back(1.0); // 0 filters
             bits_per_key_per_filter_.push_back(0);
+            bits_per_key_per_filter_sum.push_back(0);
             for(int i = 1 ; i  < lrus_num ; ++i)
             {
                 //cout<<"Base "<< i <<" fre count: "<<base_fre_counts[i]<<endl;
                 sum_bits += FilterPolicy::bits_per_key_per_filter_[i - 1];
                 fps.push_back( pow(0.6185, sum_bits) );
                 bits_per_key_per_filter_.push_back(FilterPolicy::bits_per_key_per_filter_[i - 1]);
+                bits_per_key_per_filter_sum.push_back(sum_bits);
             }
 
         }
@@ -412,24 +422,32 @@ namespace leveldb
         inline double MultiQueue::FalsePositive(LRUQueueHandle *e)
         {
             leveldb::TableAndFile *tf = reinterpret_cast<leveldb::TableAndFile *>(e->value);
-            return fps[tf->table->getCurrFilterNum()];
+            return fps[tf->table->getCurrFilterNum(e->value_id - 1)];
         }
 
-        void MultiQueue::RecomputeExp(LRUQueueHandle *e)
+        void MultiQueue::RecomputeExpTable(LRUQueueHandle *e)
         {
             if(multi_queue_init || (e->queue_id + 1) == lrus_num_)
             {
                 ++e->fre_count;
+                sum_freqs_[e->queue_id]++;
                 expection_ += FalsePositive(e);
             }
             else
             {
                 uint64_t start_micros = Env::Default()->NowMicros();
+
                 double now_expection  = expection_ + FalsePositive(e) ;
                 ++e->fre_count;
                 double min_expection = now_expection, change_expection;
                 const double new_expection = expection_ - (e->fre_count - 1) * FalsePositive(e) + e->fre_count * fps[e->queue_id + 1]; //TODO: OPTIMIZE
-                int need_bits = usage_ - capacity_ + bits_per_key_per_filter_[e->queue_id + 1];
+                int need_bits = usage_ - capacity_;// + bits_per_key_per_filter_[e->queue_id + 1];
+                if (e->queue_id == 0) {
+                    need_bits += lrus_[1].next->charge;
+                }
+                else {
+                    need_bits += e->charge / bits_per_key_per_filter_sum[e->queue_id] * bits_per_key_per_filter_sum[e->queue_id + 1];
+                }
                 int remove_bits, min_i = -1 ;
                 if(need_bits > 0)
                 {
@@ -442,7 +460,8 @@ namespace leveldb
                         {
                             if(old->expire_time < current_time_ )  // expired
                             {
-                                remove_bits += bits_per_key_per_filter_[i];
+                                // remove_bits += bits_per_key_per_filter_[i];
+                                remove_bits += old->charge / bits_per_key_per_filter_sum[old->queue_id] * bits_per_key_per_filter_[i];
                                 change_expection += (old->fre_count * fps[i - 1] - old->fre_count * FalsePositive(old));
                             }
                             else
@@ -465,13 +484,112 @@ namespace leveldb
                         {
                             LRUQueueHandle *old = lrus_[min_i].next;
                             leveldb::TableAndFile *tf = reinterpret_cast<leveldb::TableAndFile *>(old->value);
-                            remove_bits += bits_per_key_per_filter_[min_i];
+                            // remove_bits += bits_per_key_per_filter_[min_i];
+                            remove_bits += old->charge / bits_per_key_per_filter_sum[old->queue_id] * bits_per_key_per_filter_[min_i];
                             size_t delta_charge = tf->table->RemoveFilters(1, old->value_id - 1);
                             usage_ -= delta_charge;
                             MeasureTime(Statistics::GetStatistics().get(), Tickers::REMOVE_EXPIRED_FILTER_TIME_0 + min_i, Env::Default()->NowMicros() - start_micros);
                             --lru_lens_[min_i];
+                            sum_freqs_[min_i] -= old->fre_count;
+
                             LRU_Remove(old);
                             ++lru_lens_[min_i - 1];
+                            sum_freqs_[min_i - 1] += old->fre_count;
+                            LRU_Append(&lrus_[min_i - 1], old);
+                        }
+                        ++e->queue_id;
+                        expection_ = min_expection;
+                    }
+                    else
+                    {
+                        expection_ = now_expection;
+                    }
+                }
+                else
+                {
+                    if(now_expection - new_expection > now_expection * change_ratio)
+                    {
+                        //if(now_expection > new_expection){
+                        ++e->queue_id;
+                        expection_ = new_expection;
+                    }
+                    else
+                    {
+                        expection_ = now_expection;
+                    }
+                }
+            }
+        }
+
+        void MultiQueue::RecomputeExp(LRUQueueHandle *e)
+        {
+            if(multi_queue_init || (e->queue_id + 1) == lrus_num_)
+            {
+                ++e->fre_count;
+                sum_freqs_[e->queue_id]++;
+                expection_ += FalsePositive(e);
+            }
+            else
+            {
+                uint64_t start_micros = Env::Default()->NowMicros();
+                double now_expection  = expection_ + FalsePositive(e) ;
+                ++e->fre_count;
+                double min_expection = now_expection, change_expection;
+                const double new_expection = expection_ - (e->fre_count - 1) * FalsePositive(e) + e->fre_count * fps[e->queue_id + 1]; //TODO: OPTIMIZE
+                int need_bits = usage_ - capacity_;// + bits_per_key_per_filter_[e->queue_id + 1];
+                if (e->queue_id == 0) {
+                    need_bits += lrus_[1].next->charge;
+                }
+                else {
+                    need_bits += e->charge / bits_per_key_per_filter_sum[e->queue_id] * bits_per_key_per_filter_sum[e->queue_id + 1];
+                }
+                int remove_bits, min_i = -1 ;
+                if(need_bits > 0)
+                {
+                    for(int i = 1 ; i < lrus_num_ ; i++)
+                    {
+                        remove_bits = 0;
+                        change_expection =  new_expection;
+                        LRUQueueHandle *old = lrus_[i].next;
+                        while(old != &lrus_[i] && remove_bits < need_bits)
+                        {
+                            if(old->expire_time < current_time_ )  // expired
+                            {
+                                // remove_bits += bits_per_key_per_filter_[i];
+                                remove_bits += old->charge / bits_per_key_per_filter_sum[old->queue_id] * bits_per_key_per_filter_[i];
+                                change_expection += (old->fre_count * fps[i - 1] - old->fre_count * FalsePositive(old));
+                            }
+                            else
+                            {
+                                break;
+                            }
+                            old = old->next;
+                        }
+                        if(remove_bits >= need_bits && change_expection < min_expection)
+                        {
+                            min_expection = change_expection;
+                            min_i = i;
+                        }
+                    }
+                    if(min_i != -1 && now_expection - min_expection > now_expection * change_ratio)
+                    {
+                        assert(now_expection > min_expection);
+                        remove_bits = 0;
+                        while(lrus_[min_i].next != &lrus_[min_i] && remove_bits < need_bits)
+                        {
+                            LRUQueueHandle *old = lrus_[min_i].next;
+                            leveldb::TableAndFile *tf = reinterpret_cast<leveldb::TableAndFile *>(old->value);
+                            // remove_bits += bits_per_key_per_filter_[min_i];
+                            remove_bits += old->charge / bits_per_key_per_filter_sum[old->queue_id] * bits_per_key_per_filter_[min_i];
+                            size_t delta_charge = tf->table->RemoveFilters(1, old->value_id - 1);
+                            usage_ -= delta_charge;
+                            MeasureTime(Statistics::GetStatistics().get(), Tickers::REMOVE_EXPIRED_FILTER_TIME_0 + min_i, Env::Default()->NowMicros() - start_micros);
+                            --lru_lens_[min_i];
+                            sum_freqs_[min_i] -= old->fre_count;
+
+                            LRU_Remove(old);
+                            ++lru_lens_[min_i - 1];
+                            sum_freqs_[min_i - 1] += old->fre_count;
                             LRU_Append(&lrus_[min_i - 1], old);
                         }
                         ++e->queue_id;
@@ -548,7 +666,7 @@ deallocate:
             {
                 //int qn = Queue_Num(e->fre_count);
                 leveldb::TableAndFile *tf = reinterpret_cast<leveldb::TableAndFile *>(e->value);
-                if(tf->table->getCurrFilterNum() < e->queue_id && e->type)   //only add;
+                if(e->value_id > 0 && tf->table->getCurrFilterNum(e->value_id - 1) < e->queue_id && e->type)   //only add;
                 {
                     ++e->refs;
                     mutex_.unlock();
@@ -560,6 +678,13 @@ deallocate:
                         goto deallocate;
                     }
                     e->charge += delta_charge;
+                    usage_ += delta_charge;
+                    MayBeShrinkUsage();
+                }
+                else if (e->value_id > 0 && tf->table->getCurrFilterNum(e->value_id - 1) > e->queue_id && e->type) {
+                    e->queue_id = tf->table->getCurrFilterNum(e->value_id - 1);
+                    size_t delta_charge = tf->table->getCurrFiltersSize(e->value_id - 1);
+                    e->charge = delta_charge;
                     usage_ += delta_charge;
                     MayBeShrinkUsage();
                 }
@@ -658,6 +783,9 @@ deallocate:
         void MultiQueue::MayBeShrinkUsage()
         {
             //mutex_.assertheld
+            // if(usage_ >= 2 * capacity_ / 3)
+            //     multi_queue_init = false;
+
             if(usage_ >= capacity_)
             {
                 multi_queue_init = false;
@@ -701,8 +829,10 @@ deallocate:
                             old->fre_count = Num_Queue(k - 1, old->fre_count); // also decrease fre count
                             expection_ += old->fre_count * fps[k - 1];
                             --lru_lens_[k];
+                            sum_freqs_[k] -= old->fre_count;
                             LRU_Remove(old);
                             ++lru_lens_[k - 1];
+                            sum_freqs_[k - 1] += old->fre_count;
                             LRU_Append(&lrus_[k - 1], old);
                         }
                         else
@@ -746,9 +876,11 @@ deallocate:
                         old->fre_count = Num_Queue(k - 1, old->fre_count); // also decrease fre count
                         expection_ += old->fre_count * fps[k - 1];
                         --lru_lens_[k];
+                        sum_freqs_[k] -= old->fre_count;
                         LRU_Remove(old);
                         LRU_Append(&lrus_[k - 1], old);
                         ++lru_lens_[k - 1];
+                        sum_freqs_[k - 1] += old->fre_count;
                         MeasureTime(Statistics::GetStatistics().get(), Tickers::REMOVE_HEAD_FILTER_TIME_0 + k, Env::Default()->NowMicros() - start_micros);
                     }
                 }
@@ -768,6 +900,23 @@ deallocate:
                 ++i;
             }
 
+        }
+
+        int MultiQueue::AllocFilterNums(int freq) {
+            int i = 1;
+            int last_ = 1;
+            while(i < lrus_num_)
+            {
+                if(lrus_[i].next != &lrus_[i])
+                {
+                    if (freq < sum_freqs_[i] / lru_lens_[i])
+                        return i;
+                    last_ = i;
+                }
+                ++i;
+            }
+            // return last_ + 1 < lrus_num_ ? last_ + 1 : last_;
+            return last_;
         }
 
         inline bool MultiQueue::IsCacheFull() const
@@ -901,9 +1050,9 @@ deallocate:
             e->type = type;
             e->fre_count = 0;
             leveldb::TableAndFile *tf = reinterpret_cast<leveldb::TableAndFile *>(e->value);
-            e->queue_id = tf->table->getCurrFilterNum() ;   //
             uint32_t *regionId_ = (uint32_t *) (key.data() + sizeof(uint64_t));
             e->value_id = *regionId_;
+            e->queue_id = tf->table->getCurrFilterNum(e->value_id - 1) ;   //
 
             e->expire_time = current_time_ + life_time_;
             memcpy(e->key_data, key.data(), key.size());
@@ -912,7 +1061,9 @@ deallocate:
             {
                 e->queue_id = 0;
                 e->refs++;
+                e->value_refs = 0;
                 e->in_cache = true;
+                e->table_handle = e;
                 // mutex_.lock();
                 LRU_Append(&in_use_, e);
                 auto redun_handle = table_.Insert(e);
@@ -925,6 +1076,17 @@ deallocate:
             }
             else if (capacity_ > 0 && e->value_id > 0)
             {
+                char buf[sizeof(uint64_t) + sizeof(uint32_t)];
+                memcpy(buf, e->key_data, sizeof(uint64_t));
+                regionId_ = (uint32_t *) (buf + sizeof(uint64_t));
+                *regionId_ = 0;
+                Slice key_(buf, sizeof(buf));
+                const uint32_t hash_ = HashSlice(key_);
+                LRUQueueHandle *table_handle = table_.Lookup(key_, hash_);
+                assert(table_handle);
+                table_handle->value_refs++;
+                e->table_handle = table_handle;
+
                 // e->refs++;  // for the cache's reference.
                 // ++e->fre_count; //for the first access
                 // expection_ += fps[e->queue_id];     //insert a new element ,expected number should be updated
@@ -959,6 +1121,7 @@ deallocate:
                 if(e->refs == 1)     //means remove from LRU
                 {
                     --lru_lens_[e->queue_id];
+                    sum_freqs_[e->queue_id] -= e->fre_count;
                     --sum_lru_len;
                 }
                 e->in_cache = false;

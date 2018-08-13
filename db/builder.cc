@@ -68,6 +68,7 @@ Status BuildTable(const std::string& dbname,
       // Verify that the table is usable
       leveldb::ReadOptions ro;
       ro.isLevel0 = isLevel0;
+      ro.file_level = 0;
       Iterator* it = table_cache->NewIterator(ro,
                                               meta->number,
                                               meta->file_size);

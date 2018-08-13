@@ -17,6 +17,7 @@ struct Options;
 class RandomAccessFile;
 struct ReadOptions;
 class TableCache;
+struct TableMetaData;
 
 // A Table is a sorted map from strings to strings.  Tables are
 // immutable and persistent.  A Table may be safely accessed from
@@ -38,7 +39,7 @@ class Table {
   static Status Open(const Options& options,
                      RandomAccessFile* file,
                      uint64_t file_size,
-                     Table** table, size_t * &charge, bool isLevel0 = false);
+                     Table** table, size_t * &charge, int file_level = 1, TableMetaData *tableMetaData=NULL);
 
   ~Table();
 
@@ -57,9 +58,12 @@ class Table {
    size_t AddFilters(int n, int regionId);
    int64_t AdjustFilters(int n, int regionId = 0);
    size_t RemoveFilters(int n, int regionId = 0);
-   size_t getCurrFiltersSize();
+   size_t getCurrFiltersSize(int regionId = 0);
    int getCurrFilterNum(int regionId = 0);
    int getRegionNum();
+    void getRegionKeyRanges(std::vector<Slice> &region_keys);
+   static void getRegionKeyRangesByStr(const Options *options, Slice &index_content, std::vector<Slice> &region_keys);
+
    static uint64_t LRU_Fre_Count;
   int freq_count;
   int *freqs;
@@ -81,9 +85,9 @@ class Table {
       void (*handle_result)(void* arg, const Slice& k, const Slice& v), char* region_name);
 
 
-  void ReadMeta(const Footer& footer, size_t * &charge, int add_filter_num=1); //int add_filter
+  void ReadMeta(const Footer& footer, size_t * &charge, int add_filter_num=1, TableMetaData *tableMetaData=NULL); //int add_filter
   size_t ReadFilter(const Slice& filter_handle_value, int regionId);
-  void ReadFilters(std::vector<Slice> &filter_handle_values, size_t * &charge, int n);
+  void ReadFilters(std::vector<Slice> &filter_handle_values, size_t * &charge, int n, TableMetaData *tableMetaData=NULL);
   // No copying allowed
   Table(const Table&);
   void operator=(const Table&);

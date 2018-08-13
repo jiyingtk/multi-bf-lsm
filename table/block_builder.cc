@@ -61,6 +61,9 @@ size_t BlockBuilder::CurrentSizeEstimate() const {
 }
 
 Slice BlockBuilder::Finish() {
+  if (finished_)
+    return Slice(buffer_);
+  
   // Append restart array
   for (size_t i = 0; i < restarts_.size(); i++) {
     PutFixed32(&buffer_, restarts_[i]);

@@ -205,12 +205,19 @@ Status TableBuilder::Finish() {
   BlockHandle temp_filter_block_handle, metaindex_block_handle, index_block_handle;
   std::vector<BlockHandle> filter_block_handles;
  
+  tableMetaData_ = new TableMetaData();
+
   // Write filter block
   if (ok() && r->filter_block != NULL) {
 	std::list<std::string> &results = r->filter_block->Finish();
 	uint64_t start_micros = Env::Default()->NowMicros();
+  int i = 0;
 	for(auto results_iter = results.begin() ; results_iter != results.end() ; results_iter++){
 	     Slice rawSlice(*results_iter);
+       char * newData = new char[rawSlice.size()];
+       memcpy(newData, rawSlice.data(), rawSlice.size());
+       tableMetaData_->filter_data[i++] = Slice(newData, rawSlice.size());
+
 	    WriteRawBlock(rawSlice, kNoCompression,
                   &temp_filter_block_handle);
 	    filter_block_handles.push_back(temp_filter_block_handle);
@@ -218,6 +225,7 @@ Status TableBuilder::Finish() {
 	MeasureTime(Statistics::GetStatistics().get(),Tickers::WRITE_FILTER_TIME,Env::Default()->NowMicros() - start_micros);
 	//WriteRawBlock(r->filter_block->Finish(), kNoCompression,
                  // &filter_block_handle);
+  tableMetaData_->filter_num = i;
   }
 
   // Write metaindex block
@@ -254,6 +262,12 @@ Status TableBuilder::Finish() {
       r->index_block.Add(r->last_key, Slice(handle_encoding));
       r->pending_index_entry = false;
     }
+
+    Slice rawSlice = r->index_block.Finish();
+    char * newData = new char[rawSlice.size()];
+    memcpy(newData, rawSlice.data(), rawSlice.size());
+    tableMetaData_->index_data = Slice(newData, rawSlice.size());
+
     WriteBlock(&r->index_block, &index_block_handle);
   }
 

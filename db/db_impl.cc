@@ -144,7 +144,8 @@ DBImpl::DBImpl(const Options& raw_options, const std::string& dbname)
   has_imm_.Release_Store(NULL);
 
   // Reserve ten files or so for other uses and give the rest to TableCache.
-  const size_t table_cache_size = (size_t)((options_.max_open_files - kNumNonTableCacheFiles)*options_.opEp_.filter_capacity_ratio / 8 * 64 * 10000);
+  // const size_t table_cache_size = (size_t)((options_.max_open_files - kNumNonTableCacheFiles)*options_.opEp_.filter_capacity_ratio / 8 * 64 * 10000);
+  const size_t table_cache_size = (size_t)((options_.max_open_files - kNumNonTableCacheFiles)*options_.opEp_.filter_capacity_ratio / 8 * options_.max_file_size / options_.opEp_.key_value_size);
   table_cache_ = new TableCache(dbname_, &options_, table_cache_size);
 
   versions_ = new VersionSet(dbname_, &options_, table_cache_,
@@ -787,6 +788,12 @@ void DBImpl::BackgroundCompaction() {
     if (!status.ok()) {
       RecordBackgroundError(status);
     }
+
+    if (compact->compaction->level() == 0) {
+      for (int i = 0; i < compact->compaction->num_input_files(0); i++)
+        table_cache_->SaveLevel0Freq(compact->compaction->input(0, i)->number);
+    }
+    
     CleanupCompaction(compact);
     c->ReleaseInputs();
     DeleteObsoleteFiles();
@@ -912,8 +919,10 @@ Status DBImpl::FinishCompactionOutputFile(CompactionState* compact,
   // Check for iterator errors
   Status s = input->status();
   const uint64_t current_entries = compact->builder->NumEntries();
+  TableMetaData *tableMetaData_ = NULL;
   if (s.ok()) {
     s = compact->builder->Finish();
+  tableMetaData_ = compact->builder->tableMetaData_;
   } else {
     compact->builder->Abandon();
   }
@@ -935,14 +944,29 @@ Status DBImpl::FinishCompactionOutputFile(CompactionState* compact,
   delete compact->outfile;
   compact->outfile = NULL;
 
+  std::vector<uint64_t> *input_0_numbers, *input_1_numbers;
+  input_0_numbers = new std::vector<uint64_t>();
+  input_1_numbers = new std::vector<uint64_t>();
+  for (int i = 0; i < compact->compaction->num_input_files(0); i++)
+    input_0_numbers->push_back(compact->compaction->input(0, i)->number);
+  for (int i = 0; i < compact->compaction->num_input_files(1); i++)
+    input_1_numbers->push_back(compact->compaction->input(1, i)->number);
+
   if (s.ok() && current_entries > 0) {
     // Verify that the table is usable
-    Iterator* iter = table_cache_->NewIterator(ReadOptions(),
+    leveldb::ReadOptions ro;
+    ro.file_level = compact->compaction->level() + 1;
+    Iterator* iter = table_cache_->NewIterator(ro,
                                                output_number,
-                                               current_bytes);
+                                               current_bytes, NULL, tableMetaData_, input_0_numbers, input_1_numbers);
+    delete input_0_numbers;
+    delete input_1_numbers;
+
     s = iter->status();
     delete iter;
     if (s.ok()) {
+      if (tableMetaData_ != NULL)
+        delete tableMetaData_;
       Log(options_.info_log,
           "Generated table #%llu@%d: %lld keys, %lld bytes",
           (unsigned long long) output_number,

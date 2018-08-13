@@ -22,6 +22,21 @@ namespace leveldb {
 class BlockBuilder;
 class BlockHandle;
 class WritableFile;
+// struct TableMetaData;
+struct TableMetaData {
+  Slice metaindex_data;
+  Slice index_data;
+  Slice filter_data[16];
+  int filter_num;
+  int region_num;
+  int *load_filter_num;
+
+  ~TableMetaData() {
+    // for (int i = 0; i < filter_num; i++)
+    if (load_filter_num != NULL)
+      delete [] load_filter_num;
+  }
+};
 
 class TableBuilder {
  public:
@@ -74,6 +89,7 @@ class TableBuilder {
   // Finish() call, returns the size of the final generated file.
   uint64_t FileSize() const;
 
+  TableMetaData* tableMetaData_;
  private:
   bool ok() const { return status().ok(); }
   void WriteBlock(BlockBuilder* block, BlockHandle* handle);
@@ -81,6 +97,7 @@ class TableBuilder {
 
   struct Rep;
   Rep* rep_;
+
 
   // No copying allowed
   TableBuilder(const TableBuilder&);

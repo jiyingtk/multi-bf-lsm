@@ -63,6 +63,18 @@ class BytewiseComparatorImpl : public Comparator {
     }
     // *key is a run of 0xffs.  Leave it alone.
   }
+
+  virtual void FindShortSuccessorBeginWith(std::string* key, size_t pos) const {
+    size_t n = key->size();
+    for (size_t i = pos; i < n; i++) {
+      const uint8_t byte = (*key)[i];
+      if (byte != static_cast<uint8_t>(0xff)) {
+        (*key)[i] = byte + 1;
+        key->resize(i+1);
+        return;
+      }
+    }
+  }
 };
 }  // namespace
 

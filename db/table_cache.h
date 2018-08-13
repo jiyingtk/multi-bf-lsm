@@ -40,7 +40,7 @@ class TableCache {
   Iterator* NewIterator(const ReadOptions& options,
                         uint64_t file_number,
                         uint64_t file_size,
-                        Table** tableptr = NULL);
+                        Table** tableptr = NULL, TableMetaData *tableMetaData_ = NULL, std::vector<uint64_t> *input_0_numbers = NULL, std::vector<uint64_t> *input_1_numbers = NULL);
    
  Iterator* NewBufferedIterator(const ReadOptions& options,
                         uint64_t file_number,
@@ -63,6 +63,8 @@ class TableCache {
   uint64_t LookupFreCount(uint64_t file_number);
   void SetFreCount(uint64_t file_number,uint64_t freCount);
   std::string LRU_Status();
+  void SaveLevel0Freq(uint64_t file_number);
+
 
   void *getCacheValue(Cache::Handle* handle) {return cache_->Value(handle);}
   void releaseCacheHandle(Cache::Handle* handle) {cache_->Release(handle);}
@@ -75,7 +77,8 @@ class TableCache {
   friend class VersionSet;
   friend class Version;
   Status FindBufferedTable(uint64_t file_number, uint64_t file_size, Cache::Handle**,TableAndFile *rtf);
-  Status FindTable(uint64_t file_number, uint64_t file_size, Cache::Handle**,bool Get=false,bool isLevel0=false);
+  Status FindTable(uint64_t file_number, uint64_t file_size, Cache::Handle**,bool Get=false,int file_level=false, TableMetaData *tableMetaData=NULL, std::vector<uint64_t> *input_0_numbers = NULL, std::vector<uint64_t> *input_1_numbers = NULL);
+  uint64_t level0_freq;
 };
 
 }  // namespace leveldb

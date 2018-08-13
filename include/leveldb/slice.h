@@ -52,6 +52,12 @@ class Slice {
     return data_[n];
   }
 
+  Slice copy() {
+    char * new_data = new char[size_];
+    memcpy(new_data, data_, size_);
+    return Slice(new_data, size_);
+  }
+
   // Change this slice to refer to an empty array
   void clear() { data_ = ""; size_ = 0; }
 

@@ -81,7 +81,7 @@ namespace leveldb
     Status Table::Open(const Options &options,
                        RandomAccessFile *file,
                        uint64_t size,
-                       Table **table, size_t * &charge, bool isLevel0)
+                       Table **table, size_t * &charge, int file_level, TableMetaData *tableMetaData)
     {
         *table = NULL;
         if (size < Footer::kEncodedLength)
@@ -134,7 +134,26 @@ namespace leveldb
             //   }else{
             // (*table)->ReadMeta(footer,options.opEp_.add_filter?1:0);
             //   }
-            (*table)->ReadMeta(footer, charge, options.opEp_.add_filter ? rep->options.opEp_.init_filter_nums : 0);
+
+            int add_filter_num = options.opEp_.add_filter ? rep->options.opEp_.init_filter_nums : 0;
+            // if (file_level > 3)
+            //     add_filter_num = 0;
+            if (tableMetaData != NULL)
+                add_filter_num = tableMetaData->load_filter_num[0];
+            if (file_level == 0)
+                add_filter_num = 4;
+            (*table)->ReadMeta(footer, charge, add_filter_num, tableMetaData);
+
+
+            Iterator *iiter = rep->index_block->NewIterator(rep->options.comparator);
+            iiter->SeekToLast();
+            Slice handle_value = iiter->value();
+            BlockHandle handle;
+            handle.DecodeFrom(&handle_value);
+            uint64_t max_offset = (handle.offset() & ~(1 << options.opEp_.kFilterBaseLg - 1));
+            (*table)->freq_count = (max_offset + options.opEp_.kFilterBaseLg + options.opEp_.freq_divide_size - 1) / options.opEp_.freq_divide_size;
+            (*table)->freqs = new int[(*table)->freq_count]();
+            delete iiter;
 
         }
         else
@@ -145,7 +164,7 @@ namespace leveldb
         return s;
     }
 
-    void Table::ReadMeta(const Footer &footer, size_t * &charge, int add_filter_num)
+    void Table::ReadMeta(const Footer &footer, size_t * &charge, int add_filter_num, TableMetaData *tableMetaData)
     {
         if (rep_->options.filter_policy == NULL)   //allow add_filter in init_phase
         {
@@ -179,6 +198,10 @@ namespace leveldb
             const char *contents = offsets.data();
             size_t n = offsets.size();
             rep_->base_lg_ = contents[n - 1];
+            if (rep_->options.opEp_.kFilterBaseLg != rep_->base_lg_) {
+                // std::cerr << "Options kFilterBaseLg " << rep_->options.opEp_.kFilterBaseLg << ", table kFilterBaseLg " << rep_->base_lg_ << std::endl;
+                // exit(1);
+            }
             size_t num_ = (n - 5) / 4;
             for (int i = 0; i <= num_; i++)
             {
@@ -217,7 +240,7 @@ namespace leveldb
         if(add_filter_num > 0)
         {
             //     fprintf(stderr,"level 0 add %d filters\n",add_filter_num);
-            ReadFilters(rep_->filter_handles, charge, add_filter_num);
+            ReadFilters(rep_->filter_handles, charge, add_filter_num, tableMetaData);
         }
         // else if(multi_queue_init)
         // {
@@ -230,7 +253,7 @@ namespace leveldb
         delete iter;
         // delete meta;  //reserve meta index_block
     }
-    void Table::ReadFilters(std::vector< Slice > &filter_handle_values, size_t * &charge, int n)
+    void Table::ReadFilters(std::vector< Slice > &filter_handle_values, size_t * &charge, int n, TableMetaData *tableMetaData)
     {
         Slice v;
         BlockHandle filter_handles[32];
@@ -249,7 +272,18 @@ namespace leveldb
         }
         BlockContents blocks[32];
         uint64_t start_micros = Env::Default()->NowMicros();
-        if (!ReadBlocks(rep_->file, opt, filter_handles, blocks, n).ok())
+        if (tableMetaData != NULL) {
+            int i;
+            for (i = 0; i < n; i++) {
+                blocks[i].data = tableMetaData->filter_data[i];
+                blocks[i].heap_allocated = true;
+                blocks[i].cachable = true;
+            }
+            for (; i < tableMetaData->filter_num; i++) {
+                delete [] tableMetaData->filter_data[i].data();
+            }
+        }
+        else if (!ReadBlocks(rep_->file, opt, filter_handles, blocks, n).ok())
         {
             return;
         }
@@ -259,7 +293,7 @@ namespace leveldb
         {
             if (blocks[i].heap_allocated)
             {
-                size_t regionUnit = rep_->options.opEp_.freq_divide_size;
+                size_t regionUnit = rep_->options.opEp_.region_divide_size;
                 size_t regionOffset = regionUnit / (1 << rep_->base_lg_);
                 for (int j = 0; j < regionNum; j++)
                 {
@@ -291,7 +325,7 @@ namespace leveldb
             }
             if(rep_->filter == NULL)
             {
-                rep_->filter = new FilterBlockReader(rep_->options.filter_policy, regionNum, rep_->options.opEp_.freq_divide_size / (1 << rep_->base_lg_), rep_->base_lg_, &rep_->offsets_);
+                rep_->filter = new FilterBlockReader(rep_->options.filter_policy, regionNum, rep_->options.opEp_.region_divide_size / (1 << rep_->base_lg_), rep_->base_lg_, &rep_->offsets_);
             }
             for (int j = 0; j < regionNum; j++)
             {
@@ -303,7 +337,7 @@ namespace leveldb
     }
     int Table::getCurrFilterNum(int regionId)
     {
-        if(rep_->filter == NULL)
+        if(rep_->filter == NULL || regionId < 0)
         {
             return 0;
         }
@@ -316,8 +350,8 @@ namespace leveldb
         {
             return 0;
         }
-        size_t data_size = rep_->offsets_.size() * (1 << rep_->base_lg_);
-        size_t regionFilters = rep_->options.opEp_.freq_divide_size;
+        size_t data_size = (rep_->offsets_.size() - 1) * (1 << rep_->base_lg_);
+        size_t regionFilters = rep_->options.opEp_.region_divide_size;
         return (data_size + regionFilters - 1) / regionFilters;
     }
 
@@ -343,7 +377,7 @@ namespace leveldb
         uint64_t start_micros = Env::Default()->NowMicros();
 
         int regionNum = getRegionNum();
-        size_t regionUnit = rep_->options.opEp_.freq_divide_size;
+        size_t regionUnit = rep_->options.opEp_.region_divide_size;
         size_t regionOffset = regionUnit / (1 << rep_->base_lg_);
         size_t loc = regionId * regionOffset;
 
@@ -375,12 +409,12 @@ namespace leveldb
 
             filter_mem_space += data_size;
             filter_num++;
-            // curr_filter_num = rep_->filter->getCurrFiltersNum(regionId);
-            // MeasureTime(Statistics::GetStatistics().get(), Tickers::ADD_FILTER_TIME_0 + curr_filter_num + 1, Env::Default()->NowMicros() - start_micros);
+            int curr_filter_num = rep_->filter->getCurrFiltersNum(regionId);
+            MeasureTime(Statistics::GetStatistics().get(), Tickers::ADD_FILTER_TIME_0 + curr_filter_num + 1, Env::Default()->NowMicros() - start_micros);
         }
         if(rep_->filter == NULL)
         {
-            rep_->filter = new FilterBlockReader(rep_->options.filter_policy, regionNum, rep_->options.opEp_.freq_divide_size / (1 << rep_->base_lg_), rep_->base_lg_, &rep_->offsets_);
+            rep_->filter = new FilterBlockReader(rep_->options.filter_policy, regionNum, rep_->options.opEp_.region_divide_size / (1 << rep_->base_lg_), rep_->base_lg_, &rep_->offsets_);
         }
         rep_->filter->AddFilter(contents, regionId);
 
@@ -401,7 +435,7 @@ namespace leveldb
             // // }
             // return delta;
             int regionNum = getRegionNum();
-            rep_->filter = new FilterBlockReader(rep_->options.filter_policy, regionNum, rep_->options.opEp_.freq_divide_size / (1 << rep_->base_lg_), rep_->base_lg_, &rep_->offsets_);
+            rep_->filter = new FilterBlockReader(rep_->options.filter_policy, regionNum, rep_->options.opEp_.region_divide_size / (1 << rep_->base_lg_), rep_->base_lg_, &rep_->offsets_);
 
         }
         int curr_filter_num = rep_->filter->getCurrFiltersNum(regionId);
@@ -485,25 +519,17 @@ namespace leveldb
 
 
     //todo
-    size_t Table::getCurrFiltersSize()
+    size_t Table::getCurrFiltersSize(int regionId)
     {
-        if(rep_->filter == NULL)
+        if(rep_->filter == NULL || regionId < 0)
         {
             return 0;
         }
-        //    int curr_filter_num = rep_->filter->getCurrFiltersNum();
-        //    size_t table_filter_size = 0;
-        //    while(curr_filter_num--){
-        //      BlockHandle filter_handle;
-        //      Slice v = rep_->filter_handles[curr_filter_num];
-        //      if(!filter_handle.DecodeFrom(&v).ok()){
-        // assert(0);
-        // return 0;
-        //      }
-        //      table_filter_size += (filter_handle.size()+kBlockTrailerSize) ;
-        //    }
-        //    return table_filter_size;
-        return 0;
+        size_t totalSize = 0;
+        for (int i = 0; i < rep_->filter->getCurrFiltersNum(regionId); i++) {
+            totalSize += rep_->filter_datas[regionId][i].size();
+        }
+        return totalSize;
     }
 
     Table::~Table()
@@ -615,22 +641,55 @@ namespace leveldb
                    &Table::BlockReader, const_cast<Table *>(this), options);
     }
 
+    void Table::getRegionKeyRangesByStr(const Options *options, Slice &index_content, std::vector<Slice> &region_keys) {
+        BlockContents contents;
+        contents.data = index_content;
+        contents.cachable = true;
+        contents.heap_allocated = true;
+        
+        Block *index_block = new Block(contents);
+
+        Iterator *iiter = index_block->NewIterator(options->comparator);
+        iiter->SeekToLast();
+        Slice handle_value = iiter->value();
+        BlockHandle handle;
+        handle.DecodeFrom(&handle_value);
+        uint64_t max_offset = (handle.offset() & ~(1 << options->opEp_.kFilterBaseLg - 1));
+        int count = (max_offset + options->opEp_.kFilterBaseLg + options->opEp_.freq_divide_size - 1) / options->opEp_.freq_divide_size;
+        for (int i = 0; i < count; i++) {
+            uint64_t cur_offset = i * options->opEp_.freq_divide_size;
+            iiter->SeekByValue(cur_offset);
+            region_keys.push_back(iiter->key().copy());
+        }
+        iiter->SeekToLast();
+        region_keys.push_back(iiter->key().copy());
+        delete iiter;
+    }
+
+    void Table::getRegionKeyRanges(std::vector<Slice> &region_keys) {
+        Iterator *iiter = rep_->index_block->NewIterator(rep_->options.comparator);
+        iiter->SeekToLast();
+        Slice handle_value = iiter->value();
+        BlockHandle handle;
+        handle.DecodeFrom(&handle_value);
+        uint64_t max_offset = (handle.offset() & ~(1 << rep_->options.opEp_.kFilterBaseLg - 1));
+        int count = (max_offset + rep_->options.opEp_.kFilterBaseLg + rep_->options.opEp_.freq_divide_size - 1) / rep_->options.opEp_.freq_divide_size;
+        for (int i = 0; i < count; i++) {
+            uint64_t cur_offset = i * rep_->options.opEp_.freq_divide_size;
+            iiter->SeekByValue(cur_offset);
+            region_keys.push_back(iiter->key().copy());
+        }
+        iiter->SeekToLast();
+        region_keys.push_back(iiter->key().copy());
+        delete iiter;
+    }
+
     Status Table::InternalGet(const ReadOptions &options, const Slice &k,
                               void *arg,
                               void (*saver)(void *, const Slice &, const Slice &), char *region_name)
     {
         Status s;
         Iterator *iiter = rep_->index_block->NewIterator(rep_->options.comparator);
-
-        if (freq_count == 0)
-        {
-            iiter->SeekToLast();
-            Slice handle_value = iiter->value();
-            BlockHandle handle;
-            handle.DecodeFrom(&handle_value);
-            freq_count = (handle.offset() + rep_->options.opEp_.freq_divide_size - 1) / rep_->options.opEp_.freq_divide_size;
-            freqs = new int[freq_count]();
-        }
 
         iiter->Seek(k);
         uint64_t start_micros = Env::Default()->NowMicros();
@@ -645,8 +704,12 @@ namespace leveldb
 
             EncodeFixed64(region_name, options.file_number);
             uint32_t *id_ = (uint32_t *) (region_name + sizeof(uint64_t));
-            *id_ = handle.offset() / rep_->options.opEp_.freq_divide_size + 1;
+            *id_ = handle.offset() / rep_->options.opEp_.region_divide_size + 1;
 
+            if (multi_queue_init && getCurrFilterNum(*id_ - 1) == 0) {
+            // if (getCurrFilterNum(*id_ - 1) == 0) {
+                AddFilters(rep_->options.opEp_.init_filter_nums, *id_ - 1);
+            }
 
 
             if (filter != NULL &&

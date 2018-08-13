@@ -51,6 +51,10 @@ class Comparator {
   // Simple comparator implementations may return with *key unchanged,
   // i.e., an implementation of this method that does nothing is correct.
   virtual void FindShortSuccessor(std::string* key) const = 0;
+
+
+  virtual void FindShortSuccessorBeginWith(std::string* key, size_t pos) const {
+  }
 };
 
 // Return a builtin comparator that uses lexicographic byte-wise
