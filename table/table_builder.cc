@@ -232,10 +232,18 @@ Status TableBuilder::Finish() {
   if (ok()) {
     BlockBuilder meta_index_block(&r->options);
     if (r->filter_block != NULL) {
-  std::string key = "filter.0offsets";
-  std::string *offsets = r->filter_block->getOffsets();
-  meta_index_block.Add(key, *offsets);
-  delete offsets;
+      int i = 0;
+      while (FilterPolicy::bits_per_key_per_filter_[i] != 0) {
+        while (FilterPolicy::bits_per_key_per_filter_[i + 1] != 0 && FilterPolicy::bits_per_key_per_filter_[i] == FilterPolicy::bits_per_key_per_filter_[i + 1])
+          i++;
+
+        std::string key = "filter.0offsets" + std::to_string(i) + "filter.offset";
+        std::string *offsets = r->filter_block->getOffsets(i);
+        meta_index_block.Add(key, *offsets);
+        delete offsets;
+        i++;
+      }
+      
   
       // Add mapping from "filter.Name" to location of filter data
   char id[]={'1',0};

@@ -66,9 +66,14 @@ std::list<std::string>& FilterBlockBuilder::Finish() {
   return results_;
 }
 
-std::string* FilterBlockBuilder::getOffsets() {
+std::string* FilterBlockBuilder::getOffsets(int which) {
   auto results_iter = results_.begin();
-
+  
+  for(int i = 0; results_iter != results_.end() ; results_iter++, i++){
+    if (i == which)
+      break;
+  }
+  
   Slice contents((*results_iter));
   size_t n = contents.size();
   if (n < 5) return new std::string();  // 1 byte for base_lg_ and 4 for start of offset array

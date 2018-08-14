@@ -184,7 +184,7 @@ public:
 	    int cpu_count =  sysconf(_SC_NPROCESSORS_CONF);
 	    int base_cpu_id = 8;
 	    
-	    bits_per_key_per_filter_ = new size_t[16];
+	    bits_per_key_per_filter_ = new size_t[16]();
 	    char name_buf[24];
 	    end_thread = false;
 	    for(i = 0 ; bits_per_key_per_filter[i]!=0 ; i++ ){

@@ -61,6 +61,8 @@ class Table {
    size_t getCurrFiltersSize(int regionId = 0);
    int getCurrFilterNum(int regionId = 0);
    int getRegionNum();
+   void setAccess(int regionId);
+   bool isAccess(int regionId);
     void getRegionKeyRanges(std::vector<Slice> &region_keys);
    static void getRegionKeyRangesByStr(const Options *options, Slice &index_content, std::vector<Slice> &region_keys);
 

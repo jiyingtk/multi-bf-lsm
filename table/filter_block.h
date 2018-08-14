@@ -34,7 +34,7 @@ class FilterBlockBuilder {
   void StartBlock(uint64_t block_offset);
   void AddKey(const Slice& key);
   std::list<std::string> &Finish();
-  std::string* getOffsets();
+  std::string* getOffsets(int which);
  private:
   void GenerateFilter();
 

@@ -63,6 +63,7 @@ namespace leveldb
             }
         }
 
+        std::vector<bool> has_access;
         Options options;
         Status status;
         RandomAccessFile *file;
@@ -77,6 +78,14 @@ namespace leveldb
         std::vector<uint32_t> offsets_;
         size_t base_lg_;
     };
+
+    void Table::setAccess(int regionId) {
+        rep_->has_access[regionId] = true;
+    }
+
+    bool Table::isAccess(int regionId) {
+        return rep_->has_access[regionId];
+    }
 
     Status Table::Open(const Options &options,
                        RandomAccessFile *file,
@@ -144,6 +153,7 @@ namespace leveldb
                 add_filter_num = 4;
             (*table)->ReadMeta(footer, charge, add_filter_num, tableMetaData);
 
+            rep->has_access.resize((*table)->getRegionNum());
 
             Iterator *iiter = rep->index_block->NewIterator(rep->options.comparator);
             iiter->SeekToLast();
@@ -191,8 +201,8 @@ namespace leveldb
 
         std::string key_off = "filter.0offsets";
         iter->Seek(key_off);
-        if (iter->Valid() && iter->key() == Slice(key_off))
-        {
+        if (iter->Valid() && iter->key().starts_with(Slice(key_off)))
+        {//todo
             Slice offsets = iter->value();
             rep_->offsets_.clear();
             const char *contents = offsets.data();
@@ -494,6 +504,11 @@ namespace leveldb
         return delta;
     }
 
+    // int64_t Table::AdjustFilters(int n, int regionId_start, int regionId_end) {
+
+    // }
+
+
     int64_t Table::AdjustFilters(int n, int regionId)
     {
         int64_t delta = 0;
@@ -706,8 +721,8 @@ namespace leveldb
             uint32_t *id_ = (uint32_t *) (region_name + sizeof(uint64_t));
             *id_ = handle.offset() / rep_->options.opEp_.region_divide_size + 1;
 
-            if (multi_queue_init && getCurrFilterNum(*id_ - 1) == 0) {
-            // if (getCurrFilterNum(*id_ - 1) == 0) {
+            // if (multi_queue_init && getCurrFilterNum(*id_ - 1) == 0) {
+            if (!isAccess(*id_ - 1) && getCurrFilterNum(*id_ - 1) == 0) {
                 AddFilters(rep_->options.opEp_.init_filter_nums, *id_ - 1);
             }
 

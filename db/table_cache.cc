@@ -327,8 +327,8 @@ Status TableCache::Get(const ReadOptions& options,
   Cache::Handle* handle = NULL;
   uint64_t start_micros = env_->NowMicros();
   // options_->opEp_.add_filter = file_access_time > cache_->GetLRUFreCount()?true:false;
-  options_->opEp_.add_filter = true;
-  // options_->opEp_.add_filter = false;
+  // options_->opEp_.add_filter = true;
+  options_->opEp_.add_filter = false;
   // options_->opEp_.add_filter = !cache_->IsCacheFull();
   options.file_number = file_number;
   Status s = FindTable(file_number, file_size, &handle,true, options.file_level);

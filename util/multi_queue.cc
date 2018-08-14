@@ -40,7 +40,7 @@ namespace leveldb
             uint32_t value_id;
             uint32_t value_refs;
             bool is_split;
-            LRUQueueHandle *table_handle;
+            LRUQueueHandle *table_handle, *prev_region, *next_region;
 
             char key_data[1];   // Beginning of key
 
@@ -377,6 +377,7 @@ namespace leveldb
             assert(in_use_.next == &in_use_);  // Error if caller has an unreleased handle
             shutting_down_ = true;
             mutex_.lock();
+            fprintf(stderr, "optimized expection_ is %lf\n", expection_);
             for(int i = 0 ; i < lrus_num_ ;  i++)
             {
                 for (LRUQueueHandle *e = lrus_[i].next; e != &lrus_[i]; )
@@ -437,18 +438,62 @@ namespace leveldb
             {
                 uint64_t start_micros = Env::Default()->NowMicros();
 
-                double now_expection  = expection_ + FalsePositive(e) ;
                 ++e->fre_count;
+                double now_expection  = expection_ + FalsePositive(e) ;
                 double min_expection = now_expection, change_expection;
-                const double new_expection = expection_ - (e->fre_count - 1) * FalsePositive(e) + e->fre_count * fps[e->queue_id + 1]; //TODO: OPTIMIZE
+                double new_expection = expection_ - (e->fre_count - 1) * FalsePositive(e) + e->fre_count * fps[e->queue_id + 1]; //TODO: OPTIMIZE
                 int need_bits = usage_ - capacity_;// + bits_per_key_per_filter_[e->queue_id + 1];
                 if (e->queue_id == 0) {
                     need_bits += lrus_[1].next->charge;
                 }
                 else {
-                    need_bits += e->charge / bits_per_key_per_filter_sum[e->queue_id] * bits_per_key_per_filter_sum[e->queue_id + 1];
+                    need_bits += e->charge / bits_per_key_per_filter_sum[e->queue_id] * bits_per_key_per_filter_[e->queue_id + 1];
                 }
+double log_diff_const = 1;
+                LRUQueueHandle *forward = e, *backward = e;
+                while (forward != NULL && forward->next_region != NULL) {
+                    forward = forward->next_region;
+                    if (forward->queue_id != e->queue_id || forward->fre_count == 0) {
+                        forward = forward->prev_region;
+                        break;
+                    }
+                    double log_diff = log10(e->fre_count) - log10(forward->fre_count);
+                    if (log_diff > log_diff_const || log_diff < -log_diff_const) {
+                        forward = forward->prev_region;
+                        break;
+                    }
+
+                    new_expection = new_expection - (forward->fre_count - 1) * FalsePositive(forward) + forward->fre_count * fps[forward->queue_id + 1];
+                    if (forward->queue_id == 0) {
+                        need_bits += lrus_[1].next->charge;
+                    }
+                    else {
+                        need_bits += forward->charge / bits_per_key_per_filter_sum[forward->queue_id] * bits_per_key_per_filter_[forward->queue_id + 1];
+                    }
+                }
+                while (backward != NULL && backward->prev_region != NULL) {
+                    backward = backward->prev_region;
+                    if (backward->queue_id != e->queue_id || backward->fre_count == 0) {
+                        backward = backward->next_region;
+                        break;
+                    }
+                    double log_diff = log10(e->fre_count) - log10(backward->fre_count);
+                    if (log_diff > log_diff_const || log_diff < -log_diff_const) {
+                        backward = backward->next_region;
+                        break;
+                    }
+
+                    new_expection = new_expection - (backward->fre_count - 1) * FalsePositive(backward) + backward->fre_count * fps[backward->queue_id + 1];
+                    if (backward->queue_id == 0) {
+                        need_bits += lrus_[1].next->charge;
+                    }
+                    else {
+                        need_bits += backward->charge / bits_per_key_per_filter_sum[backward->queue_id] * bits_per_key_per_filter_[backward->queue_id + 1];
+                    }
+                }
+
                 int remove_bits, min_i = -1 ;
+
                 if(need_bits > 0)
                 {
                     for(int i = 1 ; i < lrus_num_ ; i++)
@@ -497,7 +542,18 @@ namespace leveldb
                             sum_freqs_[min_i - 1] += old->fre_count;
                             LRU_Append(&lrus_[min_i - 1], old);
                         }
-                        ++e->queue_id;
+
+                        LRUQueueHandle *p = backward;
+                        while (p != forward) {
+                            ++p->queue_id;
+                            p = p->next_region;
+                        }
+                        ++p->queue_id;
+
+                        // int64_t delta_charge = tf->table->AdjustFilters(e->queue_id, e->value_id - 1);
+                        // e->charge += delta_charge;
+                        // usage_ += delta_charge;
+
                         expection_ = min_expection;
                     }
                     else
@@ -509,8 +565,13 @@ namespace leveldb
                 {
                     if(now_expection - new_expection > now_expection * change_ratio)
                     {
-                        //if(now_expection > new_expection){
-                        ++e->queue_id;
+                        LRUQueueHandle *p = backward;
+                        while (p != forward) {
+                            ++p->queue_id;
+                            p = p->next_region;
+                        }
+                        ++p->queue_id;
+
                         expection_ = new_expection;
                     }
                     else
@@ -541,7 +602,7 @@ namespace leveldb
                     need_bits += lrus_[1].next->charge;
                 }
                 else {
-                    need_bits += e->charge / bits_per_key_per_filter_sum[e->queue_id] * bits_per_key_per_filter_sum[e->queue_id + 1];
+                    need_bits += e->charge / bits_per_key_per_filter_sum[e->queue_id] * bits_per_key_per_filter_[e->queue_id + 1];
                 }
                 int remove_bits, min_i = -1 ;
                 if(need_bits > 0)
@@ -629,6 +690,8 @@ namespace leveldb
             e->refs++;
             if(addFreCount)
             {
+                leveldb::TableAndFile *tf = reinterpret_cast<leveldb::TableAndFile *>(e->value);
+                tf->table->setAccess(e->value_id - 1);
                 if(e->expire_time > current_time_ )  //not expired
                 {
                     RecomputeExp(e);
@@ -669,9 +732,9 @@ deallocate:
                 if(e->value_id > 0 && tf->table->getCurrFilterNum(e->value_id - 1) < e->queue_id && e->type)   //only add;
                 {
                     ++e->refs;
-                    mutex_.unlock();
+                    // mutex_.unlock();
                     int64_t delta_charge = tf->table->AdjustFilters(e->queue_id, e->value_id - 1);  // not in lru list, so need to worry will be catched by ShrinkUsage
-                    mutex_.lock();
+                    // mutex_.lock();
                     --e->refs;
                     if(e->refs == 0)
                     {
@@ -1081,11 +1144,22 @@ deallocate:
                 regionId_ = (uint32_t *) (buf + sizeof(uint64_t));
                 *regionId_ = 0;
                 Slice key_(buf, sizeof(buf));
-                const uint32_t hash_ = HashSlice(key_);
+                uint32_t hash_ = HashSlice(key_);
                 LRUQueueHandle *table_handle = table_.Lookup(key_, hash_);
                 assert(table_handle);
                 table_handle->value_refs++;
                 e->table_handle = table_handle;
+                if (e->value_id == 1)
+                    e->prev_region = NULL;
+                else {
+                    *regionId_ = e->value_id - 1;
+                    Slice key2(buf, sizeof(buf));
+                    hash_ = HashSlice(key2);
+                    LRUQueueHandle *prev_region = table_.Lookup(key2, hash_);
+                    e->prev_region = prev_region;
+                    prev_region->next_region = e;
+                }
+                e->next_region = NULL;
 
                 // e->refs++;  // for the cache's reference.
                 // ++e->fre_count; //for the first access
