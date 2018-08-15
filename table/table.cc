@@ -75,7 +75,7 @@ namespace leveldb
         BlockHandle metaindex_handle;  // Handle to metaindex_block: saved from footer
         Block *index_block;
         Block *meta = NULL;
-        std::vector<uint32_t> offsets_;
+        std::vector<std::vector<uint32_t>> offsets_;
         size_t base_lg_;
     };
 
@@ -149,8 +149,8 @@ namespace leveldb
             //     add_filter_num = 0;
             if (tableMetaData != NULL)
                 add_filter_num = tableMetaData->load_filter_num[0];
-            if (file_level == 0)
-                add_filter_num = 4;
+            // if (file_level == 0)
+            //     add_filter_num = 4;
             (*table)->ReadMeta(footer, charge, add_filter_num, tableMetaData);
 
             rep->has_access.resize((*table)->getRegionNum());
@@ -195,6 +195,8 @@ namespace leveldb
             std::cout << "ReadMeta footer failed" << std::endl;
             return;
         }
+        // std::cout << "metaindex size: " << footer.metaindex_handle().size() << std::endl;
+
         Block *meta = new Block(contents);
         rep_->meta = meta;
         Iterator *iter = meta->NewIterator(BytewiseComparator());
@@ -202,21 +204,40 @@ namespace leveldb
         std::string key_off = "filter.0offsets";
         iter->Seek(key_off);
         if (iter->Valid() && iter->key().starts_with(Slice(key_off)))
-        {//todo
-            Slice offsets = iter->value();
-            rep_->offsets_.clear();
-            const char *contents = offsets.data();
-            size_t n = offsets.size();
-            rep_->base_lg_ = contents[n - 1];
-            if (rep_->options.opEp_.kFilterBaseLg != rep_->base_lg_) {
-                // std::cerr << "Options kFilterBaseLg " << rep_->options.opEp_.kFilterBaseLg << ", table kFilterBaseLg " << rep_->base_lg_ << std::endl;
-                // exit(1);
-            }
-            size_t num_ = (n - 5) / 4;
-            for (int i = 0; i <= num_; i++)
-            {
-                uint32_t start = DecodeFixed32(contents + i * 4);
-                rep_->offsets_.push_back(start);
+        {
+
+            int i = 0;
+            while (FilterPolicy::bits_per_key_per_filter_[i] != 0) {
+                while (i > 0 && FilterPolicy::bits_per_key_per_filter_[i] != 0 && FilterPolicy::bits_per_key_per_filter_[i] == FilterPolicy::bits_per_key_per_filter_[i - 1]) {
+                    rep_->offsets_.push_back(rep_->offsets_[i - 1]);
+                    i++;
+                }
+                
+                if (FilterPolicy::bits_per_key_per_filter_[i] == 0)
+                    break;
+
+                assert(iter->Valid() && iter->key().starts_with(Slice(key_off)));
+
+                Slice offsets = iter->value();
+
+                const char *contents = offsets.data();
+                size_t n = offsets.size();
+                rep_->base_lg_ = contents[n - 1];
+                if (rep_->options.opEp_.kFilterBaseLg != rep_->base_lg_) {
+                    // std::cerr << "Options kFilterBaseLg " << rep_->options.opEp_.kFilterBaseLg << ", table kFilterBaseLg " << rep_->base_lg_ << std::endl;
+                    // exit(1);
+                }
+                size_t num_ = (n - 5) / 4;
+                std::vector<uint32_t> offset;
+                for (int i = 0; i <= num_; i++)
+                {
+                    uint32_t start = DecodeFixed32(contents + i * 4);
+                    offset.push_back(start);
+                }
+                rep_->offsets_.push_back(offset);
+
+                iter->Next();
+                i++;
             }
 
             int regionNum = getRegionNum();
@@ -227,6 +248,9 @@ namespace leveldb
                 rep_->filter_datas.push_back(region_filter);
             }
         }
+        // if (rep_->offsets_.size() == 0) {
+        //     iter->Seek(key_off);
+        // }
 
         char id[] = {'1', 0};
         std::string key = "filter." + std::string(id);
@@ -274,6 +298,7 @@ namespace leveldb
             {
                 return;
             }
+            // filter_handles.set_size(filter_handles.get_size() - rep_->offsets_[i][rep_->offsets_[i].size() - 1]);
         }
         ReadOptions opt;
         if (rep_->options.paranoid_checks)
@@ -305,16 +330,17 @@ namespace leveldb
             {
                 size_t regionUnit = rep_->options.opEp_.region_divide_size;
                 size_t regionOffset = regionUnit / (1 << rep_->base_lg_);
+                std::vector<uint32_t> &offsets_ = rep_->offsets_[i];
                 for (int j = 0; j < regionNum; j++)
                 {
                     std::vector<Slice> &region_filter = rep_->filter_datas[j];
                     size_t loc = j * regionOffset;
-                    const char *start = blocks[i].data.data() + rep_->offsets_[loc];
+                    const char *start = blocks[i].data.data() + offsets_[loc];
                     size_t data_size;
                     if (j != regionNum - 1)
-                        data_size = rep_->offsets_[loc + regionOffset] - rep_->offsets_[loc];
+                        data_size = offsets_[loc + regionOffset] - offsets_[loc];
                     else
-                        data_size = rep_->offsets_[rep_->offsets_.size() - 1] - rep_->offsets_[loc];
+                        data_size = offsets_[offsets_.size() - 1] - offsets_[loc];
                     char *new_data = new char[data_size];
                     memcpy(new_data, start, data_size);
                     Slice filter_region(new_data, data_size);
@@ -330,7 +356,7 @@ namespace leveldb
                 // rep_->filter_datas.push_back(blocks[i].data.data());     // Will need to delete later
                 // filter_mem_space += blocks[i].data.size();
 
-                filter_mem_space += rep_->offsets_[rep_->offsets_.size() - 1] + rep_->offsets_.size() * 4;
+                filter_mem_space += offsets_[offsets_.size() - 1] + offsets_.size() * 4;
                 filter_num++;
             }
             if(rep_->filter == NULL)
@@ -360,11 +386,82 @@ namespace leveldb
         {
             return 0;
         }
-        size_t data_size = (rep_->offsets_.size() - 1) * (1 << rep_->base_lg_);
+        size_t data_size = (rep_->offsets_[0].size() - 1) * (1 << rep_->base_lg_);
         size_t regionFilters = rep_->options.opEp_.region_divide_size;
         return (data_size + regionFilters - 1) / regionFilters;
     }
 
+    void Table::ReadFilter(const Slice &filter_handle_value, int regionId_start, int regionId_end, size_t *delta)
+    {
+        Slice v = filter_handle_value;
+        BlockHandle filter_handle;
+        if (!filter_handle.DecodeFrom(&v).ok())
+        {
+            return;
+        }
+        uint64_t start_micros = Env::Default()->NowMicros();
+        
+        int max_id = regionId_end - regionId_start;
+        int regionNum = getRegionNum();
+        size_t *offsets = new size_t[max_id + 1];
+        size_t *data_sizes = new size_t[max_id + 1];
+        size_t offset_base;
+        int curr_filter_num = rep_->filter->getCurrFiltersNum(regionId_start);
+        for (int regionId = regionId_start; regionId <= regionId_end; regionId++) {
+            assert(curr_filter_num == rep_->filter->getCurrFiltersNum(regionId));
+            std::vector<uint32_t> &offsets_ = rep_->offsets_[curr_filter_num];
+
+            size_t regionUnit = rep_->options.opEp_.region_divide_size;
+            size_t regionOffset = regionUnit / (1 << rep_->base_lg_);
+            size_t loc = regionId * regionOffset;
+
+            size_t data_size;
+            if (regionId != regionNum - 1)
+                data_size = offsets_[loc + regionOffset] - offsets_[loc];
+            else
+                data_size = offsets_[offsets_.size() - 1] - offsets_[loc];
+
+            if (regionId == regionId_start)
+                offset_base = offsets_[loc];
+            offsets[regionId - regionId_start] = offsets_[loc] - offset_base;
+            data_sizes[regionId - regionId_start] = data_size;
+            delta[regionId - regionId_start] += data_size;
+        }
+        Slice contents;
+        size_t data_size_ = offsets[max_id] + data_sizes[max_id] - offsets[0];
+        size_t offset = filter_handle.offset() + offset_base;
+        char *buf = new char[data_size_];
+        Status s = rep_->file->Read(offset, data_size_, &contents, buf);
+
+        // if (!ReadBlock(rep_->file, opt, filter_handle, &block).ok()) {
+        //   return;
+        // }
+        if (!s.ok())
+        {
+            delete[] buf;
+            return;
+        }
+
+        for (int regionId = regionId_start; regionId <= regionId_end; regionId++) {
+            std::vector<Slice> &region_filter = rep_->filter_datas[regionId];
+            size_t data_size = data_sizes[regionId - regionId_start];
+            char *buff = new char[data_size];
+            memcpy(buff, buf + offsets[regionId - regionId_start], data_size);
+
+            Slice content(buff, data_size);
+            region_filter.push_back(content);
+
+            filter_mem_space += data_size;
+            filter_num++;
+            MeasureTime(Statistics::GetStatistics().get(), Tickers::ADD_FILTER_TIME_0 + curr_filter_num + 1, Env::Default()->NowMicros() - start_micros);
+            if(rep_->filter == NULL)
+            {
+                rep_->filter = new FilterBlockReader(rep_->options.filter_policy, regionNum, rep_->options.opEp_.region_divide_size / (1 << rep_->base_lg_), rep_->base_lg_, &rep_->offsets_);
+            }
+            rep_->filter->AddFilter(content, regionId);
+        }
+        delete [] buf;
+    }
 
     size_t Table::ReadFilter(const Slice &filter_handle_value, int regionId)
     {
@@ -374,6 +471,9 @@ namespace leveldb
         {
             return 0;
         }
+
+        int curr_filter_num = rep_->filter->getCurrFiltersNum(regionId);
+        std::vector<uint32_t> &offsets_ = rep_->offsets_[curr_filter_num];
 
         // We might want to unify with ReadBlock() if we start
         // requiring checksum verification in Table::Open.
@@ -393,13 +493,13 @@ namespace leveldb
 
         size_t data_size;
         if (regionId != regionNum - 1)
-            data_size = rep_->offsets_[loc + regionOffset] - rep_->offsets_[loc];
+            data_size = offsets_[loc + regionOffset] - offsets_[loc];
         else
-            data_size = rep_->offsets_[rep_->offsets_.size() - 1] - rep_->offsets_[loc];
+            data_size = offsets_[offsets_.size() - 1] - offsets_[loc];
 
         Slice contents;
         char *buf = new char[data_size];
-        size_t offset = filter_handle.offset() + rep_->offsets_[loc];
+        size_t offset = filter_handle.offset() + offsets_[loc];
 
         Status s = rep_->file->Read(offset, data_size, &contents, buf);
 
@@ -419,7 +519,6 @@ namespace leveldb
 
             filter_mem_space += data_size;
             filter_num++;
-            int curr_filter_num = rep_->filter->getCurrFiltersNum(regionId);
             MeasureTime(Statistics::GetStatistics().get(), Tickers::ADD_FILTER_TIME_0 + curr_filter_num + 1, Env::Default()->NowMicros() - start_micros);
         }
         if(rep_->filter == NULL)
@@ -430,6 +529,36 @@ namespace leveldb
 
         return data_size;
     }
+
+    size_t* Table::AddFilters(int n, int regionId_start, int regionId_end)
+    {
+        size_t* delta = new size_t[regionId_end - regionId_start + 1]();
+        if(rep_->filter == NULL)
+        {
+            // ReadFilters(rep_->filter_handles, n);
+            // while (n--)
+            //     delta += ReadFilter(rep_->filter_handles, regionId);
+            // // for(int i = 0 ;  i <  n ; i++)
+            // // {
+            // //     delta += FilterPolicy::bits_per_key_per_filter_[i];
+            // // }
+            // return delta;
+            int regionNum = getRegionNum();
+            rep_->filter = new FilterBlockReader(rep_->options.filter_policy, regionNum, rep_->options.opEp_.region_divide_size / (1 << rep_->base_lg_), rep_->base_lg_, &rep_->offsets_);
+
+        }
+        int curr_filter_num = rep_->filter->getCurrFiltersNum(regionId_start);
+        for (int i = regionId_start + 1; i <= regionId_end; i++)
+            assert(curr_filter_num == rep_->filter->getCurrFiltersNum(i));
+
+        while(n-- && curr_filter_num < rep_->filter_handles.size()) // avoid overhead of filters
+        {
+            // delta += FilterPolicy::bits_per_key_per_filter_[curr_filter_num];
+            ReadFilter(rep_->filter_handles[curr_filter_num++], regionId_start, regionId_end, delta);
+        }
+        return delta;
+    }
+
     //TODO: read n block sequentially
     size_t Table::AddFilters(int n, int regionId)
     {
@@ -504,12 +633,30 @@ namespace leveldb
         return delta;
     }
 
-    // int64_t Table::AdjustFilters(int n, int regionId_start, int regionId_end) {
+    size_t* Table::AdjustFilters(int n, int regionId_start, int regionId_end) {
+        size_t *delta = NULL;
+        uint64_t start_micros = Env::Default()->NowMicros();
+        /* if(n < rep_->filter->getCurrFiltersNum()){
+        delta = -static_cast<int64_t>(RemoveFilters(rep_->filter->getCurrFiltersNum() - n));
+        MeasureTime(Statistics::GetStatistics().get(),Tickers::REMOVE_FILTER_TIME,Env::Default()->NowMicros() - start_micros);
+         }else*/
+        assert(n >= 0);
+        if(n > 0)
+        {
+            if(rep_->filter == NULL)
+            {
+                delta =  AddFilters(n, regionId_start, regionId_end);
+            }
+            else if(n > rep_->filter->getCurrFiltersNum(regionId_start))  //only add when greater than
+            {
+                delta =  AddFilters(n - rep_->filter->getCurrFiltersNum(regionId_start), regionId_start, regionId_end);
+            }
+        }
+        return delta;
+    }
 
-    // }
 
-
-    int64_t Table::AdjustFilters(int n, int regionId)
+    size_t Table::AdjustFilters(int n, int regionId)
     {
         int64_t delta = 0;
         uint64_t start_micros = Env::Default()->NowMicros();
@@ -722,7 +869,7 @@ namespace leveldb
             *id_ = handle.offset() / rep_->options.opEp_.region_divide_size + 1;
 
             // if (multi_queue_init && getCurrFilterNum(*id_ - 1) == 0) {
-            if (!isAccess(*id_ - 1) && getCurrFilterNum(*id_ - 1) == 0) {
+            if (!isAccess(*id_ - 1) && getCurrFilterNum(*id_ - 1) == 0) { //real region divide mode
                 AddFilters(rep_->options.opEp_.init_filter_nums, *id_ - 1);
             }
 

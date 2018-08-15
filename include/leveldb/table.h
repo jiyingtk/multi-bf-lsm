@@ -56,7 +56,9 @@ class Table {
   // be close to the file length.
   uint64_t ApproximateOffsetOf(const Slice& key) const;
    size_t AddFilters(int n, int regionId);
-   int64_t AdjustFilters(int n, int regionId = 0);
+   size_t* AddFilters(int n, int regionId_start, int regionId_end);
+   size_t AdjustFilters(int n, int regionId = 0);
+   size_t* AdjustFilters(int n, int regionId_start, int regionId_end);
    size_t RemoveFilters(int n, int regionId = 0);
    size_t getCurrFiltersSize(int regionId = 0);
    int getCurrFilterNum(int regionId = 0);
@@ -89,6 +91,7 @@ class Table {
 
   void ReadMeta(const Footer& footer, size_t * &charge, int add_filter_num=1, TableMetaData *tableMetaData=NULL); //int add_filter
   size_t ReadFilter(const Slice& filter_handle_value, int regionId);
+  void ReadFilter(const Slice& filter_handle_value, int regionId_start, int regionId_end, size_t *delta);
   void ReadFilters(std::vector<Slice> &filter_handle_values, size_t * &charge, int n, TableMetaData *tableMetaData=NULL);
   // No copying allowed
   Table(const Table&);

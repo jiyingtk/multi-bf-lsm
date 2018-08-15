@@ -73,7 +73,7 @@ std::string* FilterBlockBuilder::getOffsets(int which) {
     if (i == which)
       break;
   }
-  
+
   Slice contents((*results_iter));
   size_t n = contents.size();
   if (n < 5) return new std::string();  // 1 byte for base_lg_ and 4 for start of offset array
@@ -196,9 +196,9 @@ void FilterBlockReader::CreateThread(int filters_num,const leveldb::FilterPolicy
 }
 
 FilterBlockReader::FilterBlockReader(const FilterPolicy* policy,
-                                     int regionNum, int regionFilters_, int base_lg, std::vector<uint32_t> *filter_offsets_)
+                                     int regionNum, int regionFilters_, int base_lg, std::vector<std::vector<uint32_t>> *filter_offsets_)
     : policy_(policy), curr_num_of_filters_(0), regionFilters(regionFilters_), 
-      num_(filter_offsets_->size()), num_regions(regionNum), filter_offsets(filter_offsets_),
+      num_((*filter_offsets_)[0].size()), num_regions(regionNum), filter_offsets(filter_offsets_),
       base_lg_(base_lg), max_num_of_filters_(policy->filterNums()){
 
   if (regionNum == 0) {
@@ -243,19 +243,19 @@ size_t FilterBlockReader::RemoveFilters(int n, int regionId)
 	//const char *toBeDelete = datas_.back();
 	//delete []toBeDelete;  // note: no need to be deleted, thus, FilterBlockReader is just a manager for filter blocks.
 
-    size_t loc = regionId * regionFilters;
+      size_t loc = regionId * regionFilters;
 
-    size_t data_size;
-    if (regionId != num_regions - 1)
-        data_size = (*filter_offsets)[loc + regionFilters] - (*filter_offsets)[loc];
-    else
-        data_size = (*filter_offsets)[(*filter_offsets).size() - 1] - (*filter_offsets)[loc];
+      int i = curr_num_of_filters_regions_[regionId] - 1;
+      size_t data_size;
+      if (regionId != num_regions - 1)
+          data_size = (*filter_offsets)[i][loc + regionFilters] - (*filter_offsets)[i][loc];
+      else
+          data_size = (*filter_offsets)[i][(*filter_offsets)[i].size() - 1] - (*filter_offsets)[i][loc];
 
-
-	delta += data_size;
-  datas_[regionId].pop_back();
-	// offsets_.pop_back();
-	curr_num_of_filters_regions_[regionId]--;
+    	delta += data_size;
+      datas_[regionId].pop_back();
+    	// offsets_.pop_back();
+    	curr_num_of_filters_regions_[regionId]--;
     }
   
   return delta;
@@ -282,10 +282,10 @@ bool FilterBlockReader::KeyMayMatch(uint64_t block_offset, const Slice &key)
   {
       for(int i = 0 ; i < curr_num_of_filters_regions_[regionId] ; i++)
       {
-          uint32_t start = (*filter_offsets)[index];
-          uint32_t limit = (*filter_offsets)[index + 1];
+          uint32_t start = (*filter_offsets)[i][index];
+          uint32_t limit = (*filter_offsets)[i][index + 1];
           int region_index = regionId * regionFilters;
-          uint32_t region_start = start - (*filter_offsets)[region_index];
+          uint32_t region_start = start - (*filter_offsets)[i][region_index];
           if (start <= limit)
           {
               Slice filter = Slice(datas_[regionId][i] + region_start, limit - start);

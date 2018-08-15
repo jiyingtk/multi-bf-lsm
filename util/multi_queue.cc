@@ -453,10 +453,12 @@ double log_diff_const = 1;
                 LRUQueueHandle *forward = e, *backward = e;
                 while (forward != NULL && forward->next_region != NULL) {
                     forward = forward->next_region;
-                    if (forward->queue_id != e->queue_id || forward->fre_count == 0) {
+                    if (forward->queue_id != e->queue_id || forward->fre_count == 0 || forward->expire_time < current_time_) {
                         forward = forward->prev_region;
                         break;
                     }
+            leveldb::TableAndFile *tf = reinterpret_cast<leveldb::TableAndFile *>(forward->value);
+            assert(forward->queue_id == tf->table->getCurrFilterNum(forward->value_id - 1));
                     double log_diff = log10(e->fre_count) - log10(forward->fre_count);
                     if (log_diff > log_diff_const || log_diff < -log_diff_const) {
                         forward = forward->prev_region;
@@ -473,10 +475,12 @@ double log_diff_const = 1;
                 }
                 while (backward != NULL && backward->prev_region != NULL) {
                     backward = backward->prev_region;
-                    if (backward->queue_id != e->queue_id || backward->fre_count == 0) {
+                    if (backward->queue_id != e->queue_id || backward->fre_count == 0 || backward->expire_time < current_time_) {
                         backward = backward->next_region;
                         break;
                     }
+            leveldb::TableAndFile *tf = reinterpret_cast<leveldb::TableAndFile *>(backward->value);
+            assert(backward->queue_id == tf->table->getCurrFilterNum(backward->value_id - 1));
                     double log_diff = log10(e->fre_count) - log10(backward->fre_count);
                     if (log_diff > log_diff_const || log_diff < -log_diff_const) {
                         backward = backward->next_region;
@@ -521,7 +525,7 @@ double log_diff_const = 1;
                             min_i = i;
                         }
                     }
-                    if(min_i != -1 && now_expection - min_expection > now_expection * change_ratio)
+                    if(min_i != -1 && now_expection - min_expection > now_expection * change_ratio) //todo
                     {
                         assert(now_expection > min_expection);
                         remove_bits = 0;
@@ -543,16 +547,41 @@ double log_diff_const = 1;
                             LRU_Append(&lrus_[min_i - 1], old);
                         }
 
-                        LRUQueueHandle *p = backward;
-                        while (p != forward) {
-                            ++p->queue_id;
-                            p = p->next_region;
-                        }
-                        ++p->queue_id;
+                        leveldb::TableAndFile *tf = reinterpret_cast<leveldb::TableAndFile *>(e->value);
+                        size_t* delta_charge = tf->table->AdjustFilters(e->queue_id + 1, backward->value_id - 1, forward->value_id - 1);
 
-                        // int64_t delta_charge = tf->table->AdjustFilters(e->queue_id, e->value_id - 1);
-                        // e->charge += delta_charge;
-                        // usage_ += delta_charge;
+                        LRUQueueHandle *p = backward;
+                        int i = 0;
+                        while (p != forward) {
+                            sum_freqs_[p->queue_id] -= p->fre_count;
+                            sum_freqs_[p->queue_id + 1] += p->fre_count;
+                            if (p->refs == 1) {
+                                assert(p->in_cache);
+                                LRU_Remove(p);
+                                --lru_lens_[p->queue_id];
+                                ++lru_lens_[p->queue_id + 1];                                
+                                LRU_Append(&lrus_[p->queue_id + 1], p);
+                            }
+                            else
+                                ++p->queue_id;
+                            p->charge += delta_charge[i];
+                            usage_ += delta_charge[i];
+                            p = p->next_region;
+                            i++;
+                        }
+                        sum_freqs_[p->queue_id] -= p->fre_count;
+                        sum_freqs_[p->queue_id + 1] += p->fre_count;
+                        if (p->refs == 1) {
+                            assert(p->in_cache);
+                            LRU_Remove(p);
+                            --lru_lens_[p->queue_id];
+                            ++lru_lens_[p->queue_id + 1];                                
+                            LRU_Append(&lrus_[p->queue_id + 1], p);
+                        }
+                        else
+                            ++p->queue_id;
+                        p->charge += delta_charge[i];
+                        usage_ += delta_charge[i];
 
                         expection_ = min_expection;
                     }
@@ -565,12 +594,43 @@ double log_diff_const = 1;
                 {
                     if(now_expection - new_expection > now_expection * change_ratio)
                     {
+                        leveldb::TableAndFile *tf = reinterpret_cast<leveldb::TableAndFile *>(e->value);
+                        size_t* delta_charge = tf->table->AdjustFilters(e->queue_id + 1, backward->value_id - 1, forward->value_id - 1);
+
                         LRUQueueHandle *p = backward;
+                        int i = 0;
                         while (p != forward) {
-                            ++p->queue_id;
+                            sum_freqs_[p->queue_id] -= p->fre_count;
+                            sum_freqs_[p->queue_id + 1] += p->fre_count;
+                            if (p->refs == 1) {
+                                assert(p->in_cache);
+                                LRU_Remove(p);
+                                --lru_lens_[p->queue_id];
+                                sum_freqs_[p->queue_id] -= p->fre_count;
+                                sum_freqs_[p->queue_id + 1] += p->fre_count;
+                                ++lru_lens_[p->queue_id + 1];                                
+                                LRU_Append(&lrus_[p->queue_id + 1], p);
+                            }
+                            else
+                                ++p->queue_id;
+                            p->charge += delta_charge[i];
+                            usage_ += delta_charge[i];
                             p = p->next_region;
+                            i++;
                         }
-                        ++p->queue_id;
+                        sum_freqs_[p->queue_id] -= p->fre_count;
+                        sum_freqs_[p->queue_id + 1] += p->fre_count;
+                        if (p->refs == 1) {
+                            assert(p->in_cache);
+                            LRU_Remove(p);
+                            --lru_lens_[p->queue_id];
+                            ++lru_lens_[p->queue_id + 1];                                
+                            LRU_Append(&lrus_[p->queue_id + 1], p);
+                        }
+                        else
+                            ++p->queue_id;
+                        p->charge += delta_charge[i];
+                        usage_ += delta_charge[i];
 
                         expection_ = new_expection;
                     }
@@ -653,6 +713,8 @@ double log_diff_const = 1;
                             sum_freqs_[min_i - 1] += old->fre_count;
                             LRU_Append(&lrus_[min_i - 1], old);
                         }
+                        sum_freqs_[e->queue_id] -= e->fre_count;
+                        sum_freqs_[e->queue_id + 1] += e->fre_count;
                         ++e->queue_id;
                         expection_ = min_expection;
                     }
@@ -666,6 +728,8 @@ double log_diff_const = 1;
                     if(now_expection - new_expection > now_expection * change_ratio)
                     {
                         //if(now_expection > new_expection){
+                        sum_freqs_[e->queue_id] -= e->fre_count;
+                        sum_freqs_[e->queue_id + 1] += e->fre_count;
                         ++e->queue_id;
                         expection_ = new_expection;
                     }
@@ -694,7 +758,8 @@ double log_diff_const = 1;
                 tf->table->setAccess(e->value_id - 1);
                 if(e->expire_time > current_time_ )  //not expired
                 {
-                    RecomputeExp(e);
+                    // RecomputeExp(e);
+                    RecomputeExpTable(e);
                 }// else{ // if(e->expire_time < current_time_){   //expired
                 //   if(e->fre_count > 0){
                 //  expection_ -= (e->fre_count*1.0/2.0)*FalsePositive(e);
@@ -733,7 +798,7 @@ deallocate:
                 {
                     ++e->refs;
                     // mutex_.unlock();
-                    int64_t delta_charge = tf->table->AdjustFilters(e->queue_id, e->value_id - 1);  // not in lru list, so need to worry will be catched by ShrinkUsage
+                    size_t delta_charge = tf->table->AdjustFilters(e->queue_id, e->value_id - 1);  // not in lru list, so need to worry will be catched by ShrinkUsage
                     // mutex_.lock();
                     --e->refs;
                     if(e->refs == 0)

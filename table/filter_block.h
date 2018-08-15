@@ -55,7 +55,7 @@ class FilterBlockBuilder {
 class FilterBlockReader {
  public:
  // REQUIRES: "contents" and *policy must stay live while *this is live.
-  FilterBlockReader(const FilterPolicy* policy, int regionNum, int regionFilters_, int base_lg, std::vector<uint32_t> *filter_offsets);
+  FilterBlockReader(const FilterPolicy* policy, int regionNum, int regionFilters_, int base_lg, std::vector<std::vector<uint32_t>> *filter_offsets);
   ~FilterBlockReader();
   bool KeyMayMatch(uint64_t block_offset, const Slice& key);
   void AddFilter(Slice& contents, int regionId);
@@ -80,7 +80,7 @@ class FilterBlockReader {
   // void readFilters(const Slice& contents);
   static std::atomic<bool> start_matches[8];
   static bool matches[8];
-  std::vector<uint32_t> *filter_offsets;
+  std::vector<std::vector<uint32_t>> *filter_offsets;
   static std::vector<const char*> *filter_datas;
   static int filter_index;
   static bool pthread_created;
