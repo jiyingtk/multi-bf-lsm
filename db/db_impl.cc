@@ -145,7 +145,16 @@ DBImpl::DBImpl(const Options& raw_options, const std::string& dbname)
 
   // Reserve ten files or so for other uses and give the rest to TableCache.
   // const size_t table_cache_size = (size_t)((options_.max_open_files - kNumNonTableCacheFiles)*options_.opEp_.filter_capacity_ratio / 8 * 64 * 10000);
+#ifdef USE_REAL_SIZE
   const size_t table_cache_size = (size_t)((options_.max_open_files - kNumNonTableCacheFiles)*options_.opEp_.filter_capacity_ratio / 8 * options_.max_file_size / options_.opEp_.key_value_size);
+#else
+  size_t table_cache_size;
+  if (options_.max_file_size > options_.opEp_.region_divide_size) 
+    table_cache_size = (size_t)((options_.max_open_files - kNumNonTableCacheFiles)*options_.opEp_.filter_capacity_ratio * options_.max_file_size / options_.opEp_.region_divide_size);
+  else
+    table_cache_size = (size_t)((options_.max_open_files - kNumNonTableCacheFiles)*options_.opEp_.filter_capacity_ratio);
+#endif
+
   table_cache_ = new TableCache(dbname_, &options_, table_cache_size);
 
   versions_ = new VersionSet(dbname_, &options_, table_cache_,
@@ -155,6 +164,7 @@ DBImpl::DBImpl(const Options& raw_options, const std::string& dbname)
 printf("DBImpl l0sizeraito %lf\n", options_.opEp_.l0_base_ratio);
   fp_reqs = fp_io = fp_nums = read_nums = 0;
   fp_sum = 0;
+  last_fp = 0;
   fp_calc_fpr_str.clear();
   fp_access_file_str.clear();
   fp_real_fpr_str.clear();
@@ -1248,6 +1258,9 @@ Status DBImpl::Get(const ReadOptions& options,
   auto p = alloc_stop_watch.allocate(1);
   alloc_stop_watch.construct(p,env_,statis_,MEM_READ_TIME);
   // Unlock while reading from files and memtables
+
+  uint64_t fp_reqs_ = 0, read_nums_ = 0, fp_nums_ = 0, fp_io_ = 0;
+  // double fp_sum_ = 0;
   {
     mutex_.Unlock();
     // First look in the memtable, then in the immutable memtable (if any).
@@ -1264,7 +1277,11 @@ Status DBImpl::Get(const ReadOptions& options,
 
       s = current->Get(options, lkey, value, &stats);
       //      if(s.IsNotFound()){
-    	p->setHistType(options.read_file_nums+READ_0_TIME);
+      if (options.read_file_nums < 10)
+      	p->setHistType(options.read_file_nums+READ_0_TIME);
+      else
+        p->setHistType(10+READ_0_TIME);
+
     	alloc_stop_watch.destroy(p);
 	//      }
       have_stat_update = true;
@@ -1274,14 +1291,16 @@ Status DBImpl::Get(const ReadOptions& options,
       //   fp_reqs++;
       //   fp_nums += options.read_file_nums;
       // }
-    #ifndef MULTI_THREAD_MODE
-      fp_reqs++;
+
+      fp_reqs_ = __sync_add_and_fetch(&fp_reqs, 1);
+      // fp_sum_ = __sync_add_and_fetch(&fp_sum, options.total_fpr);
       fp_sum += options.total_fpr;
-      read_nums += options.access_file_nums;
-      fp_nums += options.read_file_nums;
-      fp_io += options.read_file_nums;
+      read_nums_ = __sync_add_and_fetch(&read_nums, options.access_file_nums);
+      fp_nums_ = __sync_add_and_fetch(&fp_nums, options.read_file_nums);
+      fp_io_ = __sync_add_and_fetch(&fp_io, options.read_file_nums);
+      
       if(!s.IsNotFound()){
-        fp_nums--;
+        fp_nums_ = __sync_sub_and_fetch(&fp_nums, 1);
       }
       else {
         uint64_t during = Env::Default()->NowMicros() - start_micros;
@@ -1291,7 +1310,6 @@ Status DBImpl::Get(const ReadOptions& options,
         int which = options.access_compacted_file_nums >= config::kNumLevels ? config::kNumLevels - 1 : options.access_compacted_file_nums;
         get_latency_str[which].append(buf);
       }
-    #endif
     }
     alloc_stop_watch.deallocate(p,1);
     mutex_.Lock();
@@ -1304,20 +1322,33 @@ Status DBImpl::Get(const ReadOptions& options,
   if (imm != NULL) imm->Unref();
   current->Unref();
 
-#ifndef MULTI_THREAD_MODE
-  if (fp_reqs != 0 && fp_reqs % options_.opEp_.fp_stat_num == 0) {
+  // table_cache_->TurnOnAdjustment();
+  // table_cache_->TurnOffAdjustment();
+
+  if (fp_reqs_ != 0 && fp_reqs_ % options_.opEp_.fp_stat_num == 0) {
     char buf[32];
     // snprintf(buf, sizeof(buf), "%lu,", fp_reqs);
-    snprintf(buf, sizeof(buf), "%.5lf,", (double)(1.0*fp_sum/fp_reqs));
+    snprintf(buf, sizeof(buf), "%.5lf,", (double)(1.0*fp_sum/fp_reqs_));
     fp_calc_fpr_str.append(buf);
-    snprintf(buf, sizeof(buf), "%.5lf,", (double)(1.0*read_nums/fp_reqs));
+    snprintf(buf, sizeof(buf), "%.5lf,", (double)(1.0*read_nums_/fp_reqs_));
     fp_access_file_str.append(buf);
-    snprintf(buf, sizeof(buf), "%.5lf,", (double)(1.0*fp_nums/fp_reqs));
+    snprintf(buf, sizeof(buf), "%.5lf,", (double)(1.0*fp_nums_/options_.opEp_.fp_stat_num));
     fp_real_fpr_str.append(buf);
-    snprintf(buf, sizeof(buf), "%.5lf,", (double)(1.0*fp_io/fp_reqs));
+    snprintf(buf, sizeof(buf), "%.5lf,", (double)(1.0*fp_io_/fp_reqs_));
     fp_real_io_str.append(buf);
+    
+    // double cur_fp = (double)(1.0*fp_nums_/options_.opEp_.fp_stat_num);
+    // if (last_fp != 0) {
+    //   double fp_diff = (cur_fp - last_fp) / last_fp;
+    //   if (fp_diff < 0.1 && fp_diff > -0.1)
+    //     table_cache_->TurnOffAdjustment();
+    //   else
+    //     table_cache_->TurnOnAdjustment();
+    // }
+    // last_fp = cur_fp;
+
+    fp_nums = 0;
   }
-#endif
   
   return s;
 }

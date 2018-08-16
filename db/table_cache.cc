@@ -94,9 +94,9 @@ Status TableCache::FindTable(uint64_t file_number, uint64_t file_size,
   *id_ = 0;
   Slice key(buf, sizeof(buf));
   
-  uint64_t start_micros_l = Env::Default()->NowMicros();
+  // uint64_t start_micros_l = Env::Default()->NowMicros();
   *handle = cache_->Lookup(key, false); //Get
-  MeasureTime(Statistics::GetStatistics().get(),Tickers::FILTER_LOOKUP_TIME,Env::Default()->NowMicros() - start_micros_l);
+  // MeasureTime(Statistics::GetStatistics().get(),Tickers::FILTER_LOOKUP_TIME,Env::Default()->NowMicros() - start_micros_l);
 
   if (*handle == NULL) {
     uint64_t start_micros = Env::Default()->NowMicros();
@@ -316,6 +316,13 @@ void TableCache::SaveLevel0Freq(uint64_t file_number) {
   level0_freq = level0_freq < freq ? freq : level0_freq;
 }
 
+void TableCache::TurnOnAdjustment() {
+  cache_->TurnOnAdjustment();
+}
+
+void TableCache::TurnOffAdjustment() {
+  cache_->TurnOffAdjustment();
+}
 
 
 Status TableCache::Get(const ReadOptions& options,
@@ -338,11 +345,13 @@ Status TableCache::Get(const ReadOptions& options,
     Table* t = reinterpret_cast<TableAndFile*>(cache_->Value(handle))->table;
     char buf[sizeof(file_number) + sizeof(uint32_t)];
     s = t->InternalGet(options, k, arg, saver, buf);
+    MeasureTime(Statistics::GetStatistics().get(),Tickers::INTERNALGET,Env::Default()->NowMicros() - start_micros);
+    start_micros = env_->NowMicros();
     Slice key(buf, sizeof(buf));
     Cache::Handle* cache_handle = cache_->Lookup(key, true);
     cache_->Release(cache_handle);
+    MeasureTime(Statistics::GetStatistics().get(),Tickers::FILTER_LOOKUP_TIME,Env::Default()->NowMicros() - start_micros);
 
-    MeasureTime(Statistics::GetStatistics().get(),Tickers::INTERNALGET,Env::Default()->NowMicros() - start_micros);
     start_micros = env_->NowMicros();
     cache_->Release(handle);
     MeasureTime(Statistics::GetStatistics().get(),Tickers::RELEASE,Env::Default()->NowMicros() - start_micros);

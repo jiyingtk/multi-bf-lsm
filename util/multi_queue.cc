@@ -252,6 +252,7 @@ namespace leveldb
             std::vector<double> fps;
             std::vector<size_t> bits_per_key_per_filter_, bits_per_key_per_filter_sum;  //begin from 0 bits
             const double log_base;
+            bool need_adjust;
         public:
             MultiQueue(size_t capacity, int lrus_num = 1, int base_num = 64, uint64_t life_time = 50, double fr = 1.1, double sr = .95, double cr = 0.001, int lg_b = 3, double s_r = 0.5);
             ~MultiQueue();
@@ -278,6 +279,8 @@ namespace leveldb
             virtual size_t TotalCharge() const;
             virtual uint64_t GetLRUFreCount() const;
             virtual bool IsCacheFull() const;
+            virtual void TurnOnAdjustment();
+            virtual void TurnOffAdjustment();
             //charge must >= 0
             Cache::Handle *Insert(const Slice &key, uint32_t hash, void *value, size_t charge,
                                   void (*deleter)(const Slice &key, void *value), bool type) ;
@@ -311,7 +314,7 @@ namespace leveldb
         };
 
         MultiQueue::MultiQueue(size_t capacity, int lrus_num, int base_num, uint64_t life_time, double fr, double sr, double cr, int lg_b, double s_r): capacity_(capacity), lrus_num_(lrus_num), base_num_(base_num), life_time_(life_time), shrinking_(false)
-            , force_shrink_ratio(fr), slow_shrink_ratio(sr), change_ratio(cr), sum_lru_len(0), log_base(log(lg_b)), slow_ratio(sr), expection_(0), usage_(0), shutting_down_(false), insert_count(0)
+            , force_shrink_ratio(fr), slow_shrink_ratio(sr), change_ratio(cr), sum_lru_len(0), log_base(log(lg_b)), slow_ratio(sr), expection_(0), usage_(0), shutting_down_(false), insert_count(0), need_adjust(true)
         {
             //TODO: declare outside  class  in_use and lrus parent must be Initialized,avoid lock crush
             uint64_t base_sum = lg_b;
@@ -436,6 +439,12 @@ namespace leveldb
             }
             else
             {
+                if (!need_adjust) {
+                    ++e->fre_count;
+                    sum_freqs_[e->queue_id]++;
+                    expection_ += FalsePositive(e);
+                    return;
+                }
                 uint64_t start_micros = Env::Default()->NowMicros();
 
                 ++e->fre_count;
@@ -449,7 +458,7 @@ namespace leveldb
                 else {
                     need_bits += e->charge / bits_per_key_per_filter_sum[e->queue_id] * bits_per_key_per_filter_[e->queue_id + 1];
                 }
-double log_diff_const = 1;
+double log_diff_const = 0.8;
                 LRUQueueHandle *forward = e, *backward = e;
                 while (forward != NULL && forward->next_region != NULL) {
                     forward = forward->next_region;
@@ -525,6 +534,7 @@ double log_diff_const = 1;
                             min_i = i;
                         }
                     }
+                    // if(min_i != -1 && now_expection - min_expection > now_expection * change_ratio * (forward->value_id - backward->value_id + 1)) //todo
                     if(min_i != -1 && now_expection - min_expection > now_expection * change_ratio) //todo
                     {
                         assert(now_expection > min_expection);
@@ -592,6 +602,7 @@ double log_diff_const = 1;
                 }
                 else
                 {
+                    // if(now_expection - new_expection > now_expection * change_ratio * (forward->value_id - backward->value_id + 1))
                     if(now_expection - new_expection > now_expection * change_ratio)
                     {
                         leveldb::TableAndFile *tf = reinterpret_cast<leveldb::TableAndFile *>(e->value);
@@ -758,8 +769,8 @@ double log_diff_const = 1;
                 tf->table->setAccess(e->value_id - 1);
                 if(e->expire_time > current_time_ )  //not expired
                 {
-                    // RecomputeExp(e);
-                    RecomputeExpTable(e);
+                    RecomputeExp(e);
+                    // RecomputeExpTable(e);
                 }// else{ // if(e->expire_time < current_time_){   //expired
                 //   if(e->fre_count > 0){
                 //  expection_ -= (e->fre_count*1.0/2.0)*FalsePositive(e);
@@ -1050,6 +1061,18 @@ deallocate:
         inline bool MultiQueue::IsCacheFull() const
         {
             return usage_ >= capacity_;
+        }
+
+        void MultiQueue::TurnOnAdjustment() {
+            mutex_.lock();
+            need_adjust = true;
+            mutex_.unlock();
+        }
+
+        void MultiQueue::TurnOffAdjustment() {
+            mutex_.lock();
+            need_adjust = false;
+            mutex_.unlock();  
         }
 
         void MultiQueue::SlowShrinking()

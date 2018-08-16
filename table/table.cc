@@ -14,6 +14,7 @@
 #include "table/format.h"
 #include "table/two_level_iterator.h"
 #include "util/coding.h"
+#include "util/mutexlock.h"
 #include <iostream>
 #include <list>
 //#include <boost/config/detail/posix_features.hpp>
@@ -77,6 +78,7 @@ namespace leveldb
         Block *meta = NULL;
         std::vector<std::vector<uint32_t>> offsets_;
         size_t base_lg_;
+        SpinMutex mutex_;
     };
 
     void Table::setAccess(int regionId) {
@@ -348,7 +350,11 @@ namespace leveldb
                     // if (j == regionNum - 1) {
                     //     assert(rep_->offsets_[loc] + data_size + 4 * rep_->offsets_.size() == blocks[i].data.size() - 1);
                     // }
+            #ifdef USE_REAL_SIZE
                     charge[j] += data_size;
+            #else
+                    charge[j] += FilterPolicy::bits_per_key_per_filter_[i];
+            #endif
                 }
                 delete [] blocks[i].data.data();
 
@@ -425,7 +431,11 @@ namespace leveldb
                 offset_base = offsets_[loc];
             offsets[regionId - regionId_start] = offsets_[loc] - offset_base;
             data_sizes[regionId - regionId_start] = data_size;
+    #ifdef USE_REAL_SIZE
             delta[regionId - regionId_start] += data_size;
+    #else
+            delta[regionId - regionId_start] += FilterPolicy::bits_per_key_per_filter_[curr_filter_num];
+    #endif
         }
         Slice contents;
         size_t data_size_ = offsets[max_id] + data_sizes[max_id] - offsets[0];
@@ -527,7 +537,11 @@ namespace leveldb
         }
         rep_->filter->AddFilter(contents, regionId);
 
+#ifdef USE_REAL_SIZE
         return data_size;
+#else
+        return FilterPolicy::bits_per_key_per_filter_[curr_filter_num];
+#endif
     }
 
     size_t* Table::AddFilters(int n, int regionId_start, int regionId_end)
@@ -603,14 +617,14 @@ namespace leveldb
                 rep_->filter_datas[regionId].pop_back();
                 // BlockHandle filter_handle;
                 Slice v = rep_->filter_handles[--curr_filter_num];
-                delta += FilterPolicy::bits_per_key_per_filter_[curr_filter_num];
+                // delta += FilterPolicy::bits_per_key_per_filter_[curr_filter_num];
                 // if(!filter_handle.DecodeFrom(&v).ok())
                 // {
                 //     assert(0);
                 //     return 0;
                 // }
                 // filter_mem_space -= (filter_handle.size() + kBlockTrailerSize) ;
-                // filter_num--;
+                filter_num--;
             }
             return delta;
         }
@@ -868,8 +882,8 @@ namespace leveldb
             uint32_t *id_ = (uint32_t *) (region_name + sizeof(uint64_t));
             *id_ = handle.offset() / rep_->options.opEp_.region_divide_size + 1;
 
-            // if (multi_queue_init && getCurrFilterNum(*id_ - 1) == 0) {
-            if (!isAccess(*id_ - 1) && getCurrFilterNum(*id_ - 1) == 0) { //real region divide mode
+            if (multi_queue_init && getCurrFilterNum(*id_ - 1) == 0) {
+            // if (!isAccess(*id_ - 1) && getCurrFilterNum(*id_ - 1) == 0) { //real region divide mode
                 AddFilters(rep_->options.opEp_.init_filter_nums, *id_ - 1);
             }
 

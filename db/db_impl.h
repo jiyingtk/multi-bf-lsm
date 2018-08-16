@@ -203,8 +203,8 @@ class DBImpl : public DB {
     return internal_comparator_.user_comparator();
   }
 
-  uint64_t fp_reqs, fp_io, fp_nums, read_nums;
-  double fp_sum;
+  int64_t fp_reqs, fp_io, fp_nums, read_nums;
+  double fp_sum, last_fp;
   std::string fp_calc_fpr_str;
   std::string fp_access_file_str;
   std::string fp_real_fpr_str;

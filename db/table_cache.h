@@ -64,7 +64,8 @@ class TableCache {
   void SetFreCount(uint64_t file_number,uint64_t freCount);
   std::string LRU_Status();
   void SaveLevel0Freq(uint64_t file_number);
-
+  void TurnOnAdjustment();
+  void TurnOffAdjustment();
 
   void *getCacheValue(Cache::Handle* handle) {return cache_->Value(handle);}
   void releaseCacheHandle(Cache::Handle* handle) {cache_->Release(handle);}

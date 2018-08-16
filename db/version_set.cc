@@ -786,6 +786,25 @@ class VersionSet::Builder {
     }
   }
 
+  void DeleteLevel0File() {
+      if (levels_[0].added_files->size() > 3) {
+        while (levels_[0].added_files->size() > 3) {
+          auto iter = levels_[0].added_files->begin();
+          auto iter2 = iter;
+          uint64_t big = 0;
+          for (; iter != levels_[0].added_files->end(); iter++){
+            if (big < (*iter)->number) {
+              iter2 = iter;
+              big = (*iter)->number;
+            }
+          }
+          levels_[0].deleted_files.insert((*iter2)->number);
+          printf("delete file %lu, size %lu\n", (*iter2)->number, (*iter2)->file_size);
+          levels_[0].added_files->erase(iter2);
+        }
+      }
+  }
+
   // Save the current state in *v.
   void SaveTo(Version* v) {
     static bool init = true;
@@ -1104,6 +1123,11 @@ Status VersionSet::Recover(bool *save_manifest) {
 
     MarkFileNumberUsed(prev_log_number);
     MarkFileNumberUsed(log_number);
+  }
+
+  if (options_->opEp_.force_delete_level0_file) {
+    builder.DeleteLevel0File();
+    *save_manifest = true;
   }
 
   if (s.ok()) {

@@ -102,6 +102,8 @@ class Cache {
   virtual void addCurrentTime(){}
   virtual uint64_t GetLRUFreCount() const{} 
   virtual bool IsCacheFull() const{} 
+  virtual void TurnOnAdjustment() {}
+  virtual void TurnOffAdjustment() {}
  private:
   void LRU_Remove(Handle* e);
   void LRU_Append(Handle* e);

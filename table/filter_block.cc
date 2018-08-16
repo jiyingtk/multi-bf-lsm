@@ -252,7 +252,12 @@ size_t FilterBlockReader::RemoveFilters(int n, int regionId)
       else
           data_size = (*filter_offsets)[i][(*filter_offsets)[i].size() - 1] - (*filter_offsets)[i][loc];
 
+#ifdef USE_REAL_SIZE
     	delta += data_size;
+#else
+      delta += FilterPolicy::bits_per_key_per_filter_[i];
+#endif
+      
       datas_[regionId].pop_back();
     	// offsets_.pop_back();
     	curr_num_of_filters_regions_[regionId]--;

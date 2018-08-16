@@ -7,7 +7,7 @@
 # to switch between compilation modes.
 
 # (A) Production use (optimized mode)
-OPT ?= -O2 -DNDEBUG
+OPT ?= -O2 -DNDEBUG -DUSE_REAL_SIZE
 # (B) Debug mode, w/ full line-level debugging symbols
 # OPT ?= -g2 -DMULTI_THREAD_MODE
 # OPT ?= -g2
