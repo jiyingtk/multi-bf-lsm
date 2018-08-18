@@ -882,8 +882,8 @@ namespace leveldb
             uint32_t *id_ = (uint32_t *) (region_name + sizeof(uint64_t));
             *id_ = handle.offset() / rep_->options.opEp_.region_divide_size + 1;
 
-            if (multi_queue_init && getCurrFilterNum(*id_ - 1) == 0) {
-            // if (!isAccess(*id_ - 1) && getCurrFilterNum(*id_ - 1) == 0) { //real region divide mode
+            // if (multi_queue_init && getCurrFilterNum(*id_ - 1) == 0) {
+            if (!isAccess(*id_ - 1) && getCurrFilterNum(*id_ - 1) == 0) { //real region divide mode
                 AddFilters(rep_->options.opEp_.init_filter_nums, *id_ - 1);
             }
 

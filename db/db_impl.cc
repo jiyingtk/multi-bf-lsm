@@ -1302,6 +1302,7 @@ Status DBImpl::Get(const ReadOptions& options,
       if(!s.IsNotFound()){
         fp_nums_ = __sync_sub_and_fetch(&fp_nums, 1);
       }
+    #ifndef MULTI_THREAD_MODE
       else {
         uint64_t during = Env::Default()->NowMicros() - start_micros;
         char buf[32];
@@ -1310,6 +1311,7 @@ Status DBImpl::Get(const ReadOptions& options,
         int which = options.access_compacted_file_nums >= config::kNumLevels ? config::kNumLevels - 1 : options.access_compacted_file_nums;
         get_latency_str[which].append(buf);
       }
+    #endif
     }
     alloc_stop_watch.deallocate(p,1);
     mutex_.Lock();

@@ -253,6 +253,7 @@ namespace leveldb
             std::vector<size_t> bits_per_key_per_filter_, bits_per_key_per_filter_sum;  //begin from 0 bits
             const double log_base;
             bool need_adjust;
+            uint64_t dynamic_merge_counter[2];
         public:
             MultiQueue(size_t capacity, int lrus_num = 1, int base_num = 64, uint64_t life_time = 50, double fr = 1.1, double sr = .95, double cr = 0.001, int lg_b = 3, double s_r = 0.5);
             ~MultiQueue();
@@ -350,6 +351,7 @@ namespace leveldb
                 bits_per_key_per_filter_sum.push_back(sum_bits);
             }
 
+            dynamic_merge_counter[0] = dynamic_merge_counter[1] = 0;
         }
 
         std::string MultiQueue::LRU_Status()
@@ -393,7 +395,8 @@ namespace leveldb
                     e = next;
                 }
             }
-            fprintf(stderr, "multi_queue_init is %s, expection_ is %lf\n", multi_queue_init ? "true" : "false", expection_);
+            double avg_merge_region_nums = dynamic_merge_counter[0] == 0 ? 0 : dynamic_merge_counter[1] / dynamic_merge_counter[0];
+            fprintf(stderr, "multi_queue_init is %s, expection_ is %lf, avg_merge_region_nums is %lf\n", multi_queue_init ? "true" : "false", expection_, avg_merge_region_nums);
             mutex_.unlock();
             delete []lrus_;
         }
@@ -593,6 +596,9 @@ double log_diff_const = 0.8;
                         p->charge += delta_charge[i];
                         usage_ += delta_charge[i];
 
+                        dynamic_merge_counter[0]++;
+                        dynamic_merge_counter[1] += forward->value_id - backward->value_id + 1;
+
                         expection_ = min_expection;
                     }
                     else
@@ -642,6 +648,9 @@ double log_diff_const = 0.8;
                             ++p->queue_id;
                         p->charge += delta_charge[i];
                         usage_ += delta_charge[i];
+
+                        dynamic_merge_counter[0]++;
+                        dynamic_merge_counter[1] += forward->value_id - backward->value_id + 1;
 
                         expection_ = new_expection;
                     }
@@ -822,7 +831,11 @@ deallocate:
                 }
                 else if (e->value_id > 0 && tf->table->getCurrFilterNum(e->value_id - 1) > e->queue_id && e->type) {
                     e->queue_id = tf->table->getCurrFilterNum(e->value_id - 1);
+                #ifdef USE_REAL_SIZE
                     size_t delta_charge = tf->table->getCurrFiltersSize(e->value_id - 1);
+                #else
+                    size_t delta_charge = bits_per_key_per_filter_sum[e->queue_id];
+                #endif
                     e->charge = delta_charge;
                     usage_ += delta_charge;
                     MayBeShrinkUsage();
@@ -1005,7 +1018,14 @@ deallocate:
                     {
                         uint64_t start_micros = Env::Default()->NowMicros();
                         LRUQueueHandle *old = lrus_[k].next;
-                        assert(old != &lrus_[k]);
+                        // assert(old != &lrus_[k]);
+                        if (old == &lrus_[k]) {
+                            int i = 1;
+                            while (i) {
+                                int b = 0;
+                                b += 1;
+                            }
+                        }
                         leveldb::TableAndFile *tf = reinterpret_cast<leveldb::TableAndFile *>(old->value);
                         size_t delta_charge = tf->table->RemoveFilters(1, old->value_id - 1); //  remove 1 filter
                         old->charge -= delta_charge;
