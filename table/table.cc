@@ -79,6 +79,7 @@ namespace leveldb
         std::vector<std::vector<uint32_t>> offsets_;
         size_t base_lg_;
         SpinMutex mutex_;
+        bool locked;
     };
 
     void Table::setAccess(int regionId) {
@@ -250,6 +251,9 @@ namespace leveldb
                 rep_->filter_datas.push_back(region_filter);
             }
         }
+        else {
+            printf("metaindex block don't have filter index infos!\n");
+        }
         // if (rep_->offsets_.size() == 0) {
         //     iter->Seek(key_off);
         // }
@@ -350,11 +354,10 @@ namespace leveldb
                     // if (j == regionNum - 1) {
                     //     assert(rep_->offsets_[loc] + data_size + 4 * rep_->offsets_.size() == blocks[i].data.size() - 1);
                     // }
-            #ifdef USE_REAL_SIZE
-                    charge[j] += data_size;
-            #else
-                    charge[j] += FilterPolicy::bits_per_key_per_filter_[i];
-            #endif
+                    if (rep_->options.opEp_.cache_use_real_size)
+                        charge[j] += data_size;
+                    else
+                        charge[j] += FilterPolicy::bits_per_key_per_filter_[i];
                 }
                 delete [] blocks[i].data.data();
 
@@ -367,7 +370,7 @@ namespace leveldb
             }
             if(rep_->filter == NULL)
             {
-                rep_->filter = new FilterBlockReader(rep_->options.filter_policy, regionNum, rep_->options.opEp_.region_divide_size / (1 << rep_->base_lg_), rep_->base_lg_, &rep_->offsets_);
+                rep_->filter = new FilterBlockReader(rep_->options.filter_policy, rep_->options.opEp_.cache_use_real_size, regionNum, rep_->options.opEp_.region_divide_size / (1 << rep_->base_lg_), rep_->base_lg_, &rep_->offsets_);
             }
             for (int j = 0; j < regionNum; j++)
             {
@@ -377,13 +380,28 @@ namespace leveldb
         }
         MeasureTime(Statistics::GetStatistics().get(), Tickers::ADD_FILTER_TIME_0 + n, Env::Default()->NowMicros() - start_micros);
     }
-    int Table::getCurrFilterNum(int regionId)
+    int Table::getCurrFilterNum(int regionId, bool needLock)
     {
+        if (needLock) {
+            rep_->mutex_.lock();
+            rep_->locked = true;
+        }
         if(rep_->filter == NULL || regionId < 0)
         {
+            if (needLock){
+                rep_->locked = false;
+                rep_->mutex_.unlock();
+            }
             return 0;
         }
-        return rep_->filter->getCurrFiltersNum(regionId);
+
+        int curr_filter_num = rep_->filter->getCurrFiltersNum(regionId);
+        if (needLock) {
+            rep_->locked = false;
+            rep_->mutex_.unlock();
+        }
+
+        return curr_filter_num;
     }
 
     int Table::getRegionNum()
@@ -412,9 +430,9 @@ namespace leveldb
         size_t *offsets = new size_t[max_id + 1];
         size_t *data_sizes = new size_t[max_id + 1];
         size_t offset_base;
-        int curr_filter_num = rep_->filter->getCurrFiltersNum(regionId_start);
+        int curr_filter_num = getCurrFilterNum(regionId_start);
         for (int regionId = regionId_start; regionId <= regionId_end; regionId++) {
-            assert(curr_filter_num == rep_->filter->getCurrFiltersNum(regionId));
+            assert(curr_filter_num == getCurrFilterNum(regionId));
             std::vector<uint32_t> &offsets_ = rep_->offsets_[curr_filter_num];
 
             size_t regionUnit = rep_->options.opEp_.region_divide_size;
@@ -431,11 +449,11 @@ namespace leveldb
                 offset_base = offsets_[loc];
             offsets[regionId - regionId_start] = offsets_[loc] - offset_base;
             data_sizes[regionId - regionId_start] = data_size;
-    #ifdef USE_REAL_SIZE
-            delta[regionId - regionId_start] += data_size;
-    #else
-            delta[regionId - regionId_start] += FilterPolicy::bits_per_key_per_filter_[curr_filter_num];
-    #endif
+
+            if (rep_->options.opEp_.cache_use_real_size)
+                delta[regionId - regionId_start] += data_size;
+            else
+                delta[regionId - regionId_start] += FilterPolicy::bits_per_key_per_filter_[curr_filter_num];
         }
         Slice contents;
         size_t data_size_ = offsets[max_id] + data_sizes[max_id] - offsets[0];
@@ -466,10 +484,11 @@ namespace leveldb
             MeasureTime(Statistics::GetStatistics().get(), Tickers::ADD_FILTER_TIME_0 + curr_filter_num + 1, Env::Default()->NowMicros() - start_micros);
             if(rep_->filter == NULL)
             {
-                rep_->filter = new FilterBlockReader(rep_->options.filter_policy, regionNum, rep_->options.opEp_.region_divide_size / (1 << rep_->base_lg_), rep_->base_lg_, &rep_->offsets_);
+                rep_->filter = new FilterBlockReader(rep_->options.filter_policy, rep_->options.opEp_.cache_use_real_size, regionNum, rep_->options.opEp_.region_divide_size / (1 << rep_->base_lg_), rep_->base_lg_, &rep_->offsets_);
             }
             rep_->filter->AddFilter(content, regionId);
         }
+
         delete [] buf;
     }
 
@@ -482,7 +501,7 @@ namespace leveldb
             return 0;
         }
 
-        int curr_filter_num = rep_->filter->getCurrFiltersNum(regionId);
+        int curr_filter_num = getCurrFilterNum(regionId);
         std::vector<uint32_t> &offsets_ = rep_->offsets_[curr_filter_num];
 
         // We might want to unify with ReadBlock() if we start
@@ -533,15 +552,14 @@ namespace leveldb
         }
         if(rep_->filter == NULL)
         {
-            rep_->filter = new FilterBlockReader(rep_->options.filter_policy, regionNum, rep_->options.opEp_.region_divide_size / (1 << rep_->base_lg_), rep_->base_lg_, &rep_->offsets_);
+            rep_->filter = new FilterBlockReader(rep_->options.filter_policy, rep_->options.opEp_.cache_use_real_size, regionNum, rep_->options.opEp_.region_divide_size / (1 << rep_->base_lg_), rep_->base_lg_, &rep_->offsets_);
         }
         rep_->filter->AddFilter(contents, regionId);
 
-#ifdef USE_REAL_SIZE
-        return data_size;
-#else
-        return FilterPolicy::bits_per_key_per_filter_[curr_filter_num];
-#endif
+        if (rep_->options.opEp_.cache_use_real_size)    
+            return data_size;
+        else
+            return FilterPolicy::bits_per_key_per_filter_[curr_filter_num];
     }
 
     size_t* Table::AddFilters(int n, int regionId_start, int regionId_end)
@@ -558,12 +576,12 @@ namespace leveldb
             // // }
             // return delta;
             int regionNum = getRegionNum();
-            rep_->filter = new FilterBlockReader(rep_->options.filter_policy, regionNum, rep_->options.opEp_.region_divide_size / (1 << rep_->base_lg_), rep_->base_lg_, &rep_->offsets_);
+            rep_->filter = new FilterBlockReader(rep_->options.filter_policy, rep_->options.opEp_.cache_use_real_size, regionNum, rep_->options.opEp_.region_divide_size / (1 << rep_->base_lg_), rep_->base_lg_, &rep_->offsets_);
 
         }
-        int curr_filter_num = rep_->filter->getCurrFiltersNum(regionId_start);
+        int curr_filter_num = getCurrFilterNum(regionId_start);
         for (int i = regionId_start + 1; i <= regionId_end; i++)
-            assert(curr_filter_num == rep_->filter->getCurrFiltersNum(i));
+            assert(curr_filter_num == getCurrFilterNum(i));
 
         while(n-- && curr_filter_num < rep_->filter_handles.size()) // avoid overhead of filters
         {
@@ -588,10 +606,10 @@ namespace leveldb
             // // }
             // return delta;
             int regionNum = getRegionNum();
-            rep_->filter = new FilterBlockReader(rep_->options.filter_policy, regionNum, rep_->options.opEp_.region_divide_size / (1 << rep_->base_lg_), rep_->base_lg_, &rep_->offsets_);
+            rep_->filter = new FilterBlockReader(rep_->options.filter_policy, rep_->options.opEp_.cache_use_real_size, regionNum, rep_->options.opEp_.region_divide_size / (1 << rep_->base_lg_), rep_->base_lg_, &rep_->offsets_);
 
         }
-        int curr_filter_num = rep_->filter->getCurrFiltersNum(regionId);
+        int curr_filter_num = getCurrFilterNum(regionId);
         while(n-- && curr_filter_num < rep_->filter_handles.size()) // avoid overhead of filters
         {
             // delta += FilterPolicy::bits_per_key_per_filter_[curr_filter_num];
@@ -606,6 +624,14 @@ namespace leveldb
         {
             return 0;
         }
+
+        int lock_ = false;
+        if (rep_->locked) {
+            lock_ = true;
+            rep_->mutex_.lock();
+            rep_->locked = true;
+        }
+
         int curr_filter_num = rep_->filter->getCurrFiltersNum(regionId);
         size_t delta = 0;
         if(n == -1)
@@ -626,6 +652,11 @@ namespace leveldb
                 // filter_mem_space -= (filter_handle.size() + kBlockTrailerSize) ;
                 filter_num--;
             }
+            
+            if (lock_) {
+                rep_->locked = false;
+                rep_->mutex_.unlock();
+            }
             return delta;
         }
         delta += rep_->filter->RemoveFilters(n, regionId);
@@ -644,12 +675,21 @@ namespace leveldb
             // filter_mem_space -= (filter_handle.size() + kBlockTrailerSize) ;
             filter_num--;
         }
+
+        if (lock_) {
+            rep_->locked = false;
+            rep_->mutex_.unlock();
+        }
         return delta;
     }
 
-    size_t* Table::AdjustFilters(int n, int regionId_start, int regionId_end) {
+    size_t* Table::AdjustFilters(int n, int regionId_start, int regionId_end, bool locked) {
         size_t *delta = NULL;
         uint64_t start_micros = Env::Default()->NowMicros();
+        if (locked) {
+            rep_->mutex_.lock();
+            rep_->locked = true;
+        }
         /* if(n < rep_->filter->getCurrFiltersNum()){
         delta = -static_cast<int64_t>(RemoveFilters(rep_->filter->getCurrFiltersNum() - n));
         MeasureTime(Statistics::GetStatistics().get(),Tickers::REMOVE_FILTER_TIME,Env::Default()->NowMicros() - start_micros);
@@ -657,14 +697,20 @@ namespace leveldb
         assert(n >= 0);
         if(n > 0)
         {
+            int curr_filter_num = getCurrFilterNum(regionId_start);
             if(rep_->filter == NULL)
             {
                 delta =  AddFilters(n, regionId_start, regionId_end);
             }
-            else if(n > rep_->filter->getCurrFiltersNum(regionId_start))  //only add when greater than
+            else if(n > curr_filter_num)  //only add when greater than
             {
-                delta =  AddFilters(n - rep_->filter->getCurrFiltersNum(regionId_start), regionId_start, regionId_end);
+                delta =  AddFilters(n - curr_filter_num, regionId_start, regionId_end);
             }
+        }
+        
+        if (locked) {
+            rep_->locked = false;
+            rep_->mutex_.unlock();
         }
         return delta;
     }
@@ -681,13 +727,14 @@ namespace leveldb
         assert(n >= 0);
         if(n > 0)
         {
+            int curr_filter_num = getCurrFilterNum(regionId);
             if(rep_->filter == NULL)
             {
                 delta =  AddFilters(n, regionId);
             }
-            else if(n > rep_->filter->getCurrFiltersNum(regionId))  //only add when greater than
+            else if(n > curr_filter_num)  //only add when greater than
             {
-                delta =  AddFilters(n - rep_->filter->getCurrFiltersNum(regionId), regionId);
+                delta =  AddFilters(n - curr_filter_num, regionId);
             }
         }
         return delta;
@@ -701,9 +748,21 @@ namespace leveldb
         {
             return 0;
         }
+        int lock_ = false;
+        if (rep_->locked) {
+            lock_ = true;
+            rep_->mutex_.lock();
+            rep_->locked = true;
+        }
         size_t totalSize = 0;
-        for (int i = 0; i < rep_->filter->getCurrFiltersNum(regionId); i++) {
+        int curr_filter_num = getCurrFilterNum(regionId);
+        for (int i = 0; i < curr_filter_num; i++) {
             totalSize += rep_->filter_datas[regionId][i].size();
+        }
+
+        if (lock_) {
+            rep_->locked = false;
+            rep_->mutex_.unlock();
         }
         return totalSize;
     }
@@ -884,7 +943,15 @@ namespace leveldb
 
             // if (multi_queue_init && getCurrFilterNum(*id_ - 1) == 0) {
             if (!isAccess(*id_ - 1) && getCurrFilterNum(*id_ - 1) == 0) { //real region divide mode
-                AddFilters(rep_->options.opEp_.init_filter_nums, *id_ - 1);
+                rep_->mutex_.lock();
+                rep_->locked = true;
+
+                if (!isAccess(*id_ - 1) && getCurrFilterNum(*id_ - 1) == 0) {
+                    AddFilters(rep_->options.opEp_.init_filter_nums, *id_ - 1);
+                    setAccess(*id_ - 1);
+                }
+                rep_->locked = false;
+                rep_->mutex_.unlock();
             }
 
 

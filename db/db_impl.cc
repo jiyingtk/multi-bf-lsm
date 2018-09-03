@@ -145,15 +145,16 @@ DBImpl::DBImpl(const Options& raw_options, const std::string& dbname)
 
   // Reserve ten files or so for other uses and give the rest to TableCache.
   // const size_t table_cache_size = (size_t)((options_.max_open_files - kNumNonTableCacheFiles)*options_.opEp_.filter_capacity_ratio / 8 * 64 * 10000);
-#ifdef USE_REAL_SIZE
-  const size_t table_cache_size = (size_t)((options_.max_open_files - kNumNonTableCacheFiles)*options_.opEp_.filter_capacity_ratio / 8 * options_.max_file_size / options_.opEp_.key_value_size);
-#else
   size_t table_cache_size;
-  if (options_.max_file_size > options_.opEp_.region_divide_size) 
-    table_cache_size = (size_t)((options_.max_open_files - kNumNonTableCacheFiles)*options_.opEp_.filter_capacity_ratio * options_.max_file_size / options_.opEp_.region_divide_size);
-  else
-    table_cache_size = (size_t)((options_.max_open_files - kNumNonTableCacheFiles)*options_.opEp_.filter_capacity_ratio);
-#endif
+  if (options_.opEp_.cache_use_real_size) {
+    table_cache_size = (size_t)((options_.max_open_files - kNumNonTableCacheFiles)*options_.opEp_.filter_capacity_ratio / 8 * options_.max_file_size / options_.opEp_.key_value_size);
+  }
+  else {
+    if (options_.max_file_size > options_.opEp_.region_divide_size) 
+      table_cache_size = (size_t)((options_.max_open_files - kNumNonTableCacheFiles)*options_.opEp_.filter_capacity_ratio * options_.max_file_size / options_.opEp_.region_divide_size);
+    else
+      table_cache_size = (size_t)((options_.max_open_files - kNumNonTableCacheFiles)*options_.opEp_.filter_capacity_ratio);
+  }
 
   table_cache_ = new TableCache(dbname_, &options_, table_cache_size);
 
@@ -1302,16 +1303,16 @@ Status DBImpl::Get(const ReadOptions& options,
       if(!s.IsNotFound()){
         fp_nums_ = __sync_sub_and_fetch(&fp_nums, 1);
       }
-    #ifndef MULTI_THREAD_MODE
-      else {
-        uint64_t during = Env::Default()->NowMicros() - start_micros;
-        char buf[32];
-        snprintf(buf, sizeof(buf), "%lu,", during);
+    // #ifndef MULTI_THREAD_MODE
+    //   else {
+    //     uint64_t during = Env::Default()->NowMicros() - start_micros;
+    //     char buf[32];
+    //     snprintf(buf, sizeof(buf), "%lu,", during);
 
-        int which = options.access_compacted_file_nums >= config::kNumLevels ? config::kNumLevels - 1 : options.access_compacted_file_nums;
-        get_latency_str[which].append(buf);
-      }
-    #endif
+    //     int which = options.access_compacted_file_nums >= config::kNumLevels ? config::kNumLevels - 1 : options.access_compacted_file_nums;
+    //     get_latency_str[which].append(buf);
+    //   }
+    // #endif
     }
     alloc_stop_watch.deallocate(p,1);
     mutex_.Lock();

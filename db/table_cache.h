@@ -15,6 +15,7 @@
 #include "port/port.h"
 #include "leveldb/env.h"
 #include "leveldb/table.h"
+#include "util/mutexlock.h"
 namespace leveldb {
 
 struct TableAndFile {
@@ -80,6 +81,7 @@ class TableCache {
   Status FindBufferedTable(uint64_t file_number, uint64_t file_size, Cache::Handle**,TableAndFile *rtf);
   Status FindTable(uint64_t file_number, uint64_t file_size, Cache::Handle**,bool Get=false,int file_level=false, TableMetaData *tableMetaData=NULL, std::vector<uint64_t> *input_0_numbers = NULL, std::vector<uint64_t> *input_1_numbers = NULL);
   uint64_t level0_freq;
+  SpinMutex mutex_[64];
 };
 
 }  // namespace leveldb

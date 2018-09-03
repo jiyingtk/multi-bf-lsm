@@ -1293,6 +1293,7 @@ file	db/table_cache.h	/^  RandomAccessFile* file;$/;"	m	struct:leveldb::TableAnd
 getCacheValue	db/table_cache.h	/^  void *getCacheValue(Cache::Handle* handle) {return cache_->Value(handle);}$/;"	f	class:leveldb::TableCache
 level0_freq	db/table_cache.h	/^  uint64_t level0_freq;$/;"	m	class:leveldb::TableCache
 leveldb	db/table_cache.h	/^namespace leveldb {$/;"	n
+mutex_	db/table_cache.h	/^  SpinMutex mutex_[64];$/;"	m	class:leveldb::TableCache
 options_	db/table_cache.h	/^  const Options* options_;$/;"	m	class:leveldb::TableCache
 refs	db/table_cache.h	/^  uint32_t refs;$/;"	m	struct:leveldb::TableAndFile
 releaseCacheHandle	db/table_cache.h	/^  void releaseCacheHandle(Cache::Handle* handle) {cache_->Release(handle);}$/;"	f	class:leveldb::TableCache
@@ -1902,6 +1903,7 @@ base_num	include/leveldb/options.h	/^    int base_num;$/;"	m	struct:leveldb::Opt
 block_cache	include/leveldb/options.h	/^  Cache* block_cache;$/;"	m	struct:leveldb::Options
 block_restart_interval	include/leveldb/options.h	/^  int block_restart_interval;$/;"	m	struct:leveldb::Options
 block_size	include/leveldb/options.h	/^  size_t block_size;$/;"	m	struct:leveldb::Options
+cache_use_real_size	include/leveldb/options.h	/^    bool cache_use_real_size;$/;"	m	struct:leveldb::OptionExp
 change_ratio	include/leveldb/options.h	/^    double change_ratio;$/;"	m	struct:leveldb::OptionExp
 comparator	include/leveldb/options.h	/^  const Comparator* comparator;$/;"	m	struct:leveldb::Options
 compression	include/leveldb/options.h	/^  CompressionType compression;$/;"	m	struct:leveldb::Options
@@ -1939,6 +1941,7 @@ paranoid_checks	include/leveldb/options.h	/^  bool paranoid_checks;$/;"	m	struct
 read_file_nums	include/leveldb/options.h	/^  mutable unsigned short read_file_nums;$/;"	m	struct:leveldb::ReadOptions
 region_divide_size	include/leveldb/options.h	/^    uint64_t region_divide_size;$/;"	m	struct:leveldb::OptionExp
 reuse_logs	include/leveldb/options.h	/^  bool reuse_logs;$/;"	m	struct:leveldb::Options
+run_mode	include/leveldb/options.h	/^    int run_mode;$/;"	m	struct:leveldb::OptionExp
 seek_compaction_	include/leveldb/options.h	/^    bool seek_compaction_;$/;"	m	struct:leveldb::OptionExp
 setFreCountInCompaction	include/leveldb/options.h	/^    bool setFreCountInCompaction;$/;"	m	struct:leveldb::OptionExp
 size_ratio	include/leveldb/options.h	/^    int size_ratio;$/;"	m	struct:leveldb::OptionExp
@@ -2038,6 +2041,20 @@ tableMetaData_	include/leveldb/table_builder.h	/^  TableMetaData* tableMetaData_
 ThreadPool	include/leveldb/threadpool.h	/^class ThreadPool {$/;"	c	namespace:leveldb
 leveldb	include/leveldb/threadpool.h	/^namespace leveldb {$/;"	n
 ~ThreadPool	include/leveldb/threadpool.h	/^  virtual ~ThreadPool() {}$/;"	f	class:leveldb::ThreadPool
+Delete	include/leveldb/vlog.h	/^        Status Delete(const WriteOptions writeOptions,const string& key){$/;"	f	class:leveldb::SepDB
+DoSomeThing	include/leveldb/vlog.h	/^        void DoSomeThing(void* arg){$/;"	f	class:leveldb::SepDB
+Get	include/leveldb/vlog.h	/^        Status Get(const ReadOptions readOptions,const string& key, string* val){$/;"	f	class:leveldb::SepDB
+GetProperty	include/leveldb/vlog.h	/^        bool GetProperty(const string& property, std::string* value) {$/;"	f	class:leveldb::SepDB
+MULTI_BF_LSM_VLOG_H	include/leveldb/vlog.h	6;"	d
+Open	include/leveldb/vlog.h	/^        static Status Open(Options options,const std::string & dbname, const std::string &vlogname, SepDB **db) {$/;"	f	class:leveldb::SepDB
+Put	include/leveldb/vlog.h	/^        Status Put(const WriteOptions writeOptions,const string& key, const string& val){$/;"	f	class:leveldb::SepDB
+SepDB	include/leveldb/vlog.h	/^        SepDB(Options options, const std::string &dbname, const std::string &vlogname, Status &s) {$/;"	f	class:leveldb::SepDB
+SepDB	include/leveldb/vlog.h	/^    class SepDB {$/;"	c	namespace:leveldb
+indexDB	include/leveldb/vlog.h	/^        DB *indexDB;$/;"	m	class:leveldb::SepDB
+leveldb	include/leveldb/vlog.h	/^namespace leveldb {$/;"	n
+tail	include/leveldb/vlog.h	/^        size_t tail;$/;"	m	class:leveldb::SepDB
+vlog	include/leveldb/vlog.h	/^        FILE *vlog;$/;"	m	class:leveldb::SepDB
+~SepDB	include/leveldb/vlog.h	/^        ~SepDB(){$/;"	f	class:leveldb::SepDB
 Handler	include/leveldb/write_batch.h	/^  class Handler {$/;"	c	class:leveldb::WriteBatch
 STORAGE_LEVELDB_INCLUDE_WRITE_BATCH_H_	include/leveldb/write_batch.h	22;"	d
 WriteBatch	include/leveldb/write_batch.h	/^class WriteBatch {$/;"	c	namespace:leveldb
@@ -2222,7 +2239,7 @@ AddFilter	table/filter_block.cc	/^void FilterBlockReader::AddFilter(Slice &conte
 AddKey	table/filter_block.cc	/^void FilterBlockBuilder::AddKey(const Slice& key) {$/;"	f	class:leveldb::FilterBlockBuilder
 CreateThread	table/filter_block.cc	/^void FilterBlockReader::CreateThread(int filters_num,const leveldb::FilterPolicy *policy)$/;"	f	class:leveldb::FilterBlockReader
 FilterBlockBuilder	table/filter_block.cc	/^FilterBlockBuilder::FilterBlockBuilder(const FilterPolicy* policy)$/;"	f	class:leveldb::FilterBlockBuilder
-FilterBlockReader	table/filter_block.cc	/^FilterBlockReader::FilterBlockReader(const FilterPolicy* policy,$/;"	f	class:leveldb::FilterBlockReader
+FilterBlockReader	table/filter_block.cc	/^FilterBlockReader::FilterBlockReader(const FilterPolicy* policy, bool cache_use_real_size,$/;"	f	class:leveldb::FilterBlockReader
 Finish	table/filter_block.cc	/^std::list<std::string>& FilterBlockBuilder::Finish() {$/;"	f	class:leveldb::FilterBlockBuilder
 GenerateFilter	table/filter_block.cc	/^void FilterBlockBuilder::GenerateFilter() {$/;"	f	class:leveldb::FilterBlockBuilder
 KeyMayMatch	table/filter_block.cc	/^bool FilterBlockReader::KeyMayMatch(uint64_t block_offset, const Slice &key)$/;"	f	class:leveldb::FilterBlockReader
@@ -2245,6 +2262,7 @@ FilterBlockBuilder	table/filter_block.h	/^class FilterBlockBuilder {$/;"	c	names
 FilterBlockReader	table/filter_block.h	/^class FilterBlockReader {$/;"	c	namespace:leveldb
 STORAGE_LEVELDB_TABLE_FILTER_BLOCK_H_	table/filter_block.h	10;"	d
 base_lg_	table/filter_block.h	/^  size_t base_lg_;      \/\/ Encoding parameter (see kFilterBaseLg in .cc file)$/;"	m	class:leveldb::FilterBlockReader
+cache_use_real_size_	table/filter_block.h	/^  bool cache_use_real_size_;$/;"	m	class:leveldb::FilterBlockReader
 curr_num_of_filters_	table/filter_block.h	/^  int curr_num_of_filters_;$/;"	m	class:leveldb::FilterBlockReader
 curr_num_of_filters_regions_	table/filter_block.h	/^  int *curr_num_of_filters_regions_;$/;"	m	class:leveldb::FilterBlockReader
 datas_	table/filter_block.h	/^  std::vector<std::vector<const char*>> datas_;    \/\/ Pointer to filter data (at block-start)$/;"	m	class:leveldb::FilterBlockReader
@@ -2381,7 +2399,7 @@ leveldb	table/merger.h	/^namespace leveldb {$/;"	n
 AddFilters	table/table.cc	/^    size_t Table::AddFilters(int n, int regionId)$/;"	f	class:leveldb::Table
 AddFilters	table/table.cc	/^    size_t* Table::AddFilters(int n, int regionId_start, int regionId_end)$/;"	f	class:leveldb::Table
 AdjustFilters	table/table.cc	/^    size_t Table::AdjustFilters(int n, int regionId)$/;"	f	class:leveldb::Table
-AdjustFilters	table/table.cc	/^    size_t* Table::AdjustFilters(int n, int regionId_start, int regionId_end) {$/;"	f	class:leveldb::Table
+AdjustFilters	table/table.cc	/^    size_t* Table::AdjustFilters(int n, int regionId_start, int regionId_end, bool locked) {$/;"	f	class:leveldb::Table
 ApproximateOffsetOf	table/table.cc	/^    uint64_t Table::ApproximateOffsetOf(const Slice &key) const$/;"	f	class:leveldb::Table
 BlockReader	table/table.cc	/^    Iterator *Table::BlockReader(void *arg,$/;"	f	class:leveldb::Table
 DeleteBlock	table/table.cc	/^    static void DeleteBlock(void *arg, void *ignored)$/;"	f	namespace:leveldb
@@ -2403,7 +2421,7 @@ file	table/table.cc	/^        RandomAccessFile *file;$/;"	m	struct:leveldb::Tabl
 filter	table/table.cc	/^        FilterBlockReader *filter;$/;"	m	struct:leveldb::Table::Rep	file:
 filter_datas	table/table.cc	/^        std::vector<std::vector<Slice>> filter_datas; \/\/ be careful about vector memory overhead$/;"	m	struct:leveldb::Table::Rep	file:
 filter_handles	table/table.cc	/^        std::vector<Slice> filter_handles;    \/\/use string instead of slice$/;"	m	struct:leveldb::Table::Rep	file:
-getCurrFilterNum	table/table.cc	/^    int Table::getCurrFilterNum(int regionId)$/;"	f	class:leveldb::Table
+getCurrFilterNum	table/table.cc	/^    int Table::getCurrFilterNum(int regionId, bool needLock)$/;"	f	class:leveldb::Table
 getCurrFiltersSize	table/table.cc	/^    size_t Table::getCurrFiltersSize(int regionId)$/;"	f	class:leveldb::Table
 getRegionKeyRanges	table/table.cc	/^    void Table::getRegionKeyRanges(std::vector<Slice> &region_keys) {$/;"	f	class:leveldb::Table
 getRegionKeyRangesByStr	table/table.cc	/^    void Table::getRegionKeyRangesByStr(const Options *options, Slice &index_content, std::vector<Slice> &region_keys) {$/;"	f	class:leveldb::Table
@@ -2412,6 +2430,7 @@ has_access	table/table.cc	/^        std::vector<bool> has_access;$/;"	m	struct:l
 index_block	table/table.cc	/^        Block *index_block;$/;"	m	struct:leveldb::Table::Rep	file:
 isAccess	table/table.cc	/^    bool Table::isAccess(int regionId) {$/;"	f	class:leveldb::Table
 leveldb	table/table.cc	/^namespace leveldb$/;"	n	file:
+locked	table/table.cc	/^        bool locked;$/;"	m	struct:leveldb::Table::Rep	file:
 meta	table/table.cc	/^        Block *meta = NULL;$/;"	m	struct:leveldb::Table::Rep	file:
 metaindex_handle	table/table.cc	/^        BlockHandle metaindex_handle;  \/\/ Handle to metaindex_block: saved from footer$/;"	m	struct:leveldb::Table::Rep	file:
 mutex_	table/table.cc	/^        SpinMutex mutex_;$/;"	m	struct:leveldb::Table::Rep	file:
@@ -3101,22 +3120,18 @@ pids_	util/multi_bloom.cc	/^	static pthread_t pids_[16];$/;"	m	class:leveldb::__
 pids_	util/multi_bloom.cc	/^pthread_t MultiFilter::pids_[16];$/;"	m	class:leveldb::__anon35::MultiFilter	file:
 ~MultiFilter	util/multi_bloom.cc	/^	virtual ~MultiFilter(){$/;"	f	class:leveldb::__anon35::MultiFilter
 AllocFilterNums	util/multi_queue.cc	/^        int MultiQueue::AllocFilterNums(int freq) {$/;"	f	class:leveldb::multiqueue_ns::MultiQueue
-BGShrinkUsage	util/multi_queue.cc	/^        void MultiQueue::BGShrinkUsage(void *mq)$/;"	f	class:leveldb::multiqueue_ns::MultiQueue
-BackgroudShrinkUsage	util/multi_queue.cc	/^        void MultiQueue::BackgroudShrinkUsage()$/;"	f	class:leveldb::multiqueue_ns::MultiQueue
+BackThread	util/multi_queue.cc	/^        void * MultiQueue::BackThread(void *arg) {$/;"	f	class:leveldb::multiqueue_ns::MultiQueue
 Erase	util/multi_queue.cc	/^        void MultiQueue::Erase(const Slice &key)$/;"	f	class:leveldb::multiqueue_ns::MultiQueue
 Erase	util/multi_queue.cc	/^        void MultiQueue::Erase(const Slice &key, uint32_t hash)$/;"	f	class:leveldb::multiqueue_ns::MultiQueue
 FalsePositive	util/multi_queue.cc	/^        inline double MultiQueue::FalsePositive(LRUQueueHandle *e)$/;"	f	class:leveldb::multiqueue_ns::MultiQueue
 FindPointer	util/multi_queue.cc	/^            LRUQueueHandle **FindPointer(const Slice &key, uint32_t hash)$/;"	f	class:leveldb::multiqueue_ns::HandleTable	file:
 FinishErase	util/multi_queue.cc	/^        bool MultiQueue::FinishErase(LRUQueueHandle *e)$/;"	f	class:leveldb::multiqueue_ns::MultiQueue
-ForceShrinking	util/multi_queue.cc	/^        void MultiQueue::ForceShrinking()$/;"	f	class:leveldb::multiqueue_ns::MultiQueue
-GetLRUFreCount	util/multi_queue.cc	/^        inline uint64_t MultiQueue::GetLRUFreCount() const$/;"	f	class:leveldb::multiqueue_ns::MultiQueue
+HandlePair	util/multi_queue.cc	/^        struct HandlePair {$/;"	s	namespace:leveldb::multiqueue_ns	file:
 HandleTable	util/multi_queue.cc	/^            HandleTable() : length_(0), elems_(0), list_(NULL)$/;"	f	class:leveldb::multiqueue_ns::HandleTable
 HandleTable	util/multi_queue.cc	/^        class HandleTable     \/\/ a list store LRUQueueHandle's address , don't care queue id$/;"	c	namespace:leveldb::multiqueue_ns	file:
 HashSlice	util/multi_queue.cc	/^            static inline uint32_t HashSlice(const Slice &s)$/;"	f	class:leveldb::multiqueue_ns::MultiQueue
 Insert	util/multi_queue.cc	/^            LRUQueueHandle *Insert(LRUQueueHandle *h)$/;"	f	class:leveldb::multiqueue_ns::HandleTable
-Insert	util/multi_queue.cc	/^        Cache::Handle *MultiQueue::Insert(const Slice &key, uint32_t hash, void *value, size_t charge, void (*deleter)(const Slice &key, void *value), bool type)$/;"	f	class:leveldb::multiqueue_ns::MultiQueue
 Insert	util/multi_queue.cc	/^        Cache::Handle *MultiQueue::Insert(const Slice &key, void *value, size_t charge, void (*deleter)(const Slice &key, void *value))$/;"	f	class:leveldb::multiqueue_ns::MultiQueue
-Insert	util/multi_queue.cc	/^        Cache::Handle *MultiQueue::Insert(const Slice &key, void *value, size_t charge, void (*deleter)(const Slice &key, void *value), bool type)$/;"	f	class:leveldb::multiqueue_ns::MultiQueue
 IsCacheFull	util/multi_queue.cc	/^        inline bool MultiQueue::IsCacheFull() const$/;"	f	class:leveldb::multiqueue_ns::MultiQueue
 LRUQueueHandle	util/multi_queue.cc	/^        struct LRUQueueHandle$/;"	s	namespace:leveldb::multiqueue_ns	file:
 LRU_Append	util/multi_queue.cc	/^        void MultiQueue::LRU_Append(LRUQueueHandle *list, LRUQueueHandle *e)$/;"	f	class:leveldb::multiqueue_ns::MultiQueue
@@ -3124,14 +3139,13 @@ LRU_Remove	util/multi_queue.cc	/^        void MultiQueue::LRU_Remove(LRUQueueHan
 LRU_Status	util/multi_queue.cc	/^        std::string MultiQueue::LRU_Status()$/;"	f	class:leveldb::multiqueue_ns::MultiQueue
 Lookup	util/multi_queue.cc	/^            LRUQueueHandle *Lookup(const Slice &key, uint32_t hash)$/;"	f	class:leveldb::multiqueue_ns::HandleTable
 Lookup	util/multi_queue.cc	/^        Cache::Handle *MultiQueue::Lookup(const Slice &key)$/;"	f	class:leveldb::multiqueue_ns::MultiQueue
-Lookup	util/multi_queue.cc	/^        Cache::Handle *MultiQueue::Lookup(const Slice &key, bool Get)$/;"	f	class:leveldb::multiqueue_ns::MultiQueue
-Lookup	util/multi_queue.cc	/^        Cache::Handle *MultiQueue::Lookup(const Slice &key, uint32_t hash, bool Get)$/;"	f	class:leveldb::multiqueue_ns::MultiQueue
+Lookup	util/multi_queue.cc	/^        Cache::Handle *MultiQueue::Lookup(const Slice &key, bool addFreq)$/;"	f	class:leveldb::multiqueue_ns::MultiQueue
 LookupFreCount	util/multi_queue.cc	/^        uint64_t MultiQueue::LookupFreCount(const Slice &key)$/;"	f	class:leveldb::multiqueue_ns::MultiQueue
 MayBeShrinkUsage	util/multi_queue.cc	/^        void MultiQueue::MayBeShrinkUsage()$/;"	f	class:leveldb::multiqueue_ns::MultiQueue
-MultiQueue	util/multi_queue.cc	/^        MultiQueue::MultiQueue(size_t capacity, int lrus_num, int base_num, uint64_t life_time, double fr, double sr, double cr, int lg_b, double s_r): capacity_(capacity), lrus_num_(lrus_num), base_num_(base_num), life_time_(life_time), shrinking_(false)$/;"	f	class:leveldb::multiqueue_ns::MultiQueue
+MultiQueue	util/multi_queue.cc	/^        MultiQueue::MultiQueue(size_t capacity, int lrus_num, uint64_t life_time, double change_ratio, bool cache_use_real_size): capacity_(capacity), lrus_num_(lrus_num), life_time_(life_time)$/;"	f	class:leveldb::multiqueue_ns::MultiQueue
 MultiQueue	util/multi_queue.cc	/^        class MultiQueue: public Cache$/;"	c	namespace:leveldb::multiqueue_ns	file:
 NewId	util/multi_queue.cc	/^        uint64_t MultiQueue::NewId()$/;"	f	class:leveldb::multiqueue_ns::MultiQueue
-NewMultiQueue	util/multi_queue.cc	/^    Cache *NewMultiQueue(size_t capacity, int lrus_num, int base_num, uint64_t life_time, double force_shrink_ratio, double slow_shrink_ratio, double change_ratio, int lg_b, double s_r)$/;"	f	namespace:leveldb
+NewMultiQueue	util/multi_queue.cc	/^    Cache *NewMultiQueue(size_t capacity, int lrus_num, uint64_t life_time, double change_ratio, bool cache_use_real_size)$/;"	f	namespace:leveldb
 Num_Queue	util/multi_queue.cc	/^        inline uint64_t MultiQueue::Num_Queue(int queue_id, uint64_t fre_count)$/;"	f	class:leveldb::multiqueue_ns::MultiQueue
 Prune	util/multi_queue.cc	/^            void Prune() {} \/\/do nothing$/;"	f	class:leveldb::multiqueue_ns::MultiQueue
 RecomputeExp	util/multi_queue.cc	/^        void MultiQueue::RecomputeExp(LRUQueueHandle *e)$/;"	f	class:leveldb::multiqueue_ns::MultiQueue
@@ -3142,31 +3156,29 @@ Remove	util/multi_queue.cc	/^            LRUQueueHandle *Remove(const Slice &key
 Resize	util/multi_queue.cc	/^            void Resize()$/;"	f	class:leveldb::multiqueue_ns::HandleTable	file:
 SetFreCount	util/multi_queue.cc	/^        void MultiQueue::SetFreCount(const Slice &key, uint64_t freCount)$/;"	f	class:leveldb::multiqueue_ns::MultiQueue
 ShrinkLRU	util/multi_queue.cc	/^        inline bool MultiQueue::ShrinkLRU(int k, int64_t remove_charge[], bool force)$/;"	f	class:leveldb::multiqueue_ns::MultiQueue
-SlowShrinking	util/multi_queue.cc	/^        void MultiQueue::SlowShrinking()$/;"	f	class:leveldb::multiqueue_ns::MultiQueue
-TotalCharge	util/multi_queue.cc	/^        size_t MultiQueue::TotalCharge() const$/;"	f	class:leveldb::multiqueue_ns::MultiQueue
-TurnOffAdjustment	util/multi_queue.cc	/^        void MultiQueue::TurnOffAdjustment() {$/;"	f	class:leveldb::multiqueue_ns::MultiQueue
-TurnOnAdjustment	util/multi_queue.cc	/^        void MultiQueue::TurnOnAdjustment() {$/;"	f	class:leveldb::multiqueue_ns::MultiQueue
+TotalCharge	util/multi_queue.cc	/^        size_t MultiQueue::TotalCharge() const {$/;"	f	class:leveldb::multiqueue_ns::MultiQueue
 Unref	util/multi_queue.cc	/^        void MultiQueue::Unref(LRUQueueHandle *e)$/;"	f	class:leveldb::multiqueue_ns::MultiQueue
 Value	util/multi_queue.cc	/^        void *MultiQueue::Value(Cache::Handle *handle)$/;"	f	class:leveldb::multiqueue_ns::MultiQueue
-addCurrentTime	util/multi_queue.cc	/^            void inline addCurrentTime()$/;"	f	class:leveldb::multiqueue_ns::MultiQueue
-base_fre_counts	util/multi_queue.cc	/^            static uint64_t base_fre_counts[10];$/;"	m	class:leveldb::multiqueue_ns::MultiQueue	file:
-base_fre_counts	util/multi_queue.cc	/^    uint64_t multiqueue_ns::MultiQueue::base_fre_counts[10] = {4, 10, 28, 82, 243, 730};$/;"	m	class:leveldb::multiqueue_ns::MultiQueue	file:
-base_num_	util/multi_queue.cc	/^            int base_num_ ;$/;"	m	class:leveldb::multiqueue_ns::MultiQueue	file:
+bg_queue	util/multi_queue.cc	/^            queue<HandlePair> bg_queue;$/;"	m	class:leveldb::multiqueue_ns::MultiQueue	file:
+bg_thread_nums	util/multi_queue.cc	/^            static int bg_thread_nums;$/;"	m	class:leveldb::multiqueue_ns::MultiQueue	file:
+bg_thread_nums	util/multi_queue.cc	/^        int MultiQueue::bg_thread_nums = 1;$/;"	m	class:leveldb::multiqueue_ns::MultiQueue	file:
 bits_per_key_per_filter_	util/multi_queue.cc	/^            std::vector<size_t> bits_per_key_per_filter_, bits_per_key_per_filter_sum;  \/\/begin from 0 bits$/;"	m	class:leveldb::multiqueue_ns::MultiQueue	file:
 bits_per_key_per_filter_sum	util/multi_queue.cc	/^            std::vector<size_t> bits_per_key_per_filter_, bits_per_key_per_filter_sum;  \/\/begin from 0 bits$/;"	m	class:leveldb::multiqueue_ns::MultiQueue	file:
+cache_use_real_size_	util/multi_queue.cc	/^            bool cache_use_real_size_;$/;"	m	class:leveldb::multiqueue_ns::MultiQueue	file:
 capacity_	util/multi_queue.cc	/^            size_t capacity_;$/;"	m	class:leveldb::multiqueue_ns::MultiQueue	file:
-change_ratio	util/multi_queue.cc	/^            double change_ratio;$/;"	m	class:leveldb::multiqueue_ns::MultiQueue	file:
+change_ratio_	util/multi_queue.cc	/^            double change_ratio_;$/;"	m	class:leveldb::multiqueue_ns::MultiQueue	file:
 charge	util/multi_queue.cc	/^            size_t charge;      \/\/ TODO(opt): Only allow uint32_t?$/;"	m	struct:leveldb::multiqueue_ns::LRUQueueHandle	file:
 charges_	util/multi_queue.cc	/^            size_t *charges_;$/;"	m	class:leveldb::multiqueue_ns::MultiQueue	file:
 current_time_	util/multi_queue.cc	/^            uint64_t current_time_;$/;"	m	class:leveldb::multiqueue_ns::MultiQueue	file:
 deleter	util/multi_queue.cc	/^            void (*deleter)(const Slice &, void *value);$/;"	m	struct:leveldb::multiqueue_ns::LRUQueueHandle	file:
 dynamic_merge_counter	util/multi_queue.cc	/^            uint64_t dynamic_merge_counter[2];$/;"	m	class:leveldb::multiqueue_ns::MultiQueue	file:
 elems_	util/multi_queue.cc	/^            uint32_t elems_;$/;"	m	class:leveldb::multiqueue_ns::HandleTable	file:
+end	util/multi_queue.cc	/^            LRUQueueHandle *end;$/;"	m	struct:leveldb::multiqueue_ns::HandlePair	file:
 expection_	util/multi_queue.cc	/^            double expection_;$/;"	m	class:leveldb::multiqueue_ns::MultiQueue	file:
 expire_time	util/multi_queue.cc	/^            uint64_t expire_time; \/\/expire_time = current_time_ + life_time_$/;"	m	struct:leveldb::multiqueue_ns::LRUQueueHandle	file:
-force_shrink_ratio	util/multi_queue.cc	/^            double force_shrink_ratio;$/;"	m	class:leveldb::multiqueue_ns::MultiQueue	file:
 fps	util/multi_queue.cc	/^            std::vector<double> fps;$/;"	m	class:leveldb::multiqueue_ns::MultiQueue	file:
 fre_count	util/multi_queue.cc	/^            uint64_t fre_count;   \/\/frequency count$/;"	m	struct:leveldb::multiqueue_ns::LRUQueueHandle	file:
+handle_error_en	util/multi_queue.cc	19;"	d	file:
 hash	util/multi_queue.cc	/^            uint32_t hash;      \/\/ Hash of key(); used for fast sharding and comparisons$/;"	m	struct:leveldb::multiqueue_ns::LRUQueueHandle	file:
 in_cache	util/multi_queue.cc	/^            bool in_cache;      \/\/ Whether entry is in the cache.$/;"	m	struct:leveldb::multiqueue_ns::LRUQueueHandle	file:
 in_use_	util/multi_queue.cc	/^            LRUQueueHandle in_use_;$/;"	m	class:leveldb::multiqueue_ns::MultiQueue	file:
@@ -3180,35 +3192,42 @@ length_	util/multi_queue.cc	/^            uint32_t length_;$/;"	m	class:leveldb:
 leveldb	util/multi_queue.cc	/^namespace leveldb$/;"	n	file:
 life_time_	util/multi_queue.cc	/^            uint64_t life_time_;$/;"	m	class:leveldb::multiqueue_ns::MultiQueue	file:
 list_	util/multi_queue.cc	/^            LRUQueueHandle **list_;$/;"	m	class:leveldb::multiqueue_ns::HandleTable	file:
-log_base	util/multi_queue.cc	/^            const double log_base;$/;"	m	class:leveldb::multiqueue_ns::MultiQueue	file:
 lru_lens_	util/multi_queue.cc	/^            std::vector<size_t> lru_lens_;$/;"	m	class:leveldb::multiqueue_ns::MultiQueue	file:
 lrus_	util/multi_queue.cc	/^            LRUQueueHandle *lrus_;$/;"	m	class:leveldb::multiqueue_ns::MultiQueue	file:
 lrus_num_	util/multi_queue.cc	/^            int lrus_num_;$/;"	m	class:leveldb::multiqueue_ns::MultiQueue	file:
-mq_env	util/multi_queue.cc	/^            static Env *mq_env;$/;"	m	class:leveldb::multiqueue_ns::MultiQueue	file:
-mq_env	util/multi_queue.cc	/^    Env *multiqueue_ns::MultiQueue::mq_env;$/;"	m	class:leveldb::multiqueue_ns::MultiQueue	file:
 multiqueue_ns	util/multi_queue.cc	/^    namespace multiqueue_ns$/;"	n	namespace:leveldb	file:
 mutex_	util/multi_queue.cc	/^            mutable leveldb::SpinMutex mutex_;  \/\/for hashtable ,usage_ and e$/;"	m	class:leveldb::multiqueue_ns::MultiQueue	file:
 need_adjust	util/multi_queue.cc	/^            bool need_adjust;$/;"	m	class:leveldb::multiqueue_ns::MultiQueue	file:
 next	util/multi_queue.cc	/^            LRUQueueHandle *next;$/;"	m	struct:leveldb::multiqueue_ns::LRUQueueHandle	file:
 next_hash	util/multi_queue.cc	/^            LRUQueueHandle *next_hash;$/;"	m	struct:leveldb::multiqueue_ns::LRUQueueHandle	file:
 next_region	util/multi_queue.cc	/^            LRUQueueHandle *table_handle, *prev_region, *next_region;$/;"	m	struct:leveldb::multiqueue_ns::LRUQueueHandle	file:
+override	util/multi_queue.cc	/^                                   void (*deleter)(const Slice &key, void *value)) override;$/;"	m	class:leveldb::multiqueue_ns::MultiQueue	file:
+override	util/multi_queue.cc	/^            virtual Cache::Handle *Lookup(const Slice &key) override;$/;"	m	class:leveldb::multiqueue_ns::MultiQueue	file:
+override	util/multi_queue.cc	/^            virtual Cache::Handle *Lookup(const Slice &key, bool Get) override;$/;"	m	class:leveldb::multiqueue_ns::MultiQueue	file:
+override	util/multi_queue.cc	/^            virtual bool IsCacheFull() const override ;$/;"	m	class:leveldb::multiqueue_ns::MultiQueue	file:
+override	util/multi_queue.cc	/^            virtual size_t TotalCharge() const override;$/;"	m	class:leveldb::multiqueue_ns::MultiQueue	file:
+override	util/multi_queue.cc	/^            virtual uint64_t NewId() override;$/;"	m	class:leveldb::multiqueue_ns::MultiQueue	file:
+override	util/multi_queue.cc	/^            virtual void *Value(Handle *handle) override;$/;"	m	class:leveldb::multiqueue_ns::MultiQueue	file:
+override	util/multi_queue.cc	/^            virtual void Erase(const Slice &key) override;$/;"	m	class:leveldb::multiqueue_ns::MultiQueue	file:
+pids_	util/multi_queue.cc	/^            static pthread_t pids_[16];$/;"	m	class:leveldb::multiqueue_ns::MultiQueue	file:
+pids_	util/multi_queue.cc	/^        pthread_t MultiQueue::pids_[16];$/;"	m	class:leveldb::multiqueue_ns::MultiQueue	file:
 prev	util/multi_queue.cc	/^            LRUQueueHandle *prev;$/;"	m	struct:leveldb::multiqueue_ns::LRUQueueHandle	file:
 prev_region	util/multi_queue.cc	/^            LRUQueueHandle *table_handle, *prev_region, *next_region;$/;"	m	struct:leveldb::multiqueue_ns::LRUQueueHandle	file:
+queue_con	util/multi_queue.cc	/^            std::condition_variable_any queue_con;$/;"	m	class:leveldb::multiqueue_ns::MultiQueue	file:
 queue_id	util/multi_queue.cc	/^            uint16_t queue_id;   \/\/ queue id  start from 0  and 0 means 0 filter$/;"	m	struct:leveldb::multiqueue_ns::LRUQueueHandle	file:
+queue_mutex	util/multi_queue.cc	/^            std::mutex queue_mutex;$/;"	m	class:leveldb::multiqueue_ns::MultiQueue	file:
 refs	util/multi_queue.cc	/^            uint32_t refs;      \/\/ References, including cache reference, if present.$/;"	m	struct:leveldb::multiqueue_ns::LRUQueueHandle	file:
-shrinking_	util/multi_queue.cc	/^            std::atomic<bool> shrinking_;  \/\/shrinking usage?$/;"	m	class:leveldb::multiqueue_ns::MultiQueue	file:
 shutting_down_	util/multi_queue.cc	/^            std::atomic<bool> shutting_down_;$/;"	m	class:leveldb::multiqueue_ns::MultiQueue	file:
-slow_ratio	util/multi_queue.cc	/^            double slow_ratio;$/;"	m	class:leveldb::multiqueue_ns::MultiQueue	file:
-slow_shrink_ratio	util/multi_queue.cc	/^            double slow_shrink_ratio;$/;"	m	class:leveldb::multiqueue_ns::MultiQueue	file:
+start	util/multi_queue.cc	/^            LRUQueueHandle *start;$/;"	m	struct:leveldb::multiqueue_ns::HandlePair	file:
 sum_freqs_	util/multi_queue.cc	/^            std::vector<size_t> sum_freqs_;$/;"	m	class:leveldb::multiqueue_ns::MultiQueue	file:
 sum_lru_len	util/multi_queue.cc	/^            atomic<size_t> sum_lru_len;$/;"	m	class:leveldb::multiqueue_ns::MultiQueue	file:
 table_	util/multi_queue.cc	/^            HandleTable table_;$/;"	m	class:leveldb::multiqueue_ns::MultiQueue	file:
 table_handle	util/multi_queue.cc	/^            LRUQueueHandle *table_handle, *prev_region, *next_region;$/;"	m	struct:leveldb::multiqueue_ns::LRUQueueHandle	file:
-type	util/multi_queue.cc	/^            bool type;      \/\/"true” represents  tableandfile$/;"	m	struct:leveldb::multiqueue_ns::LRUQueueHandle	file:
 usage_	util/multi_queue.cc	/^            std::atomic<size_t> usage_;$/;"	m	class:leveldb::multiqueue_ns::MultiQueue	file:
 value	util/multi_queue.cc	/^            void *value;$/;"	m	struct:leveldb::multiqueue_ns::LRUQueueHandle	file:
 value_id	util/multi_queue.cc	/^            uint32_t value_id;$/;"	m	struct:leveldb::multiqueue_ns::LRUQueueHandle	file:
 value_refs	util/multi_queue.cc	/^            uint32_t value_refs;$/;"	m	struct:leveldb::multiqueue_ns::LRUQueueHandle	file:
+wait_bg	util/multi_queue.cc	/^            bool wait_bg;$/;"	m	struct:leveldb::multiqueue_ns::LRUQueueHandle	file:
 ~HandleTable	util/multi_queue.cc	/^            ~HandleTable()$/;"	f	class:leveldb::multiqueue_ns::HandleTable
 ~MultiQueue	util/multi_queue.cc	/^        MultiQueue::~MultiQueue()$/;"	f	class:leveldb::multiqueue_ns::MultiQueue
 EXCLUSIVE_LOCK_FUNCTION	util/mutexlock.h	/^  explicit MutexLock(port::Mutex *mu) EXCLUSIVE_LOCK_FUNCTION(mu)$/;"	f	class:leveldb::MutexLock

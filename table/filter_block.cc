@@ -195,9 +195,9 @@ void FilterBlockReader::CreateThread(int filters_num,const leveldb::FilterPolicy
     }
 }
 
-FilterBlockReader::FilterBlockReader(const FilterPolicy* policy,
+FilterBlockReader::FilterBlockReader(const FilterPolicy* policy, bool cache_use_real_size,
                                      int regionNum, int regionFilters_, int base_lg, std::vector<std::vector<uint32_t>> *filter_offsets_)
-    : policy_(policy), curr_num_of_filters_(0), regionFilters(regionFilters_), 
+    : policy_(policy), cache_use_real_size_(cache_use_real_size), curr_num_of_filters_(0), regionFilters(regionFilters_), 
       num_((*filter_offsets_)[0].size()), num_regions(regionNum), filter_offsets(filter_offsets_),
       base_lg_(base_lg), max_num_of_filters_(policy->filterNums()){
 
@@ -252,11 +252,10 @@ size_t FilterBlockReader::RemoveFilters(int n, int regionId)
       else
           data_size = (*filter_offsets)[i][(*filter_offsets)[i].size() - 1] - (*filter_offsets)[i][loc];
 
-#ifdef USE_REAL_SIZE
-    	delta += data_size;
-#else
-      delta += FilterPolicy::bits_per_key_per_filter_[i];
-#endif
+      if (cache_use_real_size_)
+        delta += data_size;
+      else
+        delta += FilterPolicy::bits_per_key_per_filter_[i];
       
       datas_[regionId].pop_back();
     	// offsets_.pop_back();

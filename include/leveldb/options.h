@@ -52,8 +52,10 @@ typedef struct OptionExp{
     uint64_t region_divide_size;
     size_t kFilterBaseLg;
     bool force_delete_level0_file;
+    int run_mode;
+    bool cache_use_real_size;
     OptionExp():no_cache_io_(false),seek_compaction_(false),key_value_size(1000),stats_(nullptr),filter_capacity_ratio(1.0),base_num(64),life_time(50),findAllTable(false),setFreCountInCompaction(false), freq_divide_size(8192), region_divide_size(8192), //2097152(2MB), 134217728(128MB)
-    force_shrink_ratio(1.1),slow_shrink_ratio(0.95),change_ratio(0.001),log_base(3),init_filter_nums(2),slow_ratio(0.5),size_ratio(2),add_filter(true),fp_stat_num(10000),l0_base_ratio(1.0),force_disable_compaction(false),kFilterBaseLg(16), force_delete_level0_file(false){};
+    force_shrink_ratio(1.1),slow_shrink_ratio(0.95),change_ratio(0.001),log_base(3),init_filter_nums(2),slow_ratio(0.5),size_ratio(2),add_filter(true),fp_stat_num(10000),l0_base_ratio(1.0),force_disable_compaction(false),kFilterBaseLg(16), force_delete_level0_file(false), run_mode(0), cache_use_real_size(true){};
 }OptionExp;
 // Options to control the behavior of a database (passed to DB::Open)
 struct Options {

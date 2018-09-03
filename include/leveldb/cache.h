@@ -28,7 +28,8 @@ class Cache;
 // Create a new cache with a fixed size capacity.  This implementation
 // of Cache uses a least-recently-used eviction policy.
 extern Cache* NewLRUCache(size_t capacity);
-extern Cache* NewMultiQueue(size_t capacity,int lrus_num,int base_num=64,uint64_t life_time=50,double force_shrink_ratio=1.1,double slow_shrink_ratio=0.95,double change_ratio=0.001,int lg_b=3,double s_r=0.5);
+extern Cache *NewMultiQueue(size_t capacity, int lrus_num, uint64_t life_time, double change_ratio, bool cache_use_real_size, int run_mode);
+
 class Cache {
  public:
   Cache() { }
@@ -51,17 +52,14 @@ class Cache {
   // value will be passed to "deleter".
   virtual Handle* Insert(const Slice& key, void* value, size_t charge,
                          void (*deleter)(const Slice& key, void* value)) = 0;
-  virtual Handle* Insert(const Slice& key, void* value, size_t charge,
-                         void (*deleter)(const Slice& key, void* value),bool type) {
-				//Insert(key,value,charge,deleter); do nothing
-  }
+
   // If the cache has no mapping for "key", returns NULL.
   //
   // Else return a handle that corresponds to the mapping.  The caller
   // must call this->Release(handle) when the returned mapping is no
   // longer needed.
   virtual Handle* Lookup(const Slice& key) = 0;
-  virtual Handle* Lookup(const Slice& key,bool Get) {}
+  virtual Handle* Lookup(const Slice& key,bool Get) {return NULL;}
   virtual uint64_t LookupFreCount(const Slice & key) {}
   virtual void SetFreCount(const Slice & key,uint64_t freCount) {}
   virtual int AllocFilterNums(int freq) {}
@@ -101,7 +99,7 @@ class Cache {
   virtual std::string LRU_Status(){}
   virtual void addCurrentTime(){}
   virtual uint64_t GetLRUFreCount() const{} 
-  virtual bool IsCacheFull() const{} 
+  virtual bool IsCacheFull() const{return false;} 
   virtual void TurnOnAdjustment() {}
   virtual void TurnOffAdjustment() {}
  private:

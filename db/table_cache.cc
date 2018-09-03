@@ -6,6 +6,7 @@
 #include "db/filename.h"
 #include "util/coding.h"
 #include "table/format.h"
+#include "util/hash.h"
 #include <iostream>
 
 extern bool multi_queue_init;
@@ -41,7 +42,7 @@ TableCache::TableCache(const std::string& dbname,
     : env_(options->env),
       dbname_(dbname),
       options_(options),
-      cache_(NewMultiQueue(entries,options->opEp_.lrus_num_,options->opEp_.base_num,options->opEp_.life_time,options->opEp_.force_shrink_ratio,options->opEp_.slow_shrink_ratio,options_->opEp_.change_ratio,options->opEp_.log_base,options->opEp_.slow_ratio)), level0_freq(0) {
+      cache_(NewMultiQueue(entries,options->opEp_.lrus_num_,options->opEp_.life_time,options_->opEp_.change_ratio,options_->opEp_.cache_use_real_size,options_->opEp_.run_mode)), level0_freq(0) {
 }
 
 TableCache::~TableCache() {
@@ -99,6 +100,15 @@ Status TableCache::FindTable(uint64_t file_number, uint64_t file_size,
   // MeasureTime(Statistics::GetStatistics().get(),Tickers::FILTER_LOOKUP_TIME,Env::Default()->NowMicros() - start_micros_l);
 
   if (*handle == NULL) {
+    uint32_t hash = Hash((const char*)&file_number, sizeof(file_number), 0) % 64;
+    mutex_[hash].lock();
+
+    *handle = cache_->Lookup(key, false);
+    if (*handle != NULL) {
+      mutex_[hash].unlock();
+      return s;
+    }
+
     uint64_t start_micros = Env::Default()->NowMicros();
     std::string fname = TableFileName(dbname_, file_number);
     RandomAccessFile* file = NULL;
@@ -217,9 +227,9 @@ assert(p_0_table->freq_count == region_keys.size() - 1);
         *id_ = i;
         Slice key2(buf, sizeof(buf));
         if (i == 0)
-          *handle = cache_->Insert(key2, tf,0, &DeleteEntry,true);        
+          *handle = cache_->Insert(key2, tf,0, &DeleteEntry);        
         else {
-          cache_->Insert(key2, tf, charge[i - 1], &DeleteEntry,true);
+          cache_->Insert(key2, tf, charge[i - 1], &DeleteEntry);
           if (file_level == 0)
             cache_->SetFreCount(key2, level0_freq);
           else if (freq_count != 0)
@@ -234,6 +244,8 @@ assert(p_0_table->freq_count == region_keys.size() - 1);
 
     if (freqs)
       delete [] freqs;
+  
+    mutex_[hash].unlock();
   }
   else {
       // std::cout << "cachetable lookup fid " << file_number << std::endl;
@@ -344,12 +356,17 @@ Status TableCache::Get(const ReadOptions& options,
     start_micros = env_->NowMicros();
     Table* t = reinterpret_cast<TableAndFile*>(cache_->Value(handle))->table;
     char buf[sizeof(file_number) + sizeof(uint32_t)];
+    uint32_t *id_ = (uint32_t *) (buf + sizeof(uint64_t));
+    *id_ = (uint32_t) (-1);
     s = t->InternalGet(options, k, arg, saver, buf);
     MeasureTime(Statistics::GetStatistics().get(),Tickers::INTERNALGET,Env::Default()->NowMicros() - start_micros);
     start_micros = env_->NowMicros();
-    Slice key(buf, sizeof(buf));
-    Cache::Handle* cache_handle = cache_->Lookup(key, true);
-    cache_->Release(cache_handle);
+    if (*id_ != (uint32_t)-1) {
+      Slice key(buf, sizeof(buf));
+      Cache::Handle* cache_handle = cache_->Lookup(key, true);
+      if (cache_handle != NULL)
+        cache_->Release(cache_handle);
+    }
     MeasureTime(Statistics::GetStatistics().get(),Tickers::FILTER_LOOKUP_TIME,Env::Default()->NowMicros() - start_micros);
 
     start_micros = env_->NowMicros();

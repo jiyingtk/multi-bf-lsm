@@ -6,23 +6,17 @@
 #include <stdlib.h>
 #include <math.h>
 #include <iostream>
-#include <queue>
 #include <boost/iterator/iterator_concepts.hpp>
-#include <thread>
-#include <condition_variable>
-#include "rocksdb/cache.h"
+#include "leveldb/cache.h"
 #include "port/port.h"
 #include "util/hash.h"
 #include "util/mutexlock.h"
 #include "db/table_cache.h"
 using namespace std;
-#define handle_error_en(en, msg) \
-  do { errno = en; perror(msg); exit(EXIT_FAILURE); } while (0)
-  
 bool multi_queue_init = true;
-
 namespace leveldb
 {
+
     namespace multiqueue_ns
     {
         struct LRUQueueHandle
@@ -40,10 +34,10 @@ namespace leveldb
             uint64_t fre_count;   //frequency count
             uint64_t expire_time; //expire_time = current_time_ + life_time_
             uint16_t queue_id;   // queue id  start from 0  and 0 means 0 filter
+            bool type;      //"true” represents  tableandfile
             uint32_t value_id;
             uint32_t value_refs;
             bool is_split;
-            bool wait_bg;
             LRUQueueHandle *table_handle, *prev_region, *next_region;
 
             char key_data[1];   // Beginning of key
@@ -163,11 +157,6 @@ namespace leveldb
             }
         };
 
-        struct HandlePair {
-            LRUQueueHandle *start;
-            LRUQueueHandle *end;
-        };
-
         class MultiQueue: public Cache
         {
             int insert_count;
@@ -185,6 +174,7 @@ namespace leveldb
             HandleTable table_;
             size_t capacity_;
             std::atomic<size_t> usage_;
+            std::atomic<bool> shrinking_;  //shrinking usage?
             uint64_t current_time_;
             uint64_t life_time_;
             std::atomic<bool> shutting_down_;
@@ -194,36 +184,36 @@ namespace leveldb
             std::vector<size_t> bits_per_key_per_filter_, bits_per_key_per_filter_sum;  //begin from 0 bits
             bool need_adjust;
             uint64_t dynamic_merge_counter[2];
-            bool cache_use_real_size_;
-            int run_mode_;
         public:
-            static pthread_t pids_[16];
-            static int bg_thread_nums;
-            queue<HandlePair> bg_queue;
-            std::mutex queue_mutex;
-            std::condition_variable_any queue_con;
-
-            MultiQueue(size_t capacity, int lrus_num = 1, uint64_t life_time = 20000, double cr = 0.0001, bool cache_use_real_size = true, int run_mode = 0);
+            MultiQueue(size_t capacity, int lrus_num = 1, uint64_t life_time = 50, double cr = 0.001);
             ~MultiQueue();
             void Ref(LRUQueueHandle *e, bool addFreCount = false);
             void Unref(LRUQueueHandle *e) ;
             void LRU_Remove(LRUQueueHandle *e);
             void LRU_Append(LRUQueueHandle *list, LRUQueueHandle *e);
-            virtual Cache::Handle *Lookup(const Slice &key) override;
-            virtual Cache::Handle *Lookup(const Slice &key, bool Get) override;
+            Cache::Handle *Lookup(const Slice &key, uint32_t hash, bool Get);
+            Cache::Handle *Lookup(const Slice &key);
+            Cache::Handle *Lookup(const Slice &key, bool Get);
             uint64_t LookupFreCount(const Slice &key);
             void SetFreCount(const Slice &key, uint64_t freCount);
-            virtual int AllocFilterNums(int freq) override;
+            int AllocFilterNums(int freq);
 
             void Release(Cache::Handle *handle);
             virtual Handle *Insert(const Slice &key, void *value, size_t charge,
-                                   void (*deleter)(const Slice &key, void *value)) override;
+                                   void (*deleter)(const Slice &key, void *value)) ;
+            virtual Handle *Insert(const Slice &key, void *value, size_t charge,
+                                   void (*deleter)(const Slice &key, void *value), bool type) ;
 
-            virtual void *Value(Handle *handle) override;
-            virtual void Erase(const Slice &key) override;
-            virtual uint64_t NewId() override;
-            virtual bool IsCacheFull() const override ;
-            virtual size_t TotalCharge() const override;
+            virtual void *Value(Handle *handle);
+            virtual void Erase(const Slice &key);
+            virtual uint64_t NewId();
+            virtual size_t TotalCharge() const;
+            virtual bool IsCacheFull() const;
+            virtual void TurnOnAdjustment();
+            virtual void TurnOffAdjustment();
+            //charge must >= 0
+            Cache::Handle *Insert(const Slice &key, uint32_t hash, void *value, size_t charge,
+                                  void (*deleter)(const Slice &key, void *value), bool type) ;
 
             bool FinishErase(LRUQueueHandle *e);
             void Erase(const Slice &key, uint32_t hash);
@@ -232,7 +222,7 @@ namespace leveldb
 
             uint64_t Num_Queue(int queue_id, uint64_t fre_count);
             std::string LRU_Status();
-            virtual void inline addCurrentTime() override
+            void inline addCurrentTime()
             {
                 ++current_time_;
             }
@@ -244,17 +234,14 @@ namespace leveldb
             void RecomputeExp(LRUQueueHandle *e);
             void RecomputeExpTable(LRUQueueHandle *e);
             double FalsePositive(LRUQueueHandle *e);
-            static void * BackThread(void *args);
-
+            static Env *mq_env;
         };
-        pthread_t MultiQueue::pids_[16];
-        int MultiQueue::bg_thread_nums = 1;
 
-
-        MultiQueue::MultiQueue(size_t capacity, int lrus_num, uint64_t life_time, double change_ratio, bool cache_use_real_size, int run_mode): capacity_(capacity), lrus_num_(lrus_num), life_time_(life_time)
-            , change_ratio_(change_ratio), sum_lru_len(0), expection_(0), usage_(0), shutting_down_(false), insert_count(0), need_adjust(true), cache_use_real_size_(cache_use_real_size), run_mode_(run_mode)
+        MultiQueue::MultiQueue(size_t capacity, int lrus_num, uint64_t life_time, double change_ratio): capacity_(capacity), lrus_num_(lrus_num), life_time_(life_time), shrinking_(false)
+            , change_ratio_(change_ratio), sum_lru_len(0), expection_(0), usage_(0), shutting_down_(false), insert_count(0), need_adjust(true)
         {
             //TODO: declare outside  class  in_use and lrus parent must be Initialized,avoid lock crush
+            uint64_t base_sum = lg_b;
             in_use_.next = &in_use_;
             in_use_.prev = &in_use_;
             in_use_.queue_id = lrus_num; //lrus_num = filter_num + 1
@@ -268,6 +255,7 @@ namespace leveldb
                 lrus_[i].queue_id = i;
                 lru_lens_[i] = 0;
                 sum_freqs_[i] = 0;
+                //base_sum = base_sum*lg_b;
             }
             current_time_ = 0;
             cout << "Multi-Queue Capacity:" << capacity_ << endl;
@@ -284,45 +272,12 @@ namespace leveldb
             }
 
             dynamic_merge_counter[0] = dynamic_merge_counter[1] = 0;
-
-
-            // int cpu_count = sysconf(_SC_NPROCESSORS_CONF);
-            char name_buf[24];
-            int i;
-            for (i = 0; i < bg_thread_nums; i++) {
-                // cpu_set_t cpuset;
-                // CPU_ZERO(&cpuset);
-                // CPU_SET(4 + i, &cpuset);
-
-                if(pthread_create(&pids_[i], NULL, MultiQueue::BackThread, this) != 0)
-                {
-                    perror("create thread ");
-                }
-                snprintf(name_buf, sizeof name_buf, "MultiQueue:bg%d", i);
-                name_buf[sizeof name_buf - 1] = '\0';
-                pthread_setname_np(pids_[i], name_buf);
-
-                // if(4 + bg_thread_nums < cpu_count)
-                // {
-                //     int s = pthread_setaffinity_np(pids_[i], sizeof(cpu_set_t), &cpuset);
-                //     if (s != 0)
-                //     {
-                //         handle_error_en(s, "pthread_setaffinity_np");
-                //     }
-                // }
-            }
-
         }
 
         MultiQueue::~MultiQueue()
         {
             assert(in_use_.next == &in_use_);  // Error if caller has an unreleased handle
             shutting_down_ = true;
-            queue_con.notify_all();
-            for (int i = 0; i < bg_thread_nums; i++) {
-                pthread_join(pids_[i], NULL);
-            }
-            
             mutex_.lock();
             fprintf(stderr, "optimized expection_ is %lf\n", expection_);
             for(int i = 0 ; i < lrus_num_ ;  i++)
@@ -341,52 +296,6 @@ namespace leveldb
             fprintf(stderr, "multi_queue_init is %s, expection_ is %lf, avg_merge_region_nums is %lf\n", multi_queue_init ? "true" : "false", expection_, avg_merge_region_nums);
             mutex_.unlock();
             delete []lrus_;
-        }
-
-        void * MultiQueue::BackThread(void *arg) {
-
-            MultiQueue *mq = (MultiQueue *)arg;
-            while(!mq->shutting_down_) {
-                mq->queue_mutex.lock();
-                while (!mq->shutting_down_ && mq->bg_queue.empty())
-                    mq->queue_con.wait(mq->queue_mutex);
-
-                if (mq->shutting_down_) {
-                    mq->queue_mutex.unlock();
-                    break;
-                }
-
-                HandlePair hp = mq->bg_queue.front();
-                mq->bg_queue.pop();
-                mq->queue_mutex.unlock();
-
-                LRUQueueHandle *backward = hp.start;
-                LRUQueueHandle *forward = hp.end;
-                leveldb::TableAndFile *tf = reinterpret_cast<leveldb::TableAndFile *>(backward->value);
-                size_t* delta_charge = tf->table->AdjustFilters(backward->queue_id, backward->value_id - 1, forward->value_id - 1, true);
-
-                LRUQueueHandle *p = backward;
-                int i = 0;
-                mq->mutex_.lock();
-
-                while (p != forward) {
-                    p->wait_bg = false;
-
-                    p->charge += delta_charge[i];
-                    mq->usage_ += delta_charge[i];
-                    p = p->next_region;
-                    i++;
-                }
-                p->wait_bg = false;
-                
-                p->charge += delta_charge[i];
-                mq->usage_ += delta_charge[i];
-
-                mq->mutex_.unlock();                
-            }
-
-            
-            return NULL;
         }
 
         std::string MultiQueue::LRU_Status()
@@ -435,7 +344,7 @@ namespace leveldb
 
         void MultiQueue::RecomputeExpTable(LRUQueueHandle *e)
         {
-            if(multi_queue_init || (e->queue_id + 1) == lrus_num_ || e->wait_bg)
+            if(multi_queue_init || (e->queue_id + 1) == lrus_num_)
             {
                 ++e->fre_count;
                 sum_freqs_[e->queue_id]++;
@@ -466,7 +375,7 @@ double log_diff_const = 0.8;
                 LRUQueueHandle *forward = e, *backward = e;
                 while (forward != NULL && forward->next_region != NULL) {
                     forward = forward->next_region;
-                    if (forward->queue_id != e->queue_id || forward->fre_count == 0 || forward->expire_time < current_time_ || forward->wait_bg) {
+                    if (forward->queue_id != e->queue_id || forward->fre_count == 0 || forward->expire_time < current_time_) {
                         forward = forward->prev_region;
                         break;
                     }
@@ -488,7 +397,7 @@ double log_diff_const = 0.8;
                 }
                 while (backward != NULL && backward->prev_region != NULL) {
                     backward = backward->prev_region;
-                    if (backward->queue_id != e->queue_id || backward->fre_count == 0 || backward->expire_time < current_time_ || backward->wait_bg) {
+                    if (backward->queue_id != e->queue_id || backward->fre_count == 0 || backward->expire_time < current_time_) {
                         backward = backward->next_region;
                         break;
                     }
@@ -520,7 +429,7 @@ double log_diff_const = 0.8;
                         LRUQueueHandle *old = lrus_[i].next;
                         while(old != &lrus_[i] && remove_bits < need_bits)
                         {
-                            if(old->expire_time < current_time_ && !old->wait_bg)  // expired
+                            if(old->expire_time < current_time_ )  // expired
                             {
                                 // remove_bits += bits_per_key_per_filter_[i];
                                 remove_bits += old->charge / bits_per_key_per_filter_sum[old->queue_id] * bits_per_key_per_filter_[i];
@@ -561,18 +470,12 @@ double log_diff_const = 0.8;
                             LRU_Append(&lrus_[min_i - 1], old);
                         }
 
-
-                        size_t* delta_charge = NULL;
-                        if (bg_thread_nums == 0) {
-                            leveldb::TableAndFile *tf = reinterpret_cast<leveldb::TableAndFile *>(e->value);
-                            delta_charge = tf->table->AdjustFilters(e->queue_id + 1, backward->value_id - 1, forward->value_id - 1);
-                        }
+                        leveldb::TableAndFile *tf = reinterpret_cast<leveldb::TableAndFile *>(e->value);
+                        size_t* delta_charge = tf->table->AdjustFilters(e->queue_id + 1, backward->value_id - 1, forward->value_id - 1);
 
                         LRUQueueHandle *p = backward;
                         int i = 0;
                         while (p != forward) {
-                            if (bg_thread_nums > 0)
-                                p->wait_bg = true;
                             sum_freqs_[p->queue_id] -= p->fre_count;
                             sum_freqs_[p->queue_id + 1] += p->fre_count;
                             if (p->refs == 1) {
@@ -584,15 +487,11 @@ double log_diff_const = 0.8;
                             }
                             else
                                 ++p->queue_id;
-                            if (bg_thread_nums == 0) {
-                                p->charge += delta_charge[i];
-                                usage_ += delta_charge[i];
-                            }
+                            p->charge += delta_charge[i];
+                            usage_ += delta_charge[i];
                             p = p->next_region;
                             i++;
                         }
-                        if (bg_thread_nums > 0)
-                            p->wait_bg = true;
                         sum_freqs_[p->queue_id] -= p->fre_count;
                         sum_freqs_[p->queue_id + 1] += p->fre_count;
                         if (p->refs == 1) {
@@ -604,22 +503,13 @@ double log_diff_const = 0.8;
                         }
                         else
                             ++p->queue_id;
-                        if (bg_thread_nums == 0) {
-                            p->charge += delta_charge[i];
-                            usage_ += delta_charge[i];
-                        }
+                        p->charge += delta_charge[i];
+                        usage_ += delta_charge[i];
 
                         dynamic_merge_counter[0]++;
                         dynamic_merge_counter[1] += forward->value_id - backward->value_id + 1;
 
                         expection_ = min_expection;
-
-                        if (bg_thread_nums > 0){
-                            queue_mutex.lock();
-                            bg_queue.push({backward, forward});
-                            queue_con.notify_all();
-                            queue_mutex.unlock();
-                        }
                     }
                     else
                     {
@@ -631,17 +521,12 @@ double log_diff_const = 0.8;
                     // if(now_expection - new_expection > now_expection * change_ratio_ * (forward->value_id - backward->value_id + 1))
                     if(now_expection - new_expection > now_expection * change_ratio_)
                     {
-                        size_t* delta_charge = NULL;
-                        if (bg_thread_nums == 0) {
-                            leveldb::TableAndFile *tf = reinterpret_cast<leveldb::TableAndFile *>(e->value);
-                            delta_charge = tf->table->AdjustFilters(e->queue_id + 1, backward->value_id - 1, forward->value_id - 1);
-                        }
+                        leveldb::TableAndFile *tf = reinterpret_cast<leveldb::TableAndFile *>(e->value);
+                        size_t* delta_charge = tf->table->AdjustFilters(e->queue_id + 1, backward->value_id - 1, forward->value_id - 1);
 
                         LRUQueueHandle *p = backward;
                         int i = 0;
                         while (p != forward) {
-                            if (bg_thread_nums > 0)
-                                p->wait_bg = true;
                             sum_freqs_[p->queue_id] -= p->fre_count;
                             sum_freqs_[p->queue_id + 1] += p->fre_count;
                             if (p->refs == 1) {
@@ -655,15 +540,11 @@ double log_diff_const = 0.8;
                             }
                             else
                                 ++p->queue_id;
-                            if (bg_thread_nums == 0) {
-                                p->charge += delta_charge[i];
-                                usage_ += delta_charge[i];
-                            }
+                            p->charge += delta_charge[i];
+                            usage_ += delta_charge[i];
                             p = p->next_region;
                             i++;
                         }
-                        if (bg_thread_nums > 0)
-                            p->wait_bg = true;
                         sum_freqs_[p->queue_id] -= p->fre_count;
                         sum_freqs_[p->queue_id + 1] += p->fre_count;
                         if (p->refs == 1) {
@@ -675,22 +556,13 @@ double log_diff_const = 0.8;
                         }
                         else
                             ++p->queue_id;
-                        if (bg_thread_nums == 0) {
-                            p->charge += delta_charge[i];
-                            usage_ += delta_charge[i];
-                        }
-                        
+                        p->charge += delta_charge[i];
+                        usage_ += delta_charge[i];
+
                         dynamic_merge_counter[0]++;
                         dynamic_merge_counter[1] += forward->value_id - backward->value_id + 1;
 
                         expection_ = new_expection;
-
-                        if (bg_thread_nums > 0) {
-                            queue_mutex.lock();
-                            bg_queue.push({backward, forward});
-                            queue_con.notify_all();
-                            queue_mutex.unlock();
-                        }
                     }
                     else
                     {
@@ -702,7 +574,7 @@ double log_diff_const = 0.8;
 
         void MultiQueue::RecomputeExp(LRUQueueHandle *e)
         {
-            if(multi_queue_init || (e->queue_id + 1) == lrus_num_ || e->wait_bg)
+            if(multi_queue_init || (e->queue_id + 1) == lrus_num_)
             {
                 ++e->fre_count;
                 sum_freqs_[e->queue_id]++;
@@ -732,7 +604,7 @@ double log_diff_const = 0.8;
                         LRUQueueHandle *old = lrus_[i].next;
                         while(old != &lrus_[i] && remove_bits < need_bits)
                         {
-                            if(old->expire_time < current_time_ && !old->wait_bg)  // expired
+                            if(old->expire_time < current_time_ )  // expired
                             {
                                 // remove_bits += bits_per_key_per_filter_[i];
                                 remove_bits += old->charge / bits_per_key_per_filter_sum[old->queue_id] * bits_per_key_per_filter_[i];
@@ -771,20 +643,10 @@ double log_diff_const = 0.8;
                             sum_freqs_[min_i - 1] += old->fre_count;
                             LRU_Append(&lrus_[min_i - 1], old);
                         }
-
-                        if (bg_thread_nums > 0)
-                            e->wait_bg = true;
                         sum_freqs_[e->queue_id] -= e->fre_count;
                         sum_freqs_[e->queue_id + 1] += e->fre_count;
                         ++e->queue_id;
                         expection_ = min_expection;
-
-                        if (bg_thread_nums > 0) {
-                            queue_mutex.lock();
-                            bg_queue.push({e, e});
-                            queue_con.notify_all();
-                            queue_mutex.unlock();
-                        }
                     }
                     else
                     {
@@ -796,20 +658,10 @@ double log_diff_const = 0.8;
                     if(now_expection - new_expection > now_expection * change_ratio_)
                     {
                         //if(now_expection > new_expection){
-
-                        if (bg_thread_nums > 0)
-                            e->wait_bg = true;
                         sum_freqs_[e->queue_id] -= e->fre_count;
                         sum_freqs_[e->queue_id + 1] += e->fre_count;
                         ++e->queue_id;
                         expection_ = new_expection;
-
-                        if (bg_thread_nums > 0) {
-                            queue_mutex.lock();
-                            bg_queue.push({e, e});
-                            queue_con.notify_all();
-                            queue_mutex.unlock();
-                        }
                     }
                     else
                     {
@@ -836,10 +688,8 @@ double log_diff_const = 0.8;
                 tf->table->setAccess(e->value_id - 1);
                 if(e->expire_time > current_time_ )  //not expired
                 {
-                    if (run_mode_ <= 1)
-                        RecomputeExp(e);
-                    else
-                        RecomputeExpTable(e);
+                    RecomputeExp(e);
+                    // RecomputeExpTable(e);
                 }// else{ // if(e->expire_time < current_time_){   //expired
                 //   if(e->fre_count > 0){
                 //  expection_ -= (e->fre_count*1.0/2.0)*FalsePositive(e);
@@ -874,10 +724,8 @@ deallocate:
             {
                 //int qn = Queue_Num(e->fre_count);
                 leveldb::TableAndFile *tf = reinterpret_cast<leveldb::TableAndFile *>(e->value);
-                if(!e->wait_bg && e->value_id > 0 && tf->table->getCurrFilterNum(e->value_id - 1) < e->queue_id)   //only add;
+                if(e->value_id > 0 && tf->table->getCurrFilterNum(e->value_id - 1) < e->queue_id && e->type)   //only add;
                 {
-                    // printf("error filter num < queue_id\n");
-
                     ++e->refs;
                     // mutex_.unlock();
                     size_t delta_charge = tf->table->AdjustFilters(e->queue_id, e->value_id - 1);  // not in lru list, so need to worry will be catched by ShrinkUsage
@@ -891,13 +739,13 @@ deallocate:
                     usage_ += delta_charge;
                     MayBeShrinkUsage();
                 }
-                else if (e->value_id > 0 && tf->table->getCurrFilterNum(e->value_id - 1) > e->queue_id) {
+                else if (e->value_id > 0 && tf->table->getCurrFilterNum(e->value_id - 1) > e->queue_id && e->type) {
                     e->queue_id = tf->table->getCurrFilterNum(e->value_id - 1);
-                    size_t delta_charge;
-                    if (cache_use_real_size_)
-                        delta_charge = tf->table->getCurrFiltersSize(e->value_id - 1);
-                    else
-                        delta_charge = bits_per_key_per_filter_sum[e->queue_id];
+                #ifdef USE_REAL_SIZE
+                    size_t delta_charge = tf->table->getCurrFiltersSize(e->value_id - 1);
+                #else
+                    size_t delta_charge = bits_per_key_per_filter_sum[e->queue_id];
+                #endif
                     e->charge = delta_charge;
                     usage_ += delta_charge;
                     MayBeShrinkUsage();
@@ -926,6 +774,25 @@ deallocate:
             e->next->prev = e;
             //if append to in_use , no need to remember queue_id,thus in_use_mutex used independently
             e->queue_id = list->queue_id == lrus_num_ ? e->queue_id : list->queue_id;
+        }
+
+        Cache::Handle *MultiQueue::Lookup(const Slice &key, uint32_t hash, bool Get)
+        {
+            mutex_.lock();
+            LRUQueueHandle *e = table_.Lookup(key, hash);
+            if (e != NULL)
+            {
+                if(e->in_cache && e->refs == 1)
+                {
+                    Ref(e, Get);
+                }
+                else
+                {
+                    Ref(e, Get); //on in-use list or not in cache in the short time
+                }
+            }
+            mutex_.unlock();
+            return reinterpret_cast<Cache::Handle *>(e);
         }
 
         uint64_t MultiQueue::LookupFreCount(const Slice &key)
@@ -957,33 +824,17 @@ deallocate:
 
         }
 
-
+        Cache::Handle *MultiQueue::Lookup(const Slice &key, bool Get)
+        {
+            const uint32_t hash = HashSlice(key);
+            return  Lookup(key, hash, Get);
+        }
 
         Cache::Handle *MultiQueue::Lookup(const Slice &key)
         {
-            return Lookup(key, false);
-        }
-
-        Cache::Handle *MultiQueue::Lookup(const Slice &key, bool addFreq)
-        {
             const uint32_t hash = HashSlice(key);
-            mutex_.lock();
-            LRUQueueHandle *e = table_.Lookup(key, hash);
-            if (e != NULL)
-            {
-                if(e->in_cache && e->refs == 1)
-                {
-                    Ref(e, addFreq);
-                }
-                else
-                {
-                    Ref(e, addFreq); //on in-use list or not in cache in the short time
-                }
-            }
-            mutex_.unlock();
-            return reinterpret_cast<Cache::Handle *>(e);
+            return  Lookup(key, hash, false);
         }
-
         void MultiQueue::Release(Cache::Handle *handle)
         {
             auto lru_queue_handle = reinterpret_cast<LRUQueueHandle *>(handle);
@@ -1022,7 +873,7 @@ deallocate:
                         LRUQueueHandle *old = lrus_[k].next;
                         // assert(old->refs >= 1);
                         //TODO: old->fre_count = queue_id
-                        if(old->refs == 1 && old->expire_time < current_time_ && !old->wait_bg)
+                        if(old->refs == 1 && old->expire_time < current_time_)
                         {
                             leveldb::TableAndFile *tf = reinterpret_cast<leveldb::TableAndFile *>(old->value);
                             uint64_t start_micros = Env::Default()->NowMicros();
@@ -1074,17 +925,11 @@ deallocate:
                         LRUQueueHandle *old = lrus_[k].next;
                         // assert(old != &lrus_[k]);
                         if (old == &lrus_[k]) {
-                            printf("error! max lru is empty!\n");
                             int i = 1;
                             while (i) {
                                 int b = 0;
                                 b += 1;
                             }
-                        }
-                        if (old->wait_bg) {
-                            LRU_Remove(old);
-                            LRU_Append(&lrus_[k], old);
-                            continue;
                         }
                         leveldb::TableAndFile *tf = reinterpret_cast<leveldb::TableAndFile *>(old->value);
                         size_t delta_charge = tf->table->RemoveFilters(1, old->value_id - 1); //  remove 1 filter
@@ -1129,9 +974,33 @@ deallocate:
             return usage_ >= capacity_;
         }
 
+        void MultiQueue::TurnOnAdjustment() {
+            mutex_.lock();
+            need_adjust = true;
+            mutex_.unlock();
+        }
+
+        void MultiQueue::TurnOffAdjustment() {
+            mutex_.lock();
+            need_adjust = false;
+            mutex_.unlock();  
+        }
+
         Cache::Handle *MultiQueue::Insert(const Slice &key, void *value, size_t charge, void (*deleter)(const Slice &key, void *value))
         {
             const uint32_t hash = HashSlice(key);
+            return Insert(key, hash, value, charge, deleter, false);
+        }
+
+        Cache::Handle *MultiQueue::Insert(const Slice &key, void *value, size_t charge, void (*deleter)(const Slice &key, void *value), bool type)
+        {
+            const uint32_t hash = HashSlice(key);
+            return Insert(key, hash, value, charge, deleter, type);
+        }
+
+        Cache::Handle *MultiQueue::Insert(const Slice &key, uint32_t hash, void *value, size_t charge, void (*deleter)(const Slice &key, void *value), bool type)
+        {
+            // MutexLock l(&mutex_);
             mutex_.lock();
             insert_count++;
 
@@ -1147,8 +1016,8 @@ deallocate:
             e->hash = hash;
             e->in_cache = false;
             e->refs = 1;  // for the returned handle.
+            e->type = type;
             e->fre_count = 0;
-            e->wait_bg = false;
             leveldb::TableAndFile *tf = reinterpret_cast<leveldb::TableAndFile *>(e->value);
             uint32_t *regionId_ = (uint32_t *) (key.data() + sizeof(uint64_t));
             e->value_id = *regionId_;
@@ -1260,16 +1129,14 @@ deallocate:
             Erase(key, hash);
         }
 
-        size_t MultiQueue::TotalCharge() const {
-            mutex_.lock();
-            size_t usage = usage_;
-            mutex_.unlock();
-            return usage;
-        }
-        
         uint64_t MultiQueue::NewId()
         {
             return ++(last_id_);
+        }
+
+        size_t MultiQueue::TotalCharge() const
+        {
+            return usage_;
         }
 
         void *MultiQueue::Value(Cache::Handle *handle)
@@ -1279,9 +1146,12 @@ deallocate:
 
     };
 
-    Cache *NewMultiQueue(size_t capacity, int lrus_num, uint64_t life_time, double change_ratio, bool cache_use_real_size, int run_mode)
+    Env *multiqueue_ns::MultiQueue::mq_env;
+
+    Cache *NewMultiQueue(size_t capacity, int lrus_num, uint64_t life_time, double change_ratio)
     {
-        return new multiqueue_ns::MultiQueue(capacity, lrus_num, life_time, change_ratio, cache_use_real_size, run_mode);
+        multiqueue_ns::MultiQueue::mq_env = newEnv();
+        return new multiqueue_ns::MultiQueue(capacity, lrus_num, life_time, change_ratio);
     }
 
 };

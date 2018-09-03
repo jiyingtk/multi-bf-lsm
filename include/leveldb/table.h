@@ -58,10 +58,10 @@ class Table {
    size_t AddFilters(int n, int regionId);
    size_t* AddFilters(int n, int regionId_start, int regionId_end);
    size_t AdjustFilters(int n, int regionId = 0);
-   size_t* AdjustFilters(int n, int regionId_start, int regionId_end);
+   size_t* AdjustFilters(int n, int regionId_start, int regionId_end, bool locked = false);
    size_t RemoveFilters(int n, int regionId = 0);
    size_t getCurrFiltersSize(int regionId = 0);
-   int getCurrFilterNum(int regionId = 0);
+   int getCurrFilterNum(int regionId = 0, bool needLock = false);
    int getRegionNum();
    void setAccess(int regionId);
    bool isAccess(int regionId);

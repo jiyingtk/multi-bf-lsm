@@ -55,7 +55,7 @@ class FilterBlockBuilder {
 class FilterBlockReader {
  public:
  // REQUIRES: "contents" and *policy must stay live while *this is live.
-  FilterBlockReader(const FilterPolicy* policy, int regionNum, int regionFilters_, int base_lg, std::vector<std::vector<uint32_t>> *filter_offsets);
+  FilterBlockReader(const FilterPolicy* policy, bool cache_use_real_size, int regionNum, int regionFilters_, int base_lg, std::vector<std::vector<uint32_t>> *filter_offsets);
   ~FilterBlockReader();
   bool KeyMayMatch(uint64_t block_offset, const Slice& key);
   void AddFilter(Slice& contents, int regionId);
@@ -67,6 +67,7 @@ class FilterBlockReader {
   static bool end_thread;
  private:
   const FilterPolicy* policy_;
+  bool cache_use_real_size_;
   std::vector<std::vector<const char*>> datas_;    // Pointer to filter data (at block-start)
   // std::vector<const char*> offsets_;  // Pointer to beginning of offset array (at block-end)
   size_t num_;          // Number of entries in offset array
