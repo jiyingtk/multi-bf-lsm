@@ -219,7 +219,7 @@ static Iterator* GetFileIterator(void* arg,
         Status::Corruption("FileReader invoked with unexpected value"));
   } else {
   
-    return cache->NewBufferedIterator(options,
+    return cache->NewIterator(options,
                               DecodeFixed64(file_value.data()),
                               DecodeFixed64(file_value.data() + 8));
   }

@@ -42,7 +42,9 @@ TableCache::TableCache(const std::string& dbname,
     : env_(options->env),
       dbname_(dbname),
       options_(options),
-      cache_(NewMultiQueue(entries,options->opEp_.lrus_num_,options->opEp_.life_time,options_->opEp_.change_ratio,options_->opEp_.cache_use_real_size,options_->opEp_.run_mode)), level0_freq(0) {
+      cache_(NewMultiQueue(entries,options->opEp_.lrus_num_,options->opEp_.life_time,options_->opEp_.change_ratio,
+        options_->opEp_.cache_use_real_size,options_->opEp_.run_mode,options_->opEp_.region_merge_threshold)),
+      level0_freq(0) {
 }
 
 TableCache::~TableCache() {
@@ -123,7 +125,7 @@ Status TableCache::FindTable(uint64_t file_number, uint64_t file_size,
 
     int *freqs = NULL, freq_count = 0;;
     int total_freq = 0;
-    if (input_0_numbers != NULL) {
+/*    if (input_0_numbers != NULL) {
       std::vector<std::vector<Slice>>  region_keys_all;
       std::vector<int *> freqs_all;
       std::vector<int> freq_count_all;
@@ -197,11 +199,12 @@ assert(p_0_table->freq_count == region_keys.size() - 1);
       tableMetaData->load_filter_num[0] = filter_num;
 
     }
-
+*/
 
     size_t *charge = NULL;
     if (s.ok()) {
-      s = Table::Open(*options_, file, file_size, &table, charge, file_level, tableMetaData);
+      // s = Table::Open(*options_, file, file_size, &table, charge, file_level, tableMetaData);
+      s = Table::Open(*options_, file, file_size, &table, charge, file_level, NULL);
     }
     MeasureTime(Statistics::GetStatistics().get(),Tickers::OPEN_TABLE_TIME,Env::Default()->NowMicros() - start_micros);
     if (!s.ok()) {
@@ -230,11 +233,11 @@ assert(p_0_table->freq_count == region_keys.size() - 1);
           *handle = cache_->Insert(key2, tf,0, &DeleteEntry);        
         else {
           cache_->Insert(key2, tf, charge[i - 1], &DeleteEntry);
-          if (file_level == 0)
+/*          if (file_level == 0)
             cache_->SetFreCount(key2, level0_freq);
           else if (freq_count != 0)
-            cache_->SetFreCount(key2, total_freq);
-            // cache_->SetFreCount(key2, freqs[i - 1]);
+            cache_->SetFreCount(key2, total_freq);// cache_->SetFreCount(key2, freqs[i - 1]);
+*/
         }
 
         tf->refs++;

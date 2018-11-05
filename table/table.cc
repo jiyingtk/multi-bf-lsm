@@ -481,13 +481,13 @@ namespace leveldb
 
             filter_mem_space += data_size;
             filter_num++;
-            MeasureTime(Statistics::GetStatistics().get(), Tickers::ADD_FILTER_TIME_0 + curr_filter_num + 1, Env::Default()->NowMicros() - start_micros);
             if(rep_->filter == NULL)
             {
                 rep_->filter = new FilterBlockReader(rep_->options.filter_policy, rep_->options.opEp_.cache_use_real_size, regionNum, rep_->options.opEp_.region_divide_size / (1 << rep_->base_lg_), rep_->base_lg_, &rep_->offsets_);
             }
             rep_->filter->AddFilter(content, regionId);
         }
+        MeasureTime(Statistics::GetStatistics().get(), Tickers::ADD_FILTER_TIME_0 + curr_filter_num + 1, Env::Default()->NowMicros() - start_micros);
 
         delete [] buf;
     }
@@ -942,7 +942,7 @@ namespace leveldb
             *id_ = handle.offset() / rep_->options.opEp_.region_divide_size + 1;
 
             // if (multi_queue_init && getCurrFilterNum(*id_ - 1) == 0) {
-            if (!isAccess(*id_ - 1) && getCurrFilterNum(*id_ - 1) == 0) { //real region divide mode
+            if (rep_->options.opEp_.run_mode != 1 && rep_->options.opEp_.run_mode != 3 && !isAccess(*id_ - 1) && getCurrFilterNum(*id_ - 1) == 0) { //real region divide mode
                 rep_->mutex_.lock();
                 rep_->locked = true;
 
