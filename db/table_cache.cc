@@ -15,12 +15,19 @@ namespace leveldb {
 bool directIO_of_RandomAccess = false;
 
 
-static void DeleteEntry(const Slice& key, void* value) {
+static void DeleteEntry(const Slice& key, void* value, const bool realDelete = true) {
   TableAndFile* tf = reinterpret_cast<TableAndFile*>(value);
   // if (--tf->refs == 0) {
+  if (realDelete) {
     delete tf->table;
     delete tf->file;
     delete tf;
+  } else {  //drop bloom filter
+    // int regionNum = tf->table->getRegionNum();
+    // for (int i = 0; i < regionNum; i++) {
+    //   tf->table->RemoveFilters(-1, i);
+    // }
+  }
   // }
 }
 
@@ -42,9 +49,16 @@ TableCache::TableCache(const std::string& dbname,
     : env_(options->env),
       dbname_(dbname),
       options_(options),
-      cache_(NewMultiQueue(entries,options->opEp_.lrus_num_,options->opEp_.life_time,options_->opEp_.change_ratio,
-        options_->opEp_.cache_use_real_size,options_->opEp_.run_mode,options_->opEp_.region_merge_threshold)),
+      cache_(),
       level0_freq(0) {
+        if (options->opEp_.useLRUCache) {
+          cache_ = NewLRUCache(entries);
+          cache_->SupportCacheDeletedEntry(true);
+        }
+        else {
+          cache_ = NewMultiQueue(entries,options->opEp_.lrus_num_,options->opEp_.life_time,
+            options_->opEp_.change_ratio,options_->opEp_.cache_use_real_size);
+        }
 }
 
 TableCache::~TableCache() {
@@ -226,6 +240,8 @@ assert(p_0_table->freq_count == region_keys.size() - 1);
 
       if (charge == NULL)
         charge = new size_t[regionNum]();
+
+      
       for (int i = 0; i <= regionNum; i++) {
         *id_ = i;
         Slice key2(buf, sizeof(buf));
@@ -350,8 +366,10 @@ Status TableCache::Get(const ReadOptions& options,
   uint64_t start_micros = env_->NowMicros();
   // options_->opEp_.add_filter = file_access_time > cache_->GetLRUFreCount()?true:false;
   // options_->opEp_.add_filter = true;
-  options_->opEp_.add_filter = false;
   // options_->opEp_.add_filter = !cache_->IsCacheFull();
+  // options_->opEp_.add_filter = options_->opEp_.useLRUCache ? true : false;
+  options_->opEp_.add_filter = false;
+
   options.file_number = file_number;
   Status s = FindTable(file_number, file_size, &handle,true, options.file_level);
   MeasureTime(Statistics::GetStatistics().get(),Tickers::FINDTABLE,Env::Default()->NowMicros() - start_micros);
@@ -405,13 +423,13 @@ void TableCache::adjustFilters(uint64_t file_number, uint64_t file_size,int n)
     Cache::Handle* handle = NULL;
     Status s = FindTable(file_number, file_size, &handle);
     if (s.ok()) {
-	Table* t = reinterpret_cast<TableAndFile*>(cache_->Value(handle))->table;
-	if(n > 0){
-	    t->AddFilters(n, 0);
-	}else{
-	    t->RemoveFilters(-n);
-	}
-	cache_->Release(handle);
+    	Table* t = reinterpret_cast<TableAndFile*>(cache_->Value(handle))->table;
+    	if(n > 0){
+    	    t->AddFilters(n, 0);
+    	}else{
+    	    t->RemoveFilters(-n);
+    	}
+    	cache_->Release(handle);
     }
 }
 

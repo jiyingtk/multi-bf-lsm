@@ -156,6 +156,10 @@ DBImpl::DBImpl(const Options& raw_options, const std::string& dbname)
       table_cache_size = (size_t)((options_.max_open_files - kNumNonTableCacheFiles)*options_.opEp_.filter_capacity_ratio);
   }
 
+  // if (options_.opEp_.useLRUCache) {
+  //   table_cache_size = options_.max_open_files - kNumNonTableCacheFiles;
+  // }
+
   table_cache_ = new TableCache(dbname_, &options_, table_cache_size);
 
   versions_ = new VersionSet(dbname_, &options_, table_cache_,

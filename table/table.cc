@@ -17,8 +17,8 @@
 #include "util/mutexlock.h"
 #include <iostream>
 #include <list>
-//#include <boost/config/detail/posix_features.hpp>
-#include <boost/config/posix_features.hpp>
+#include <boost/config/detail/posix_features.hpp>
+//#include <boost/config/posix_features.hpp>
 
 
 //filter memory space overhead
@@ -141,19 +141,12 @@ namespace leveldb
             rep->filter_datas.clear();
             rep->filter = NULL;
             *table = new Table(rep);
-            //   if(isLevel0){
-            // (*table)->ReadMeta(footer,options.opEp_.init_filter_nums);//4
-            //   }else{
-            // (*table)->ReadMeta(footer,options.opEp_.add_filter?1:0);
-            //   }
 
             int add_filter_num = options.opEp_.add_filter ? rep->options.opEp_.init_filter_nums : 0;
-            // if (file_level > 3)
-            //     add_filter_num = 0;
+
             if (tableMetaData != NULL)
                 add_filter_num = tableMetaData->load_filter_num[0];
-            // if (file_level == 0)
-            //     add_filter_num = 4;
+
             (*table)->ReadMeta(footer, charge, add_filter_num, tableMetaData);
 
             rep->has_access.resize((*table)->getRegionNum());
@@ -282,14 +275,7 @@ namespace leveldb
             //     fprintf(stderr,"level 0 add %d filters\n",add_filter_num);
             ReadFilters(rep_->filter_handles, charge, add_filter_num, tableMetaData);
         }
-        // else if(multi_queue_init)
-        // {
-        //     ReadFilters(rep_->filter_handles, rep_->options.opEp_.init_filter_nums);
-        // }
-        // else if(add_filter_num)
-        // {
-        //     ReadFilters(rep_->filter_handles, 1);
-        // }
+
         delete iter;
         // delete meta;  //reserve meta index_block
     }
@@ -304,7 +290,6 @@ namespace leveldb
             {
                 return;
             }
-            // filter_handles.set_size(filter_handles.get_size() - rep_->offsets_[i][rep_->offsets_[i].size() - 1]);
         }
         ReadOptions opt;
         if (rep_->options.paranoid_checks)
@@ -351,19 +336,13 @@ namespace leveldb
                     memcpy(new_data, start, data_size);
                     Slice filter_region(new_data, data_size);
                     region_filter.push_back(filter_region);
-                    // if (j == regionNum - 1) {
-                    //     assert(rep_->offsets_[loc] + data_size + 4 * rep_->offsets_.size() == blocks[i].data.size() - 1);
-                    // }
+
                     if (rep_->options.opEp_.cache_use_real_size)
                         charge[j] += data_size;
                     else
                         charge[j] += FilterPolicy::bits_per_key_per_filter_[i];
                 }
                 delete [] blocks[i].data.data();
-
-
-                // rep_->filter_datas.push_back(blocks[i].data.data());     // Will need to delete later
-                // filter_mem_space += blocks[i].data.size();
 
                 filter_mem_space += offsets_[offsets_.size() - 1] + offsets_.size() * 4;
                 filter_num++;
@@ -461,9 +440,6 @@ namespace leveldb
         char *buf = new char[data_size_];
         Status s = rep_->file->Read(offset, data_size_, &contents, buf);
 
-        // if (!ReadBlock(rep_->file, opt, filter_handle, &block).ok()) {
-        //   return;
-        // }
         if (!s.ok())
         {
             delete[] buf;
@@ -532,9 +508,6 @@ namespace leveldb
 
         Status s = rep_->file->Read(offset, data_size, &contents, buf);
 
-        // if (!ReadBlock(rep_->file, opt, filter_handle, &block).ok()) {
-        //   return;
-        // }
         if (!s.ok())
         {
             delete[] buf;
@@ -567,17 +540,8 @@ namespace leveldb
         size_t* delta = new size_t[regionId_end - regionId_start + 1]();
         if(rep_->filter == NULL)
         {
-            // ReadFilters(rep_->filter_handles, n);
-            // while (n--)
-            //     delta += ReadFilter(rep_->filter_handles, regionId);
-            // // for(int i = 0 ;  i <  n ; i++)
-            // // {
-            // //     delta += FilterPolicy::bits_per_key_per_filter_[i];
-            // // }
-            // return delta;
             int regionNum = getRegionNum();
             rep_->filter = new FilterBlockReader(rep_->options.filter_policy, rep_->options.opEp_.cache_use_real_size, regionNum, rep_->options.opEp_.region_divide_size / (1 << rep_->base_lg_), rep_->base_lg_, &rep_->offsets_);
-
         }
         int curr_filter_num = getCurrFilterNum(regionId_start);
         for (int i = regionId_start + 1; i <= regionId_end; i++)
@@ -585,7 +549,6 @@ namespace leveldb
 
         while(n-- && curr_filter_num < rep_->filter_handles.size()) // avoid overhead of filters
         {
-            // delta += FilterPolicy::bits_per_key_per_filter_[curr_filter_num];
             ReadFilter(rep_->filter_handles[curr_filter_num++], regionId_start, regionId_end, delta);
         }
         return delta;
@@ -597,27 +560,17 @@ namespace leveldb
         size_t delta = 0;
         if(rep_->filter == NULL)
         {
-            // ReadFilters(rep_->filter_handles, n);
-            // while (n--)
-            //     delta += ReadFilter(rep_->filter_handles, regionId);
-            // // for(int i = 0 ;  i <  n ; i++)
-            // // {
-            // //     delta += FilterPolicy::bits_per_key_per_filter_[i];
-            // // }
-            // return delta;
             int regionNum = getRegionNum();
             rep_->filter = new FilterBlockReader(rep_->options.filter_policy, rep_->options.opEp_.cache_use_real_size, regionNum, rep_->options.opEp_.region_divide_size / (1 << rep_->base_lg_), rep_->base_lg_, &rep_->offsets_);
-
         }
         int curr_filter_num = getCurrFilterNum(regionId);
         while(n-- && curr_filter_num < rep_->filter_handles.size()) // avoid overhead of filters
         {
-            // delta += FilterPolicy::bits_per_key_per_filter_[curr_filter_num];
             delta += ReadFilter(rep_->filter_handles[curr_filter_num++], regionId);
         }
         return delta;
     }
-//todo
+
     size_t Table::RemoveFilters(int n, int regionId)
     {
         if(rep_->filter == NULL)
@@ -641,17 +594,10 @@ namespace leveldb
             {
                 delete [] (rep_->filter_datas[regionId].back().data());
                 rep_->filter_datas[regionId].pop_back();
-                // BlockHandle filter_handle;
                 Slice v = rep_->filter_handles[--curr_filter_num];
-                // delta += FilterPolicy::bits_per_key_per_filter_[curr_filter_num];
-                // if(!filter_handle.DecodeFrom(&v).ok())
-                // {
-                //     assert(0);
-                //     return 0;
-                // }
-                // filter_mem_space -= (filter_handle.size() + kBlockTrailerSize) ;
                 filter_num--;
             }
+            filter_mem_space -= delta;
             
             if (lock_) {
                 rep_->locked = false;
@@ -664,17 +610,10 @@ namespace leveldb
         {
             delete [] (rep_->filter_datas[regionId].back().data());
             rep_->filter_datas[regionId].pop_back();
-            // BlockHandle filter_handle;
             Slice v = rep_->filter_handles[--curr_filter_num];
-            // delta += FilterPolicy::bits_per_key_per_filter_[curr_filter_num];
-            // if(!filter_handle.DecodeFrom(&v).ok())
-            // {
-            //     assert(0);
-            //     return 0;
-            // }
-            // filter_mem_space -= (filter_handle.size() + kBlockTrailerSize) ;
             filter_num--;
         }
+        filter_mem_space -= delta;
 
         if (lock_) {
             rep_->locked = false;
@@ -690,10 +629,7 @@ namespace leveldb
             rep_->mutex_.lock();
             rep_->locked = true;
         }
-        /* if(n < rep_->filter->getCurrFiltersNum()){
-        delta = -static_cast<int64_t>(RemoveFilters(rep_->filter->getCurrFiltersNum() - n));
-        MeasureTime(Statistics::GetStatistics().get(),Tickers::REMOVE_FILTER_TIME,Env::Default()->NowMicros() - start_micros);
-         }else*/
+
         assert(n >= 0);
         if(n > 0)
         {
@@ -720,10 +656,7 @@ namespace leveldb
     {
         int64_t delta = 0;
         uint64_t start_micros = Env::Default()->NowMicros();
-        /* if(n < rep_->filter->getCurrFiltersNum()){
-        delta = -static_cast<int64_t>(RemoveFilters(rep_->filter->getCurrFiltersNum() - n));
-        MeasureTime(Statistics::GetStatistics().get(),Tickers::REMOVE_FILTER_TIME,Env::Default()->NowMicros() - start_micros);
-         }else*/
+
         assert(n >= 0);
         if(n > 0)
         {
@@ -740,8 +673,6 @@ namespace leveldb
         return delta;
     }
 
-
-    //todo
     size_t Table::getCurrFiltersSize(int regionId)
     {
         if(rep_->filter == NULL || regionId < 0)
@@ -778,7 +709,7 @@ namespace leveldb
         delete reinterpret_cast<Block *>(arg);
     }
 
-    static void DeleteCachedBlock(const Slice &key, void *value)
+    static void DeleteCachedBlock(const Slice &key, void *value, const bool realDelete)
     {
         Block *block = reinterpret_cast<Block *>(value);
         delete block;
@@ -941,8 +872,7 @@ namespace leveldb
             uint32_t *id_ = (uint32_t *) (region_name + sizeof(uint64_t));
             *id_ = handle.offset() / rep_->options.opEp_.region_divide_size + 1;
 
-            // if (multi_queue_init && getCurrFilterNum(*id_ - 1) == 0) {
-            if (rep_->options.opEp_.run_mode != 1 && rep_->options.opEp_.run_mode != 3 && !isAccess(*id_ - 1) && getCurrFilterNum(*id_ - 1) == 0) { //real region divide mode
+            if (!isAccess(*id_ - 1) && getCurrFilterNum(*id_ - 1) == 0) { //real region divide mode
                 rep_->mutex_.lock();
                 rep_->locked = true;
 
@@ -954,10 +884,10 @@ namespace leveldb
                 rep_->mutex_.unlock();
             }
 
-
-            if (filter != NULL &&
+            bool not_found = filter != NULL &&
                     ds.ok() &&
-                    !filter->KeyMayMatch(handle.offset(), k))
+                    !filter->KeyMayMatch(handle.offset(), k);
+            if (not_found)
             {
                 // Not found
                 MeasureTime(Statistics::GetStatistics().get(), Tickers::FILTER_MATCHES_TIME, Env::Default()->NowMicros() - start_micros);

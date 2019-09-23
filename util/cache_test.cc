@@ -27,7 +27,7 @@ class CacheTest {
  public:
   static CacheTest* current_;
 
-  static void Deleter(const Slice& key, void* v) {
+  static void Deleter(const Slice& key, void* v, const bool realDelete) {
     current_->deleted_keys_.push_back(DecodeKey(key));
     current_->deleted_values_.push_back(DecodeValue(v));
   }

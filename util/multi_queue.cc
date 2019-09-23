@@ -28,7 +28,7 @@ namespace leveldb
         struct LRUQueueHandle
         {
             void *value;
-            void (*deleter)(const Slice &, void *value);
+            void (*deleter)(const Slice &, void *value, const bool realDelete);
             LRUQueueHandle *next_hash;
             LRUQueueHandle *next;
             LRUQueueHandle *prev;
@@ -195,8 +195,7 @@ namespace leveldb
             bool need_adjust;
             uint64_t dynamic_merge_counter[2];
             bool cache_use_real_size_;
-            int run_mode_;
-            double region_merge_threshold_;
+            int counters[16];
         public:
             static pthread_t pids_[16];
             static int bg_thread_nums;
@@ -204,7 +203,7 @@ namespace leveldb
             std::mutex queue_mutex;
             std::condition_variable_any queue_con;
 
-            MultiQueue(size_t capacity, int lrus_num = 1, uint64_t life_time = 20000, double cr = 0.0001, bool cache_use_real_size = true, int run_mode = 0, double region_merge_threshold = 1.0);
+            MultiQueue(size_t capacity, int lrus_num = 1, uint64_t life_time = 20000, double cr = 0.0001, bool cache_use_real_size = true);
             ~MultiQueue();
             void Ref(LRUQueueHandle *e, bool addFreCount = false);
             void Unref(LRUQueueHandle *e) ;
@@ -218,7 +217,7 @@ namespace leveldb
 
             void Release(Cache::Handle *handle);
             virtual Handle *Insert(const Slice &key, void *value, size_t charge,
-                                   void (*deleter)(const Slice &key, void *value)) override;
+                                   void (*deleter)(const Slice &key, void *value, const bool realDelete)) override;
 
             virtual void *Value(Handle *handle) override;
             virtual void Erase(const Slice &key) override;
@@ -243,17 +242,15 @@ namespace leveldb
             }
             void MayBeShrinkUsage();
             void RecomputeExp(LRUQueueHandle *e);
-            void RecomputeExpTable(LRUQueueHandle *e);
             double FalsePositive(LRUQueueHandle *e);
             static void * BackThread(void *args);
-
         };
         pthread_t MultiQueue::pids_[16];
         int MultiQueue::bg_thread_nums = 1;
 
 
-        MultiQueue::MultiQueue(size_t capacity, int lrus_num, uint64_t life_time, double change_ratio, bool cache_use_real_size, int run_mode, double region_merge_threshold): capacity_(capacity), lrus_num_(lrus_num), life_time_(life_time)
-            , change_ratio_(change_ratio), sum_lru_len(0), expection_(0), usage_(0), shutting_down_(false), insert_count(0), need_adjust(true), cache_use_real_size_(cache_use_real_size), run_mode_(run_mode), region_merge_threshold_(region_merge_threshold)
+        MultiQueue::MultiQueue(size_t capacity, int lrus_num, uint64_t life_time, double change_ratio, bool cache_use_real_size): capacity_(capacity), lrus_num_(lrus_num), life_time_(life_time)
+            , change_ratio_(change_ratio), sum_lru_len(0), expection_(0), usage_(0), shutting_down_(false), insert_count(0), need_adjust(true), cache_use_real_size_(cache_use_real_size)
         {
             //TODO: declare outside  class  in_use and lrus parent must be Initialized,avoid lock crush
             in_use_.next = &in_use_;
@@ -286,18 +283,12 @@ namespace leveldb
 
             dynamic_merge_counter[0] = dynamic_merge_counter[1] = 0;
 
+            for (int i = 0; i < 16; i++)counters[i] = 0;
 
-            if (run_mode_ == 0) {
-                bg_thread_nums = 0;
-            }
-            // int cpu_count = sysconf(_SC_NPROCESSORS_CONF);
+            bg_thread_nums = 0;
             char name_buf[24];
             int i;
             for (i = 0; i < bg_thread_nums; i++) {
-                // cpu_set_t cpuset;
-                // CPU_ZERO(&cpuset);
-                // CPU_SET(4 + i, &cpuset);
-
                 if(pthread_create(&pids_[i], NULL, MultiQueue::BackThread, this) != 0)
                 {
                     perror("create thread ");
@@ -305,15 +296,6 @@ namespace leveldb
                 snprintf(name_buf, sizeof name_buf, "MultiQueue:bg%d", i);
                 name_buf[sizeof name_buf - 1] = '\0';
                 pthread_setname_np(pids_[i], name_buf);
-
-                // if(4 + bg_thread_nums < cpu_count)
-                // {
-                //     int s = pthread_setaffinity_np(pids_[i], sizeof(cpu_set_t), &cpuset);
-                //     if (s != 0)
-                //     {
-                //         handle_error_en(s, "pthread_setaffinity_np");
-                //     }
-                // }
             }
 
         }
@@ -343,6 +325,8 @@ namespace leveldb
             }
             double avg_merge_region_nums = dynamic_merge_counter[0] == 0 ? 0 : dynamic_merge_counter[1] / dynamic_merge_counter[0];
             fprintf(stderr, "multi_queue_init is %s, expection_ is %lf, avg_merge_region_nums is %lf\n", multi_queue_init ? "true" : "false", expection_, avg_merge_region_nums);
+            for (int i = 0; i < 16; i++)
+                fprintf(stderr, "counters[%d] = %d\n", i, counters[i]);
             mutex_.unlock();
             delete []lrus_;
         }
@@ -418,7 +402,6 @@ namespace leveldb
 
         inline uint64_t MultiQueue::Num_Queue(int queue_id, uint64_t fre_count)
         {
-            //mutex_.assertHeld();
             if(&lrus_[queue_id] == lrus_[queue_id].next)
             {
                 return fre_count >> 1;
@@ -435,400 +418,6 @@ namespace leveldb
         {
             leveldb::TableAndFile *tf = reinterpret_cast<leveldb::TableAndFile *>(e->value);
             return fps[tf->table->getCurrFilterNum(e->value_id - 1)];
-        }
-
-        void MultiQueue::RecomputeExpTable(LRUQueueHandle *e)
-        {
-            if(multi_queue_init || (e->queue_id + 1) == lrus_num_ || e->wait_bg)
-            {
-                ++e->fre_count;
-                sum_freqs_[e->queue_id]++;
-                expection_ += FalsePositive(e);
-            }
-            else
-            {
-                if (!need_adjust) {
-                    ++e->fre_count;
-                    sum_freqs_[e->queue_id]++;
-                    expection_ += FalsePositive(e);
-                    return;
-                }
-                uint64_t start_micros = Env::Default()->NowMicros();
-
-                ++e->fre_count;
-                double now_expection  = expection_ + FalsePositive(e) ;
-                double min_expection = now_expection, change_expection;
-                double new_expection = expection_ - (e->fre_count - 1) * FalsePositive(e) + e->fre_count * fps[e->queue_id + 1]; //TODO: OPTIMIZE
-                int need_bits = usage_ - capacity_;// + bits_per_key_per_filter_[e->queue_id + 1];
-                if (e->queue_id == 0) {
-                    need_bits += lrus_[1].next->charge;
-                }
-                else {
-                    need_bits += e->charge / bits_per_key_per_filter_sum[e->queue_id] * bits_per_key_per_filter_[e->queue_id + 1];
-                }
-const double log_diff_const = region_merge_threshold_;
-                LRUQueueHandle *forward = e, *backward = e;
-                while (forward != NULL && forward->next_region != NULL) {
-                    forward = forward->next_region;
-                    if (forward->queue_id != e->queue_id || forward->fre_count == 0 || forward->expire_time < current_time_ || forward->wait_bg) {
-                    // if (forward->queue_id != e->queue_id || forward->wait_bg) {
-                        forward = forward->prev_region;
-                        break;
-                    }
-            leveldb::TableAndFile *tf = reinterpret_cast<leveldb::TableAndFile *>(forward->value);
-            assert(forward->queue_id == tf->table->getCurrFilterNum(forward->value_id - 1));
-                    double log_diff = log10(e->fre_count) - log10(forward->fre_count);
-                    if (log_diff > log_diff_const || log_diff < -log_diff_const) {
-                        forward = forward->prev_region;
-                        break;
-                    }
-
-                    new_expection = new_expection - (forward->fre_count - 1) * FalsePositive(forward) + forward->fre_count * fps[forward->queue_id + 1];
-                    if (forward->queue_id == 0) {
-                        need_bits += lrus_[1].next->charge;
-                    }
-                    else {
-                        need_bits += forward->charge / bits_per_key_per_filter_sum[forward->queue_id] * bits_per_key_per_filter_[forward->queue_id + 1];
-                    }
-                }
-                while (backward != NULL && backward->prev_region != NULL) {
-                    backward = backward->prev_region;
-                    if (backward->queue_id != e->queue_id || backward->fre_count == 0 || backward->expire_time < current_time_ || backward->wait_bg) {
-                    // if (backward->queue_id != e->queue_id || backward->wait_bg) {
-                        backward = backward->next_region;
-                        break;
-                    }
-            leveldb::TableAndFile *tf = reinterpret_cast<leveldb::TableAndFile *>(backward->value);
-            assert(backward->queue_id == tf->table->getCurrFilterNum(backward->value_id - 1));
-                    double log_diff = log10(e->fre_count) - log10(backward->fre_count);
-                    if (log_diff > log_diff_const || log_diff < -log_diff_const) {
-                        backward = backward->next_region;
-                        break;
-                    }
-
-                    new_expection = new_expection - (backward->fre_count - 1) * FalsePositive(backward) + backward->fre_count * fps[backward->queue_id + 1];
-                    if (backward->queue_id == 0) {
-                        need_bits += lrus_[1].next->charge;
-                    }
-                    else {
-                        need_bits += backward->charge / bits_per_key_per_filter_sum[backward->queue_id] * bits_per_key_per_filter_[backward->queue_id + 1];
-                    }
-                }
-
-                int remove_bits, min_i = -1 ;
-
-                if(need_bits > 0)
-                {
-                    for(int i = 1 ; i < lrus_num_ ; i++)
-                    {
-                        remove_bits = 0;
-                        change_expection =  new_expection;
-                        LRUQueueHandle *old = lrus_[i].next;
-                        while(old != &lrus_[i] && remove_bits < need_bits)
-                        {
-                            if(old->expire_time < current_time_ && !old->wait_bg)  // expired
-                            {
-                                // remove_bits += bits_per_key_per_filter_[i];
-                                remove_bits += old->charge / bits_per_key_per_filter_sum[old->queue_id] * bits_per_key_per_filter_[i];
-                                change_expection += (old->fre_count * fps[i - 1] - old->fre_count * FalsePositive(old));
-                            }
-                            else
-                            {
-                                break;
-                            }
-                            old = old->next;
-                        }
-
-
-                        // while(old != &lrus_[i] && remove_bits < need_bits){
-                        //     if (old->is_mark) {
-                        //         old = old->next;
-                        //         continue;
-                        //     }
-                        //     else if (old->expire_time < current_time_ && !old->wait_bg) {
-                        //         remove_bits += old->charge / bits_per_key_per_filter_sum[old->queue_id] * bits_per_key_per_filter_[i];
-                        //         change_expection += (old->fre_count * fps[i - 1] - old->fre_count * FalsePositive(old));
-                        //         old->is_mark = true;
-
-                        //         LRUQueueHandle *oforward = old, *obackward = old;
-                        //         while (oforward != NULL && oforward->next_region != NULL) {
-                        //             oforward = oforward->next_region;
-                        //             // if (forward->queue_id != e->queue_id || forward->fre_count == 0 || forward->expire_time < current_time_ || forward->wait_bg) {
-                        //             if (oforward->queue_id != old->queue_id || oforward->wait_bg) {
-                        //                 oforward = oforward->prev_region;
-                        //                 break;
-                        //             }
-                        //     leveldb::TableAndFile *tf = reinterpret_cast<leveldb::TableAndFile *>(oforward->value);
-                        //     assert(oforward->queue_id == tf->table->getCurrFilterNum(oforward->value_id - 1));
-                        //             double log_diff = log10(old->fre_count) - log10(oforward->fre_count);
-                        //             if (log_diff > log_diff_const || log_diff < -log_diff_const) {
-                        //                 oforward = oforward->prev_region;
-                        //                 break;
-                        //             }
-                        //             remove_bits += oforward->charge / bits_per_key_per_filter_sum[oforward->queue_id] * bits_per_key_per_filter_[i];
-                        //             change_expection += (oforward->fre_count * fps[i - 1] - oforward->fre_count * FalsePositive(oforward));
-                        //             oforward->is_mark = true;
-                        //         }
-
-                        //         while (obackward != NULL && obackward->prev_region != NULL) {
-                        //             obackward = obackward->prev_region;
-                        //             // if (forward->queue_id != e->queue_id || forward->fre_count == 0 || forward->expire_time < current_time_ || forward->wait_bg) {
-                        //             if (obackward->queue_id != old->queue_id || obackward->wait_bg) {
-                        //                 obackward = obackward->next_region;
-                        //                 break;
-                        //             }
-                        //     leveldb::TableAndFile *tf = reinterpret_cast<leveldb::TableAndFile *>(obackward->value);
-                        //     assert(obackward->queue_id == tf->table->getCurrFilterNum(obackward->value_id - 1));
-                        //             double log_diff = log10(old->fre_count) - log10(obackward->fre_count);
-                        //             if (log_diff > log_diff_const || log_diff < -log_diff_const) {
-                        //                 obackward = obackward->next_region;
-                        //                 break;
-                        //             }
-                        //             remove_bits += obackward->charge / bits_per_key_per_filter_sum[obackward->queue_id] * bits_per_key_per_filter_[i];
-                        //             change_expection += (obackward->fre_count * fps[i - 1] - obackward->fre_count * FalsePositive(obackward));
-                        //             obackward->is_mark = true;
-                        //         }
-
-                        //     }
-                        //     else {
-                        //         break;
-                        //     }
-                        //     old = old->next;
-                        // }
-
-
-                        if(remove_bits >= need_bits && change_expection < min_expection)
-                        {
-                            min_expection = change_expection;
-                            min_i = i;
-                        }
-                    }
-                    // if(min_i != -1 && now_expection - min_expection > now_expection * change_ratio_ * (forward->value_id - backward->value_id + 1)) //todo
-                    if(min_i != -1 && now_expection - min_expection > now_expection * change_ratio_) //todo
-                    {
-                        assert(now_expection > min_expection);
-                        remove_bits = 0;
-                        while(lrus_[min_i].next != &lrus_[min_i] && remove_bits < need_bits)
-                        {
-                            LRUQueueHandle *old = lrus_[min_i].next;
-                            leveldb::TableAndFile *tf = reinterpret_cast<leveldb::TableAndFile *>(old->value);
-                            // remove_bits += bits_per_key_per_filter_[min_i];
-                            remove_bits += old->charge / bits_per_key_per_filter_sum[old->queue_id] * bits_per_key_per_filter_[min_i];
-                            size_t delta_charge = tf->table->RemoveFilters(1, old->value_id - 1);
-                            usage_ -= delta_charge;
-                            MeasureTime(Statistics::GetStatistics().get(), Tickers::REMOVE_EXPIRED_FILTER_TIME_0 + min_i, Env::Default()->NowMicros() - start_micros);
-                            --lru_lens_[min_i];
-                            sum_freqs_[min_i] -= old->fre_count;
-
-                            LRU_Remove(old);
-                            ++lru_lens_[min_i - 1];
-                            sum_freqs_[min_i - 1] += old->fre_count;
-                            LRU_Append(&lrus_[min_i - 1], old);
-                        }
-
-                        // while(lrus_[min_i].next != &lrus_[min_i] && remove_bits < need_bits)
-                        // {
-                        //     LRUQueueHandle *old = lrus_[min_i].next;
-
-                        //     leveldb::TableAndFile *tf = reinterpret_cast<leveldb::TableAndFile *>(old->value);
-                        //     remove_bits += old->charge / bits_per_key_per_filter_sum[old->queue_id] * bits_per_key_per_filter_[min_i];
-                        //     size_t delta_charge = tf->table->RemoveFilters(1, old->value_id - 1);
-                        //     usage_ -= delta_charge;
-                        //     MeasureTime(Statistics::GetStatistics().get(), Tickers::REMOVE_EXPIRED_FILTER_TIME_0 + min_i, Env::Default()->NowMicros() - start_micros);
-                        //     --lru_lens_[min_i];
-                        //     sum_freqs_[min_i] -= old->fre_count;
-
-                        //     LRU_Remove(old);
-                        //     ++lru_lens_[min_i - 1];
-                        //     sum_freqs_[min_i - 1] += old->fre_count;
-                        //     LRU_Append(&lrus_[min_i - 1], old);
-
-                        //     old->is_mark = false;
-
-                        //     LRUQueueHandle *oforward = old, *obackward = old;
-                        //     while (oforward != NULL && oforward->next_region != NULL) {
-                        //         oforward = oforward->next_region;
-                        //         if (!oforward->is_mark) {
-                        //             break;
-                        //         }
-
-                        //         tf = reinterpret_cast<leveldb::TableAndFile *>(oforward->value);
-                        //         remove_bits += oforward->charge / bits_per_key_per_filter_sum[oforward->queue_id] * bits_per_key_per_filter_[min_i];
-                        //         size_t delta_charge = tf->table->RemoveFilters(1, oforward->value_id - 1);
-                        //         usage_ -= delta_charge;
-                        //         MeasureTime(Statistics::GetStatistics().get(), Tickers::REMOVE_EXPIRED_FILTER_TIME_0 + min_i, Env::Default()->NowMicros() - start_micros);
-                        //         --lru_lens_[min_i];
-                        //         sum_freqs_[min_i] -= oforward->fre_count;
-
-                        //         LRU_Remove(oforward);
-                        //         ++lru_lens_[min_i - 1];
-                        //         sum_freqs_[min_i - 1] += oforward->fre_count;
-                        //         LRU_Append(&lrus_[min_i - 1], oforward);
-
-                        //         oforward->is_mark = false;
-                        //     }
-
-                        //     while (obackward != NULL && obackward->prev_region != NULL) {
-                        //         obackward = obackward->prev_region;
-                        //         if (!obackward->is_mark) {
-                        //             break;
-                        //         }
-                                
-                        //         tf = reinterpret_cast<leveldb::TableAndFile *>(obackward->value);
-                        //         remove_bits += obackward->charge / bits_per_key_per_filter_sum[obackward->queue_id] * bits_per_key_per_filter_[min_i];
-                        //         size_t delta_charge = tf->table->RemoveFilters(1, obackward->value_id - 1);
-                        //         usage_ -= delta_charge;
-                        //         MeasureTime(Statistics::GetStatistics().get(), Tickers::REMOVE_EXPIRED_FILTER_TIME_0 + min_i, Env::Default()->NowMicros() - start_micros);
-                        //         --lru_lens_[min_i];
-                        //         sum_freqs_[min_i] -= obackward->fre_count;
-
-                        //         LRU_Remove(obackward);
-                        //         ++lru_lens_[min_i - 1];
-                        //         sum_freqs_[min_i - 1] += obackward->fre_count;
-                        //         LRU_Append(&lrus_[min_i - 1], obackward);
-
-                        //         obackward->is_mark = false;
-                        //     }
-                        // }
-
-
-
-                        size_t* delta_charge = NULL;
-                        if (bg_thread_nums == 0) {
-                            leveldb::TableAndFile *tf = reinterpret_cast<leveldb::TableAndFile *>(e->value);
-                            delta_charge = tf->table->AdjustFilters(e->queue_id + 1, backward->value_id - 1, forward->value_id - 1);
-                        }
-
-                        LRUQueueHandle *p = backward;
-                        int i = 0;
-                        while (p != forward) {
-                            if (bg_thread_nums > 0)
-                                p->wait_bg = true;
-                            sum_freqs_[p->queue_id] -= p->fre_count;
-                            sum_freqs_[p->queue_id + 1] += p->fre_count;
-                            if (p->refs == 1) {
-                                assert(p->in_cache);
-                                LRU_Remove(p);
-                                --lru_lens_[p->queue_id];
-                                ++lru_lens_[p->queue_id + 1];                                
-                                LRU_Append(&lrus_[p->queue_id + 1], p);
-                            }
-                            else
-                                ++p->queue_id;
-                            if (bg_thread_nums == 0) {
-                                p->charge += delta_charge[i];
-                                usage_ += delta_charge[i];
-                            }
-                            p = p->next_region;
-                            i++;
-                        }
-                        if (bg_thread_nums > 0)
-                            p->wait_bg = true;
-                        sum_freqs_[p->queue_id] -= p->fre_count;
-                        sum_freqs_[p->queue_id + 1] += p->fre_count;
-                        if (p->refs == 1) {
-                            assert(p->in_cache);
-                            LRU_Remove(p);
-                            --lru_lens_[p->queue_id];
-                            ++lru_lens_[p->queue_id + 1];                                
-                            LRU_Append(&lrus_[p->queue_id + 1], p);
-                        }
-                        else
-                            ++p->queue_id;
-                        if (bg_thread_nums == 0) {
-                            p->charge += delta_charge[i];
-                            usage_ += delta_charge[i];
-                        }
-
-                        dynamic_merge_counter[0]++;
-                        dynamic_merge_counter[1] += forward->value_id - backward->value_id + 1;
-
-                        expection_ = min_expection;
-
-                        if (bg_thread_nums > 0){
-                            queue_mutex.lock();
-                            bg_queue.push({backward, forward});
-                            queue_con.notify_all();
-                            queue_mutex.unlock();
-                        }
-                    }
-                    else
-                    {
-                        expection_ = now_expection;
-                    }
-                }
-                else
-                {
-                    // if(now_expection - new_expection > now_expection * change_ratio_ * (forward->value_id - backward->value_id + 1))
-                    if(now_expection - new_expection > now_expection * change_ratio_)
-                    {
-                        size_t* delta_charge = NULL;
-                        if (bg_thread_nums == 0) {
-                            leveldb::TableAndFile *tf = reinterpret_cast<leveldb::TableAndFile *>(e->value);
-                            delta_charge = tf->table->AdjustFilters(e->queue_id + 1, backward->value_id - 1, forward->value_id - 1);
-                        }
-
-                        LRUQueueHandle *p = backward;
-                        int i = 0;
-                        while (p != forward) {
-                            if (bg_thread_nums > 0)
-                                p->wait_bg = true;
-                            sum_freqs_[p->queue_id] -= p->fre_count;
-                            sum_freqs_[p->queue_id + 1] += p->fre_count;
-                            if (p->refs == 1) {
-                                assert(p->in_cache);
-                                LRU_Remove(p);
-                                --lru_lens_[p->queue_id];
-                                sum_freqs_[p->queue_id] -= p->fre_count;
-                                sum_freqs_[p->queue_id + 1] += p->fre_count;
-                                ++lru_lens_[p->queue_id + 1];                                
-                                LRU_Append(&lrus_[p->queue_id + 1], p);
-                            }
-                            else
-                                ++p->queue_id;
-                            if (bg_thread_nums == 0) {
-                                p->charge += delta_charge[i];
-                                usage_ += delta_charge[i];
-                            }
-                            p = p->next_region;
-                            i++;
-                        }
-                        if (bg_thread_nums > 0)
-                            p->wait_bg = true;
-                        sum_freqs_[p->queue_id] -= p->fre_count;
-                        sum_freqs_[p->queue_id + 1] += p->fre_count;
-                        if (p->refs == 1) {
-                            assert(p->in_cache);
-                            LRU_Remove(p);
-                            --lru_lens_[p->queue_id];
-                            ++lru_lens_[p->queue_id + 1];                                
-                            LRU_Append(&lrus_[p->queue_id + 1], p);
-                        }
-                        else
-                            ++p->queue_id;
-                        if (bg_thread_nums == 0) {
-                            p->charge += delta_charge[i];
-                            usage_ += delta_charge[i];
-                        }
-                        
-                        dynamic_merge_counter[0]++;
-                        dynamic_merge_counter[1] += forward->value_id - backward->value_id + 1;
-
-                        expection_ = new_expection;
-
-                        if (bg_thread_nums > 0) {
-                            queue_mutex.lock();
-                            bg_queue.push({backward, forward});
-                            queue_con.notify_all();
-                            queue_mutex.unlock();
-                        }
-                    }
-                    else
-                    {
-                        expection_ = now_expection;
-                    }
-                }
-            }
         }
 
         void MultiQueue::RecomputeExp(LRUQueueHandle *e)
@@ -856,6 +445,7 @@ const double log_diff_const = region_merge_threshold_;
                 int remove_bits, min_i = -1 ;
                 if(need_bits > 0)
                 {
+                    counters[2]++;
                     for(int i = 1 ; i < lrus_num_ ; i++)
                     {
                         remove_bits = 0;
@@ -881,8 +471,11 @@ const double log_diff_const = region_merge_threshold_;
                             min_i = i;
                         }
                     }
+                    if (min_i != -1)
+                        counters[10]++;
                     if(min_i != -1 && now_expection - min_expection > now_expection * change_ratio_)
                     {
+                        counters[3]++;
                         assert(now_expection > min_expection);
                         remove_bits = 0;
                         while(lrus_[min_i].next != &lrus_[min_i] && remove_bits < need_bits)
@@ -919,14 +512,16 @@ const double log_diff_const = region_merge_threshold_;
                     }
                     else
                     {
+                        counters[4]++;
                         expection_ = now_expection;
                     }
                 }
                 else
                 {
+                    counters[5]++;
                     if(now_expection - new_expection > now_expection * change_ratio_)
                     {
-                        //if(now_expection > new_expection){
+                        counters[6]++;
 
                         if (bg_thread_nums > 0)
                             e->wait_bg = true;
@@ -944,6 +539,7 @@ const double log_diff_const = region_merge_threshold_;
                     }
                     else
                     {
+                        counters[7]++;
                         expection_ = now_expection;
                     }
                 }
@@ -952,7 +548,6 @@ const double log_diff_const = region_merge_threshold_;
 
         void MultiQueue::Ref(LRUQueueHandle *e, bool addFreCount)
         {
-            //mutex_.assert_held();
             if (e->refs == 1 && e->in_cache)    // If on lru_ list, move to in_use_ list.
             {
                 LRU_Remove(e);
@@ -961,54 +556,25 @@ const double log_diff_const = region_merge_threshold_;
                 --sum_lru_len;
             }
             e->refs++;
+
+            counters[0]++;
+
             if(addFreCount)
             {
                 leveldb::TableAndFile *tf = reinterpret_cast<leveldb::TableAndFile *>(e->value);
-                if (run_mode_ != 1)
-                    tf->table->setAccess(e->value_id - 1);
-                else {
-                    if (!tf->table->isAccess(e->value_id - 1)) {
-                        tf->table->setAccess(e->value_id - 1);
-                        if (usage_ < capacity_ && bg_thread_nums > 0)
-                            e->wait_bg = true;
-                        sum_freqs_[e->queue_id] -= e->fre_count;
-                        sum_freqs_[e->queue_id + 2] += e->fre_count;
-                        e->queue_id += 2;
-
-                        if (usage_ < capacity_ && bg_thread_nums > 0) {
-                            queue_mutex.lock();
-                            bg_queue.push({e, e});
-                            queue_con.notify_all();
-                            queue_mutex.unlock();
-                        }
-                        else {
-                            size_t delta_charge = tf->table->AdjustFilters(e->queue_id, e->value_id - 1);  // not in lru list, so need to worry will be catched by ShrinkUsage
-                            e->charge += delta_charge;
-                            usage_ += delta_charge;
-                            MayBeShrinkUsage();
-                        }
-                    }
-                    
-                }
+                tf->table->setAccess(e->value_id - 1);
+        
                 if(e->expire_time > current_time_ )  //not expired
                 {
-                    if (run_mode_ <= 1)
-                        RecomputeExp(e);
-                    else
-                        RecomputeExpTable(e);
-                }// else{ // if(e->expire_time < current_time_){   //expired
-                //   if(e->fre_count > 0){
-                //  expection_ -= (e->fre_count*1.0/2.0)*FalsePositive(e);
-                //  e->fre_count /= 2;
-                //   }
-                // }
+                    counters[1]++;
+                    RecomputeExp(e);
+                }
             }
             e->expire_time = current_time_ + life_time_;
         }
 
         void MultiQueue::Unref(LRUQueueHandle *e)
         {
-            //mutex_.assert_held();
             assert(e->refs > 0);
             e->refs--;
             if (e->refs == 0)   // Deallocate.
@@ -1020,24 +586,18 @@ deallocate:
                 leveldb::TableAndFile *tf = reinterpret_cast<leveldb::TableAndFile *>(e->value);
 
                 if (e->value_id == 0) {
-                    //todo
                     Slice key(e->key_data, sizeof(uint64_t));
-                    (*e->deleter)(key, e->value);
+                    (*e->deleter)(key, e->value, true);
                 }
                 free(e);
             }
             else if (e->in_cache && e->refs == 1)      // note:No longer in use; move to lru_ list.
             {
-                //int qn = Queue_Num(e->fre_count);
                 leveldb::TableAndFile *tf = reinterpret_cast<leveldb::TableAndFile *>(e->value);
                 if(!e->wait_bg && e->value_id > 0 && tf->table->getCurrFilterNum(e->value_id - 1) < e->queue_id)   //only add;
                 {
-                    // printf("error filter num < queue_id\n");
-
                     ++e->refs;
-                    // mutex_.unlock();
                     size_t delta_charge = tf->table->AdjustFilters(e->queue_id, e->value_id - 1);  // not in lru list, so need to worry will be catched by ShrinkUsage
-                    // mutex_.lock();
                     --e->refs;
                     if(e->refs == 0)
                     {
@@ -1063,8 +623,6 @@ deallocate:
                 ++lru_lens_[e->queue_id];
                 ++sum_lru_len;
             }
-            mutex_.unlock();
-
         }
 
         void MultiQueue::LRU_Remove(LRUQueueHandle *e)
@@ -1145,14 +703,11 @@ deallocate:
             auto lru_queue_handle = reinterpret_cast<LRUQueueHandle *>(handle);
             mutex_.lock();
             Unref(lru_queue_handle);
+            mutex_.unlock();
         }
 
         void MultiQueue::MayBeShrinkUsage()
         {
-            //mutex_.assertheld
-            // if(usage_ >= 2 * capacity_ / 3)
-            //     multi_queue_init = false;
-
             if(usage_ >= capacity_)
             {
                 multi_queue_init = false;
@@ -1167,17 +722,16 @@ deallocate:
 
         inline bool MultiQueue::ShrinkLRU(int k, int64_t remove_charge[], bool force)
         {
-            //mutex_.assertHeld
             int64_t removed_usage = 0;
             if(!force)
             {
+                counters[8]++;
                 while (usage_ > capacity_ && k >= 1)
                 {
                     while(lrus_[k].next != &lrus_[k]  && removed_usage < remove_charge[0])
                     {
                         LRUQueueHandle *old = lrus_[k].next;
-                        // assert(old->refs >= 1);
-                        //TODO: old->fre_count = queue_id
+
                         if(old->refs == 1 && old->expire_time < current_time_ && !old->wait_bg)
                         {
                             leveldb::TableAndFile *tf = reinterpret_cast<leveldb::TableAndFile *>(old->value);
@@ -1212,6 +766,7 @@ deallocate:
             }
             else
             {
+                counters[9]++;
                 size_t max_lru_lens = 0, max_i = -1;
                 for(int i = 1 ; i < lrus_num_ ; i++)
                 {
@@ -1228,7 +783,7 @@ deallocate:
                     {
                         uint64_t start_micros = Env::Default()->NowMicros();
                         LRUQueueHandle *old = lrus_[k].next;
-                        // assert(old != &lrus_[k]);
+
                         if (old == &lrus_[k]) {
                             printf("error! max lru is empty!\n");
                             int i = 1;
@@ -1285,14 +840,11 @@ deallocate:
             return usage_ >= capacity_;
         }
 
-        Cache::Handle *MultiQueue::Insert(const Slice &key, void *value, size_t charge, void (*deleter)(const Slice &key, void *value))
+        Cache::Handle *MultiQueue::Insert(const Slice &key, void *value, size_t charge, void (*deleter)(const Slice &key, void *value, const bool realDelete))
         {
             const uint32_t hash = HashSlice(key);
             mutex_.lock();
             insert_count++;
-
-            // leveldb::TableAndFile *tf = reinterpret_cast<leveldb::TableAndFile *>(value);
-            // int regionNum = tf->table->getRegionNum();
 
             LRUQueueHandle *e = reinterpret_cast<LRUQueueHandle *>(
                                     malloc(sizeof(LRUQueueHandle) - 1 + key.size()));
@@ -1355,9 +907,6 @@ deallocate:
                 }
                 e->next_region = NULL;
 
-                // e->refs++;  // for the cache's reference.
-                // ++e->fre_count; //for the first access
-                // expection_ += fps[e->queue_id];     //insert a new element ,expected number should be updated
                 e->in_cache = true;
                 // mutex_.lock();
                 LRU_Append(&lrus_[e->queue_id], e);
@@ -1374,56 +923,6 @@ deallocate:
 
             } // else don't cache.  (Tests use capacity_==0 to turn off caching.)
             
-            int regionNum = tf->table->getRegionNum();
-            if (run_mode_ == 3 && bg_thread_nums > 0 && multi_queue_init && e->value_id == regionNum) {
-                LRUQueueHandle *forward = e, *backward = e;
-                while (backward->prev_region != NULL)
-                    backward = backward->prev_region;
-
-                LRUQueueHandle *p = backward;
-                int i = 0;
-                while (p != forward) {
-                    p->wait_bg = true;
-                    sum_freqs_[p->queue_id] -= p->fre_count;
-                    sum_freqs_[p->queue_id + 2] += p->fre_count;
-                    if (p->refs == 1) {
-                        assert(p->in_cache);
-                        LRU_Remove(p);
-                        --lru_lens_[p->queue_id];
-                        sum_freqs_[p->queue_id] -= p->fre_count;
-                        sum_freqs_[p->queue_id + 2] += p->fre_count;
-                        ++lru_lens_[p->queue_id + 2];                                
-                        LRU_Append(&lrus_[p->queue_id + 2], p);
-                    }
-                    else
-                        p->queue_id += 2;
-
-                    p = p->next_region;
-                    i++;
-                }
-                p->wait_bg = true;
-                sum_freqs_[p->queue_id] -= p->fre_count;
-                sum_freqs_[p->queue_id + 2] += p->fre_count;
-                if (p->refs == 1) {
-                    assert(p->in_cache);
-                    LRU_Remove(p);
-                    --lru_lens_[p->queue_id];
-                    ++lru_lens_[p->queue_id + 2];
-                    LRU_Append(&lrus_[p->queue_id + 2], p);
-                }
-                else
-                    p->queue_id += 2;
-
-                dynamic_merge_counter[0]++;
-                dynamic_merge_counter[1] += forward->value_id - backward->value_id + 1;
-
-                queue_mutex.lock();
-                bg_queue.push({backward, forward});
-                queue_con.notify_all();
-                queue_mutex.unlock();
-            }
-
-            // mutex_.lock();
             MayBeShrinkUsage();
             mutex_.unlock();
             return reinterpret_cast<Cache::Handle *>(e);
@@ -1447,7 +946,7 @@ deallocate:
             }
             return e != NULL;
         }
-//todo
+
         void MultiQueue::Erase(const Slice &key, uint32_t hash)
         {
             mutex_.lock();
@@ -1485,9 +984,9 @@ deallocate:
 
     };
 
-    Cache *NewMultiQueue(size_t capacity, int lrus_num, uint64_t life_time, double change_ratio, bool cache_use_real_size, int run_mode, double region_merge_threshold)
+    Cache *NewMultiQueue(size_t capacity, int lrus_num, uint64_t life_time, double change_ratio, bool cache_use_real_size)
     {
-        return new multiqueue_ns::MultiQueue(capacity, lrus_num, life_time, change_ratio, cache_use_real_size, run_mode, region_merge_threshold);
+        return new multiqueue_ns::MultiQueue(capacity, lrus_num, life_time, change_ratio, cache_use_real_size);
     }
 
 };

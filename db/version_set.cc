@@ -1614,12 +1614,12 @@ void VersionSet::printTableExtraInfos(int level,std::string *file_strs)
       int latency = file_extra_->latency_sum / file_extra_->count;
       if (first) {
         // snprintf(buf, sizeof(buf), "(%ld,%ld,%ld)", file_extra_->latency_sum, file_extra_->count, latency);
-        snprintf(buf, sizeof(buf), "%ld", latency);
+        snprintf(buf, sizeof(buf), "%d", latency);
         first = false;
       }
       else {
         // snprintf(buf, sizeof(buf), ",(%ld,%ld,%ld)", file_extra_->latency_sum, file_extra_->count, latency);
-        snprintf(buf, sizeof(buf), ",%ld", latency);
+        snprintf(buf, sizeof(buf), ",%d", latency);
       }
       file_strs->append(buf);
     }

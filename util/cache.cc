@@ -10,6 +10,7 @@
 #include "port/port.h"
 #include "util/hash.h"
 #include "util/mutexlock.h"
+#include "db/table_cache.h"
 
 namespace leveldb {
 
@@ -41,7 +42,7 @@ namespace {
 // are kept in a circular doubly linked list ordered by access time.
 struct LRUHandle {
   void* value;
-  void (*deleter)(const Slice&, void* value);
+  void (*deleter)(const Slice&, void* value, const bool realDelete);
   LRUHandle* next_hash;
   LRUHandle* next;
   LRUHandle* prev;
@@ -50,6 +51,7 @@ struct LRUHandle {
   bool in_cache;      // Whether entry is in the cache.
   uint32_t refs;      // References, including cache reference, if present.
   uint32_t hash;      // Hash of key(); used for fast sharding and comparisons
+  uint32_t id;
   char key_data[1];   // Beginning of key
 
   Slice key() const {
@@ -161,7 +163,7 @@ class LRUCache {
   // Like Cache methods, but with an extra "hash" parameter.
   Cache::Handle* Insert(const Slice& key, uint32_t hash,
                         void* value, size_t charge,
-                        void (*deleter)(const Slice& key, void* value));
+                        void (*deleter)(const Slice& key, void* value, const bool realDelete));
   Cache::Handle* Lookup(const Slice& key, uint32_t hash);
   void Release(Cache::Handle* handle);
   void Erase(const Slice& key, uint32_t hash);
@@ -171,11 +173,13 @@ class LRUCache {
     return usage_;
   }
 
+  bool cache_deleted_entry;
+
  private:
   void LRU_Remove(LRUHandle* e);
   void LRU_Append(LRUHandle*list, LRUHandle* e);
   void Ref(LRUHandle* e);
-  void Unref(LRUHandle* e);
+  void Unref(LRUHandle* e, bool realDelete = false);
   bool FinishErase(LRUHandle* e);
 
   // Initialized before use.
@@ -195,27 +199,46 @@ class LRUCache {
   LRUHandle in_use_;
 
   HandleTable table_;
+
+  LRUHandle not_use_;
+  HandleTable swapped_table_;
 };
 
 LRUCache::LRUCache()
-    : usage_(0) {
+    : usage_(0), cache_deleted_entry(false) {
   // Make empty circular linked lists.
   lru_.next = &lru_;
   lru_.prev = &lru_;
   in_use_.next = &in_use_;
   in_use_.prev = &in_use_;
+
+  not_use_.next = &not_use_;
+  not_use_.prev = &not_use_;
 }
 
 LRUCache::~LRUCache() {
   assert(in_use_.next == &in_use_);  // Error if caller has an unreleased handle
+  int count1 = 0, count2 = 0;
   for (LRUHandle* e = lru_.next; e != &lru_; ) {
     LRUHandle* next = e->next;
     assert(e->in_cache);
     e->in_cache = false;
     assert(e->refs == 1);  // Invariant of lru_ list.
-    Unref(e);
+    Unref(e, true);
     e = next;
+    count1++;
   }
+
+  for (LRUHandle* e = not_use_.next; e != &not_use_;) {
+    LRUHandle* next = e->next;
+    assert(e->in_cache);
+    e->in_cache = false;
+    assert(e->refs == 1);  // Invariant of lru_ list.
+    Unref(e, true);
+    e = next;
+    count2++;
+  }
+  fprintf(stderr, "in lru entry nums:%d, in not_use entry nums: %d\n", count1, count2);
 }
 
 void LRUCache::Ref(LRUHandle* e) {
@@ -226,13 +249,31 @@ void LRUCache::Ref(LRUHandle* e) {
   e->refs++;
 }
 
-void LRUCache::Unref(LRUHandle* e) {
+void LRUCache::Unref(LRUHandle* e, bool realDelete) {
   assert(e->refs > 0);
   e->refs--;
   if (e->refs == 0) { // Deallocate.
     assert(!e->in_cache);
-    (*e->deleter)(e->key(), e->value);
-    free(e);
+    if (cache_deleted_entry) {
+      if (e->id == 0)
+        (*e->deleter)(e->key(), e->value, realDelete);
+
+      if (realDelete)
+        free(e);
+      else {
+        LRU_Append(&not_use_, e);
+        LRUHandle* old = swapped_table_.Insert(e);
+        if (old) {
+          LRU_Remove(old);
+          (*old->deleter)(old->key(), old->value, true);
+        }
+      }
+    }
+    else {
+        (*e->deleter)(e->key(), e->value, true);
+        free(e);
+    }
+
   } else if (e->in_cache && e->refs == 1) {  // No longer in use; move to lru_ list.
     LRU_Remove(e);
     LRU_Append(&lru_, e);
@@ -257,6 +298,47 @@ Cache::Handle* LRUCache::Lookup(const Slice& key, uint32_t hash) {
   LRUHandle* e = table_.Lookup(key, hash);
   if (e != NULL) {
     Ref(e);
+    if (cache_deleted_entry) {
+      leveldb::TableAndFile *tf = reinterpret_cast<leveldb::TableAndFile *>(e->value);
+      if (e->id != 0 && tf->table->getCurrFilterNum(e->id - 1) != 0) {
+        size_t delta_charge = tf->table->getCurrFiltersSize(e->id - 1);
+        usage_ += delta_charge;
+
+        while (usage_ > capacity_ && lru_.next != &lru_) {
+          LRUHandle* old = lru_.next;
+          assert(old->refs == 1);
+          bool erased = FinishErase(table_.Remove(old->key(), old->hash));
+          if (!erased) {  // to avoid unused variable when compiled NDEBUG
+            assert(erased);
+          }
+        }
+      }
+    }
+  }
+  else if (cache_deleted_entry) {
+    e = swapped_table_.Remove(key, hash);
+    if (e) {
+      leveldb::TableAndFile *tf = reinterpret_cast<leveldb::TableAndFile *>(e->value);
+      
+      tf->table->RemoveFilters(-1, e->id - 1);
+      tf->table->AdjustFilters(2, e->id - 1);
+
+      e->refs++;
+      e->in_cache = true;
+      usage_ += e->charge;
+      LRU_Remove(e);
+      LRU_Append(&in_use_, e);
+      FinishErase(table_.Insert(e));
+
+      while (usage_ > capacity_ && lru_.next != &lru_) {
+        LRUHandle* old = lru_.next;
+        assert(old->refs == 1);
+        bool erased = FinishErase(table_.Remove(old->key(), old->hash));
+        if (!erased) {  // to avoid unused variable when compiled NDEBUG
+          assert(erased);
+        }
+      }
+    }
   }
   return reinterpret_cast<Cache::Handle*>(e);
 }
@@ -268,7 +350,7 @@ void LRUCache::Release(Cache::Handle* handle) {
 
 Cache::Handle* LRUCache::Insert(
     const Slice& key, uint32_t hash, void* value, size_t charge,
-    void (*deleter)(const Slice& key, void* value)) {
+    void (*deleter)(const Slice& key, void* value, const bool realDelete)) {
   MutexLock l(&mutex_);
 
   LRUHandle* e = reinterpret_cast<LRUHandle*>(
@@ -281,6 +363,12 @@ Cache::Handle* LRUCache::Insert(
   e->in_cache = false;
   e->refs = 1;  // for the returned handle.
   memcpy(e->key_data, key.data(), key.size());
+
+  if (cache_deleted_entry) {
+    leveldb::TableAndFile *tf = reinterpret_cast<leveldb::TableAndFile *>(e->value);
+    uint32_t *regionId_ = (uint32_t *) (key.data() + sizeof(uint64_t));
+    e->id = *regionId_;
+  }
 
   if (capacity_ > 0) {
     e->refs++;  // for the cache's reference.
@@ -359,10 +447,17 @@ class ShardedLRUCache : public Cache {
   }
   virtual ~ShardedLRUCache() { }
   virtual Handle* Insert(const Slice& key, void* value, size_t charge,
-                         void (*deleter)(const Slice& key, void* value)) {
+                         void (*deleter)(const Slice& key, void* value, const bool realDelete)) {
     const uint32_t hash = HashSlice(key);
     return shard_[Shard(hash)].Insert(key, hash, value, charge, deleter);
   }
+
+  virtual void SupportCacheDeletedEntry(bool flag) override {
+    for (int s = 0; s < kNumShards; s++) {
+      shard_[s].cache_deleted_entry = flag;
+    }
+  }
+
   virtual Handle* Lookup(const Slice& key) {
     const uint32_t hash = HashSlice(key);
     return shard_[Shard(hash)].Lookup(key, hash);
