@@ -4,7 +4,6 @@
 
 #include "table/filter_block.h"
 
-#include "leveldb/filter_policy.h"
 #include "util/coding.h"
 #include <util/stop_watch.h>
 #include <unistd.h>
@@ -205,18 +204,18 @@ FilterBlockReader::FilterBlockReader(const FilterPolicy* policy, bool cache_use_
     handle_error_en(1, "filter block size is too large\n");
   }
 
-  datas_.clear();
-  for (int i = 0; i < num_regions; i++) {
-    std::vector<const char *> region_data;
-    region_data.clear();
-    datas_.push_back(region_data);
+  filter_datas_.clear();
+  for (int i = 0; i < num_ - 1; i++) {
+    MultiFilters* filter = new MultiFilters;
+    filter_datas_.push_back(filter);
   }
+
   curr_num_of_filters_regions_ = new int[num_regions]();
 
 }
 
 FilterBlockReader::~FilterBlockReader() {
-  datas_.clear();
+  filter_datas_.clear();
   delete [] curr_num_of_filters_regions_;
 }
 
@@ -224,8 +223,27 @@ void FilterBlockReader::AddFilter(Slice &contents, int regionId)
 {
   assert(1 + curr_num_of_filters_regions_[regionId] <= max_num_of_filters_);
 
-  std::vector<const char *> &region_data = datas_[regionId];
-  region_data.push_back(contents.data());
+  int cur_filter_id = curr_num_of_filters_regions_[regionId];
+  for (int i = 0; i < regionFilters; i++) {
+    int index = regionId * regionFilters + i;
+    if (index >= num_ - 1)
+      break;
+
+    uint32_t start = (*filter_offsets)[cur_filter_id][index];
+    uint32_t limit = (*filter_offsets)[cur_filter_id][index + 1];
+    int region_index = regionId * regionFilters;
+    uint32_t filter_start = start - (*filter_offsets)[cur_filter_id][region_index];
+    if (start <= limit)
+    {
+        Slice filter = Slice(contents.data() + filter_start, limit - start);
+        filter_datas_[index]->addFilter(filter);
+    }
+    else if (start > limit)
+    {
+        fprintf(stderr, "parse filter error!\n");
+        exit(1);
+    }
+  }
 
   curr_num_of_filters_regions_[regionId]++;
 }
@@ -240,9 +258,6 @@ size_t FilterBlockReader::RemoveFilters(int n, int regionId)
   }
 
     while(n--){
-	//const char *toBeDelete = datas_.back();
-	//delete []toBeDelete;  // note: no need to be deleted, thus, FilterBlockReader is just a manager for filter blocks.
-
       size_t loc = regionId * regionFilters;
 
       int i = curr_num_of_filters_regions_[regionId] - 1;
@@ -257,15 +272,16 @@ size_t FilterBlockReader::RemoveFilters(int n, int regionId)
       else
         delta += FilterPolicy::bits_per_key_per_filter_[i];
       
-      datas_[regionId].pop_back();
-    	// offsets_.pop_back();
+      for (int j = 0 ; j < regionFilters; j++) {
+        filter_datas_[loc + j]->removeFilter();
+      }
+      
     	curr_num_of_filters_regions_[regionId]--;
     }
   
   return delta;
 }
 
-//todo
 double FilterBlockReader::getCurrFpr() {
   double ret = 0;
   int sum_bits = 0;
@@ -276,35 +292,11 @@ double FilterBlockReader::getCurrFpr() {
   return ret;
 }
 
-//todo
 bool FilterBlockReader::KeyMayMatch(uint64_t block_offset, const Slice &key)
 {
   uint64_t index = block_offset >> base_lg_;
-  std::list<Slice> filters;
-  int regionId = index / regionFilters;
-  if (index < num_ && curr_num_of_filters_regions_[regionId] > 0)
-  {
-      for(int i = 0 ; i < curr_num_of_filters_regions_[regionId] ; i++)
-      {
-          uint32_t start = (*filter_offsets)[i][index];
-          uint32_t limit = (*filter_offsets)[i][index + 1];
-          int region_index = regionId * regionFilters;
-          uint32_t region_start = start - (*filter_offsets)[i][region_index];
-          if (start <= limit)
-          {
-              Slice filter = Slice(datas_[regionId][i] + region_start, limit - start);
-              filters.push_back(filter);
-          }
-          else if (start >= limit)
-          {
-              // Empty filters do not match any keys
-              printf("empty filters\n");
-              return false;
-          }
-      }
-      return policy_->KeyMayMatchFilters(key, filters);
-  }
-  return true;  // Errors are treated as potential matches
+
+  return policy_->KeyMayMatchFilters(key, filter_datas_[index]);
 }
 
 
