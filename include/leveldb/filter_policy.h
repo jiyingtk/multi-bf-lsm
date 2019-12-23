@@ -16,11 +16,36 @@
 #ifndef STORAGE_LEVELDB_INCLUDE_FILTER_POLICY_H_
 #define STORAGE_LEVELDB_INCLUDE_FILTER_POLICY_H_
 
+#define ChildPolicy BlockedBloomFilterPolicy
+// #define ChildPolicy ChildBloomFilterPolicy
+
+#define _STR(R) #R
+#define STR(R) _STR(R)
+
 #include <string>
 #include<list>
+#include <vector>
+#include "leveldb/slice.h"
+
 namespace leveldb {
 
-class Slice;
+class ChildPolicy;
+
+class MultiFilters {
+  public:
+    std::list<Slice> seperated_filters;
+    char* merged_filters;
+    bool is_merged;
+    bool is_compressed;
+    int curr_num_of_filters;
+
+    MultiFilters() : is_merged(false), is_compressed(false), curr_num_of_filters(0){}
+    ~MultiFilters();
+    void addFilter(Slice &contents);
+    void removeFilter();
+    void merge();
+    void seperate();
+};
 
 class FilterPolicy {
  public:
@@ -54,6 +79,9 @@ class FilterPolicy {
   }
   virtual bool KeyMayMatchFilters(const Slice& key, const std::list<leveldb::Slice>& filters) const {
 	return true;
+  }
+  virtual bool KeyMayMatchFilters(const Slice& key, const MultiFilters* multi_filters) const {
+    return true;
   }
   
   virtual int filterNums() const {

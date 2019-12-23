@@ -130,6 +130,11 @@ bool InternalFilterPolicy::KeyMayMatchFilters(const Slice& key, const std::list<
     return user_policy_->KeyMayMatchFilters(ExtractUserKey(key),filters);
 }
 
+bool InternalFilterPolicy::KeyMayMatchFilters(const Slice& key, const MultiFilters* multi_filters) const
+{
+    return user_policy_->KeyMayMatchFilters(ExtractUserKey(key), multi_filters);
+}
+
 void InternalFilterPolicy::CreateFilter(const Slice* keys, int n, std::list< std::string >& dsts) const
 {
    Slice* mkey = const_cast<Slice*>(keys);

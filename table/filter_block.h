@@ -15,6 +15,7 @@
 #include <vector>
 #include "leveldb/slice.h"
 #include "util/hash.h"
+#include "leveldb/filter_policy.h"
 #include<list>
 #include<atomic>
 namespace leveldb {
@@ -68,7 +69,7 @@ class FilterBlockReader {
  private:
   const FilterPolicy* policy_;
   bool cache_use_real_size_;
-  std::vector<std::vector<const char*>> datas_;    // Pointer to filter data (at block-start)
+  std::vector<MultiFilters*> filter_datas_;
   // std::vector<const char*> offsets_;  // Pointer to beginning of offset array (at block-end)
   size_t num_;          // Number of entries in offset array
   size_t base_lg_;      // Encoding parameter (see kFilterBaseLg in .cc file)
