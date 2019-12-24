@@ -43,7 +43,6 @@ namespace leveldb
             uint32_t value_id;
             uint32_t value_refs;
             bool is_mark;
-            bool wait_bg;
             LRUQueueHandle *table_handle, *prev_region, *next_region;
 
             char key_data[1];   // Beginning of key
@@ -356,16 +355,6 @@ namespace leveldb
                 LRUQueueHandle *p = backward;
                 int i = 0;
                 mq->mutex_.lock();
-
-                while (p != forward) {
-                    p->wait_bg = false;
-
-                    p->charge += delta_charge[i];
-                    mq->usage_ += delta_charge[i];
-                    p = p->next_region;
-                    i++;
-                }
-                p->wait_bg = false;
                 
                 p->charge += delta_charge[i];
                 mq->usage_ += delta_charge[i];
@@ -422,7 +411,7 @@ namespace leveldb
 
         void MultiQueue::RecomputeExp(LRUQueueHandle *e)
         {
-            if(multi_queue_init || (e->queue_id + 1) == lrus_num_ || e->wait_bg)
+            if(multi_queue_init || (e->queue_id + 1) == lrus_num_)
             {
                 ++e->fre_count;
                 sum_freqs_[e->queue_id]++;
@@ -453,7 +442,7 @@ namespace leveldb
                         LRUQueueHandle *old = lrus_[i].next;
                         while(old != &lrus_[i] && remove_bits < need_bits)
                         {
-                            if(old->expire_time < current_time_ && !old->wait_bg)  // expired
+                            if(old->expire_time < current_time_)  // expired
                             {
                                 // remove_bits += bits_per_key_per_filter_[i];
                                 remove_bits += old->charge / bits_per_key_per_filter_sum[old->queue_id] * bits_per_key_per_filter_[i];
@@ -496,19 +485,10 @@ namespace leveldb
                             LRU_Append(&lrus_[min_i - 1], old);
                         }
 
-                        if (bg_thread_nums > 0)
-                            e->wait_bg = true;
                         sum_freqs_[e->queue_id] -= e->fre_count;
                         sum_freqs_[e->queue_id + 1] += e->fre_count;
                         ++e->queue_id;
                         expection_ = min_expection;
-
-                        if (bg_thread_nums > 0) {
-                            queue_mutex.lock();
-                            bg_queue.push({e, e});
-                            queue_con.notify_all();
-                            queue_mutex.unlock();
-                        }
                     }
                     else
                     {
@@ -523,19 +503,10 @@ namespace leveldb
                     {
                         counters[6]++;
 
-                        if (bg_thread_nums > 0)
-                            e->wait_bg = true;
                         sum_freqs_[e->queue_id] -= e->fre_count;
                         sum_freqs_[e->queue_id + 1] += e->fre_count;
                         ++e->queue_id;
                         expection_ = new_expection;
-
-                        if (bg_thread_nums > 0) {
-                            queue_mutex.lock();
-                            bg_queue.push({e, e});
-                            queue_con.notify_all();
-                            queue_mutex.unlock();
-                        }
                     }
                     else
                     {
@@ -594,7 +565,7 @@ deallocate:
             else if (e->in_cache && e->refs == 1)      // note:No longer in use; move to lru_ list.
             {
                 leveldb::TableAndFile *tf = reinterpret_cast<leveldb::TableAndFile *>(e->value);
-                if(!e->wait_bg && e->value_id > 0 && tf->table->getCurrFilterNum(e->value_id - 1) < e->queue_id)   //only add;
+                if(e->value_id > 0 && tf->table->getCurrFilterNum(e->value_id - 1) < e->queue_id)   //only add;
                 {
                     ++e->refs;
                     size_t delta_charge = tf->table->AdjustFilters(e->queue_id, e->value_id - 1);  // not in lru list, so need to worry will be catched by ShrinkUsage
@@ -732,7 +703,7 @@ deallocate:
                     {
                         LRUQueueHandle *old = lrus_[k].next;
 
-                        if(old->refs == 1 && old->expire_time < current_time_ && !old->wait_bg)
+                        if(old->refs == 1 && old->expire_time < current_time_)
                         {
                             leveldb::TableAndFile *tf = reinterpret_cast<leveldb::TableAndFile *>(old->value);
                             uint64_t start_micros = Env::Default()->NowMicros();
@@ -791,11 +762,6 @@ deallocate:
                                 int b = 0;
                                 b += 1;
                             }
-                        }
-                        if (old->wait_bg) {
-                            LRU_Remove(old);
-                            LRU_Append(&lrus_[k], old);
-                            continue;
                         }
                         leveldb::TableAndFile *tf = reinterpret_cast<leveldb::TableAndFile *>(old->value);
                         size_t delta_charge = tf->table->RemoveFilters(1, old->value_id - 1); //  remove 1 filter
@@ -856,7 +822,6 @@ deallocate:
             e->in_cache = false;
             e->refs = 1;  // for the returned handle.
             e->fre_count = 0;
-            e->wait_bg = false;
             e->is_mark = false;
             leveldb::TableAndFile *tf = reinterpret_cast<leveldb::TableAndFile *>(e->value);
             uint32_t *regionId_ = (uint32_t *) (key.data() + sizeof(uint64_t));

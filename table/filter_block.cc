@@ -272,7 +272,7 @@ size_t FilterBlockReader::RemoveFilters(int n, int regionId)
       else
         delta += FilterPolicy::bits_per_key_per_filter_[i];
       
-      for (int j = 0 ; j < regionFilters; j++) {
+      for (int j = 0 ; j < regionFilters && loc + j < num_ - 1; j++) {
         filter_datas_[loc + j]->removeFilter();
       }
       

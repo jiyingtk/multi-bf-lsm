@@ -16,8 +16,8 @@
 #ifndef STORAGE_LEVELDB_INCLUDE_FILTER_POLICY_H_
 #define STORAGE_LEVELDB_INCLUDE_FILTER_POLICY_H_
 
-#define ChildPolicy BlockedBloomFilterPolicy
-// #define ChildPolicy ChildBloomFilterPolicy
+// #define ChildPolicy BlockedBloomFilterPolicy
+#define ChildPolicy ChildBloomFilterPolicy
 
 #define _STR(R) #R
 #define STR(R) _STR(R)
