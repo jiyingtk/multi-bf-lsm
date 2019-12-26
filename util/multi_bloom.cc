@@ -186,6 +186,8 @@ public:
 			k_ = 1;
 		if (k_ > 30)
 			k_ = 30;
+		k_ = 2;
+		fprintf(stderr,"we choose k hash functions:%u\n",k_);
 	}
 
 	virtual const char *Name() const
