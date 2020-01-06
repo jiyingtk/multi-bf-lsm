@@ -28,7 +28,7 @@ class Cache;
 // Create a new cache with a fixed size capacity.  This implementation
 // of Cache uses a least-recently-used eviction policy.
 extern Cache* NewLRUCache(size_t capacity);
-extern Cache *NewMultiQueue(size_t capacity, int lrus_num, uint64_t life_time, double change_ratio, bool cache_use_real_size);
+extern Cache *NewMultiQueue(const std::string& dbname, size_t capacity, int lrus_num, uint64_t life_time, double change_ratio, bool cache_use_real_size, bool should_recovery_hotness);
 
 class Cache {
  public:

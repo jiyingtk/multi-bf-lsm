@@ -116,6 +116,12 @@ Options SanitizeOptions(const std::string& dbname,
     //result.block_cache = NewLRUCache(8 << 20);
       result.block_cache = NULL;
   }
+
+  char name_buf[100];
+  snprintf(name_buf, sizeof(name_buf), "/freq_info");
+  std::string freq_info_fn = dbname + name_buf;
+  // result.opEp_.should_recovery_hotness = (access(freq_info_fn.c_str(), F_OK) != -1) && !result.opEp_.cache_use_real_size;
+  fprintf(stderr, "should recovery hotness: %s\n", (result.opEp_.should_recovery_hotness?"True":"False"));
   return result;
 }
 
@@ -166,7 +172,7 @@ DBImpl::DBImpl(const Options& raw_options, const std::string& dbname)
                              &internal_comparator_);
   leveldb::directIO_of_RandomAccess = options_.opEp_.no_cache_io_;
 
-printf("DBImpl l0sizeraito %lf\n", options_.opEp_.l0_base_ratio);
+  printf("DBImpl l0sizeraito %lf\n", options_.opEp_.l0_base_ratio);
   fp_reqs = fp_io = fp_nums = read_nums = 0;
   fp_sum = 0;
   last_fp = 0;
@@ -1733,6 +1739,7 @@ bool DBImpl::GetProperty(const Slice& property, std::string* value) {
   if(statis_->getTickerCount(Tickers::FILTER_LOOKUP_TIME) != 0){
     value->append(statis_->ToString(Tickers::FILTER_LOOKUP_TIME,Tickers::FILTER_LOOKUP_TIME));
   }
+    value->append(statis_->ToString(Tickers::BACKUP_TIME,Tickers::BACKUP_TIME));
 	statis_->reset();
     }
     return true;

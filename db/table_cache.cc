@@ -56,8 +56,8 @@ TableCache::TableCache(const std::string& dbname,
           cache_->SupportCacheDeletedEntry(true);
         }
         else {
-          cache_ = NewMultiQueue(entries,options->opEp_.lrus_num_,options->opEp_.life_time,
-            options_->opEp_.change_ratio,options_->opEp_.cache_use_real_size);
+          cache_ = NewMultiQueue(dbname, entries,options->opEp_.lrus_num_, options->opEp_.life_time,
+            options_->opEp_.change_ratio, options_->opEp_.cache_use_real_size, options_->opEp_.should_recovery_hotness);
         }
 }
 
@@ -97,6 +97,7 @@ Status TableCache::FindBufferedTable(uint64_t file_number, uint64_t file_size,
       //TableAndFile* tf = new TableAndFile;
       rtf->file = file;
       rtf->table = table;
+      rtf->file_number = file_number;
      
     }
     return s;
@@ -230,6 +231,7 @@ assert(p_0_table->freq_count == region_keys.size() - 1);
       TableAndFile* tf = new TableAndFile;
       tf->file = file;
       tf->table = table;
+      tf->file_number = file_number;
       tf->refs = 0;
    //    for(int i = 0 ; i < table->getCurrFilterNum() ; i ++){
     // charge += FilterPolicy::bits_per_key_per_filter_[i];

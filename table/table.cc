@@ -872,7 +872,7 @@ namespace leveldb
             uint32_t *id_ = (uint32_t *) (region_name + sizeof(uint64_t));
             *id_ = handle.offset() / rep_->options.opEp_.region_divide_size + 1;
 
-            if (!isAccess(*id_ - 1) && getCurrFilterNum(*id_ - 1) == 0) { //real region divide mode
+            if (!rep_->options.opEp_.should_recovery_hotness && !isAccess(*id_ - 1) && getCurrFilterNum(*id_ - 1) == 0) { //real region divide mode
                 rep_->mutex_.lock();
                 rep_->locked = true;
 

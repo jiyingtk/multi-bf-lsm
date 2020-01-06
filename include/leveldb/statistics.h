@@ -96,6 +96,7 @@ namespace leveldb{
 	COMPACTION_TIME,
 	COMPACTION_READ_TIME,
 	FILTER_LOOKUP_TIME,
+	BACKUP_TIME,
 	TICKER_ENUM_MAX
  };  
 
@@ -189,7 +190,8 @@ namespace leveldb{
      {MAKE_ROOM_FOR_WRITE,"leveldb.make.room.for.write"},
      {COMPACTION_TIME,"leveldb.compaction.time"},
      {COMPACTION_READ_TIME,"leveldb.compaction.read.time"},
-     {FILTER_LOOKUP_TIME,"leveldb.filter.lookup.time"}
+     {FILTER_LOOKUP_TIME,"leveldb.multiqueue.lookup.time"},
+     {BACKUP_TIME,"leveldb.multiqueue.backup.time"}
 };
 
 struct HistogramData{

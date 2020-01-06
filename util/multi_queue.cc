@@ -7,12 +7,15 @@
 #include <math.h>
 #include <iostream>
 #include <queue>
+#include <unordered_map>
 #include <boost/iterator/iterator_concepts.hpp>
 #include <thread>
+#include <chrono>
 #include <condition_variable>
 #include "leveldb/cache.h"
 #include "port/port.h"
 #include "util/hash.h"
+#include "util/coding.h"
 #include "util/mutexlock.h"
 #include "db/table_cache.h"
 using namespace std;
@@ -163,12 +166,15 @@ namespace leveldb
         };
 
         struct HandlePair {
-            LRUQueueHandle *start;
-            LRUQueueHandle *end;
+            uint32_t table_id;
+            uint32_t region_id;
+            uint64_t freq;
+            uint32_t filter_num;
         };
 
         class MultiQueue: public Cache
         {
+            const std::string dbname_;
             int insert_count;
             int lrus_num_;
             size_t *charges_;
@@ -195,15 +201,24 @@ namespace leveldb
             uint64_t dynamic_merge_counter[2];
             bool cache_use_real_size_;
             int counters[16];
+            FILE * freq_info_diff_file;
+            bool should_recovery_hotness_;
+            std::unordered_map<uint64_t, HandlePair> freq_info_map;
         public:
             static pthread_t pids_[16];
             static int bg_thread_nums;
             queue<HandlePair> bg_queue;
             std::mutex queue_mutex;
             std::condition_variable_any queue_con;
+            std::mutex backup_mutex;
+            std::condition_variable backup_cv;
 
-            MultiQueue(size_t capacity, int lrus_num = 1, uint64_t life_time = 20000, double cr = 0.0001, bool cache_use_real_size = true);
+            MultiQueue(const std::string &dbname, size_t capacity, int lrus_num = 1, uint64_t life_time = 20000, double cr = 0.0001, bool cache_use_real_size = true, bool should_recovery_hotness = false);
             ~MultiQueue();
+            void backup_node_hotness(LRUQueueHandle *e, bool shouldBackup = false);
+            void backup_all();
+            void restore_all();
+
             void Ref(LRUQueueHandle *e, bool addFreCount = false);
             void Unref(LRUQueueHandle *e) ;
             void LRU_Remove(LRUQueueHandle *e);
@@ -242,14 +257,15 @@ namespace leveldb
             void MayBeShrinkUsage();
             void RecomputeExp(LRUQueueHandle *e);
             double FalsePositive(LRUQueueHandle *e);
-            static void * BackThread(void *args);
+            static void * BackThreadAll(void *args);
+            static void * BackThreadDiff(void *args);
         };
         pthread_t MultiQueue::pids_[16];
         int MultiQueue::bg_thread_nums = 1;
 
 
-        MultiQueue::MultiQueue(size_t capacity, int lrus_num, uint64_t life_time, double change_ratio, bool cache_use_real_size): capacity_(capacity), lrus_num_(lrus_num), life_time_(life_time)
-            , change_ratio_(change_ratio), sum_lru_len(0), expection_(0), usage_(0), shutting_down_(false), insert_count(0), need_adjust(true), cache_use_real_size_(cache_use_real_size)
+        MultiQueue::MultiQueue(const std::string &dbname, size_t capacity, int lrus_num, uint64_t life_time, double change_ratio, bool cache_use_real_size, bool should_recovery_hotness): dbname_(dbname), capacity_(capacity), lrus_num_(lrus_num), life_time_(life_time)
+            , change_ratio_(change_ratio), sum_lru_len(0), expection_(0), usage_(0), shutting_down_(false), insert_count(0), need_adjust(true), cache_use_real_size_(cache_use_real_size), should_recovery_hotness_(should_recovery_hotness)
         {
             //TODO: declare outside  class  in_use and lrus parent must be Initialized,avoid lock crush
             in_use_.next = &in_use_;
@@ -284,15 +300,26 @@ namespace leveldb
 
             for (int i = 0; i < 16; i++)counters[i] = 0;
 
-            bg_thread_nums = 0;
-            char name_buf[24];
+            if (should_recovery_hotness_)
+                restore_all();
+
+            char name_buf[100];
+            snprintf(name_buf, sizeof(name_buf), "/freq_info_diff");
+            std::string freq_info_fn = dbname_ + name_buf;
+            freq_info_diff_file = fopen(freq_info_fn.data(), "wb");
+
+            bg_thread_nums = 2;
             int i;
             for (i = 0; i < bg_thread_nums; i++) {
-                if(pthread_create(&pids_[i], NULL, MultiQueue::BackThread, this) != 0)
+                if(i == 0 && pthread_create(&pids_[i], NULL, MultiQueue::BackThreadAll, this) != 0)
                 {
                     perror("create thread ");
                 }
-                snprintf(name_buf, sizeof name_buf, "MultiQueue:bg%d", i);
+                if(i == 1 && pthread_create(&pids_[i], NULL, MultiQueue::BackThreadDiff, this) != 0)
+                {
+                    perror("create thread ");
+                }
+                snprintf(name_buf, sizeof name_buf, "MultiQueue:freq_info%d", i);
                 name_buf[sizeof name_buf - 1] = '\0';
                 pthread_setname_np(pids_[i], name_buf);
             }
@@ -330,8 +357,74 @@ namespace leveldb
             delete []lrus_;
         }
 
-        void * MultiQueue::BackThread(void *arg) {
+        inline void save_freq_info(FILE* fp, HandlePair *hp) {
+            //fixed encoding
+            // fwrite(hp, sizeof(*hp), 1, fp);
 
+            //varied encoding
+            std::string s;
+            char tmp[1];
+            s.append(tmp, 1);
+            PutVarint32(&s, hp->table_id);
+            PutVarint32(&s, hp->region_id);
+            PutVarint64(&s, hp->freq);
+            PutVarint32(&s, hp->filter_num);
+            int count = s.length() - 1;
+            s[0] = count;
+            fwrite(s.data(), s.length(), 1, fp);
+        }
+
+        inline bool restore_freq_info(FILE* fp, std::unordered_map<uint64_t, HandlePair>& map) {
+            HandlePair hp;
+
+            //fixed decoding
+            // if (fread(&hp, sizeof(hp), 1, fp) != 1)
+            //     return true;
+
+            //varied decoding
+            char buf[32];
+            if (fread(buf, 1, 1, fp) != 1)
+                return true;
+            int read_count = buf[0];
+            if (fread(buf, 1, read_count, fp) != read_count)
+                return true;
+
+            const char *p = buf, *limit = buf + 32;
+            p = GetVarint32Ptr(p, limit, &hp.table_id);
+            p = GetVarint32Ptr(p, limit, &hp.region_id);
+            p = GetVarint64Ptr(p, limit, &hp.freq);
+            uint32_t filter_num;
+            p = GetVarint32Ptr(p, limit, &filter_num);
+            hp.filter_num = filter_num;
+
+            uint64_t key;
+            char *key_ptr = (char*) &key;
+            memcpy(key_ptr, &hp.table_id, sizeof(uint32_t));
+            memcpy(key_ptr + sizeof(uint32_t), &hp.region_id, sizeof(uint32_t));
+            map[key] = hp;
+            return false;
+        }
+
+        void * MultiQueue::BackThreadAll(void *arg) {
+            MultiQueue *mq = (MultiQueue *)arg;
+            while(!mq->shutting_down_) {
+                std::unique_lock<std::mutex> lk(mq->backup_mutex);
+                std::chrono::seconds ten(10);
+                mq->backup_cv.wait_for(lk, ten);
+                
+                if (mq->shutting_down_) {
+                    break;
+                }
+
+                uint64_t start_micros = Env::Default()->NowMicros();
+                mq->backup_all();
+                MeasureTime(Statistics::GetStatistics().get(), Tickers::BACKUP_TIME, Env::Default()->NowMicros() - start_micros);
+            }
+
+            return NULL;
+        }
+
+        void * MultiQueue::BackThreadDiff(void *arg) {
             MultiQueue *mq = (MultiQueue *)arg;
             while(!mq->shutting_down_) {
                 mq->queue_mutex.lock();
@@ -347,30 +440,75 @@ namespace leveldb
                 mq->bg_queue.pop();
                 mq->queue_mutex.unlock();
 
-                LRUQueueHandle *backward = hp.start;
-                LRUQueueHandle *forward = hp.end;
-                leveldb::TableAndFile *tf = reinterpret_cast<leveldb::TableAndFile *>(backward->value);
-                size_t* delta_charge = tf->table->AdjustFilters(backward->queue_id, backward->value_id - 1, forward->value_id - 1, true);
-
-                LRUQueueHandle *p = backward;
-                int i = 0;
-                mq->mutex_.lock();
-                
-                p->charge += delta_charge[i];
-                mq->usage_ += delta_charge[i];
-
-                mq->mutex_.unlock();                
+                save_freq_info(mq->freq_info_diff_file, &hp);
             }
 
-            
             return NULL;
+        }
+
+        void MultiQueue::backup_all() {
+            queue<HandlePair> q;
+
+            mutex_.lock();
+            for(int i = 0 ; i < lrus_num_; i++)
+            {
+                for (LRUQueueHandle *e = lrus_[i].next; e != &lrus_[i]; )
+                {
+                    if (e->value_id != 0) {
+                        leveldb::TableAndFile *tf = reinterpret_cast<leveldb::TableAndFile *>(e->value);
+                        HandlePair hp = {(uint32_t) tf->file_number, e->value_id, e->fre_count, e->queue_id};
+                        q.push(hp);
+                    }
+
+                    LRUQueueHandle *next = e->next;
+                    e = next;
+                }
+            }
+            mutex_.unlock();
+
+            char name_buf[100];
+            snprintf(name_buf, sizeof(name_buf), "/freq_info");
+            std::string freq_info_fn = dbname_ + name_buf;
+            FILE *fp = fopen(freq_info_fn.data(), "wb");
+
+            while (!q.empty()) {
+                HandlePair hp = q.front();
+                q.pop();
+                save_freq_info(fp, &hp);
+            }
+
+            fclose(fp);
+        }
+
+        void MultiQueue::restore_all() {
+            fprintf(stderr, "restore hotness info of multiqueue\n");
+            char name_buf[100];
+            snprintf(name_buf, sizeof(name_buf), "/freq_info");
+            std::string freq_info_fn = dbname_ + name_buf;
+
+            FILE *fp = fopen(freq_info_fn.data(), "rb");
+            while (!restore_freq_info(fp, freq_info_map));
+            fclose(fp);
+        }
+
+        inline void MultiQueue::backup_node_hotness(LRUQueueHandle *e, bool shouldBackup) {
+            if (!shouldBackup)
+                return;
+                
+            leveldb::TableAndFile *tf = reinterpret_cast<leveldb::TableAndFile *>(e->value);
+
+            HandlePair hp = {(uint32_t) tf->file_number, e->value_id, e->fre_count, e->queue_id};
+            queue_mutex.lock();
+            bg_queue.push(hp);
+            queue_con.notify_all();
+            queue_mutex.unlock();
         }
 
         std::string MultiQueue::LRU_Status()
         {
             mutex_.lock();
             int count = 0;
-            char buf[300];
+            char buf[1024];
             std::string value;
             for(int i = 0 ; i < lrus_num_ ;  i++)
             {
@@ -384,7 +522,8 @@ namespace leveldb
                 snprintf(buf, sizeof(buf), "lru %d count %d lru_lens_count:%lu \n", i, count, lru_lens_[i]);
                 value.append(buf);
             }
-            snprintf(buf, sizeof(buf), "lru insert_count %d\n", insert_count);
+            snprintf(buf, sizeof(buf), "MQ state: capacity: %zu usage: %zu, expection: %lf, insert_count %d\n", capacity_, usage_.load(std::memory_order_relaxed), expection_, insert_count);
+            value.append(buf);
             mutex_.unlock();
             return value;
         }
@@ -483,6 +622,8 @@ namespace leveldb
                             ++lru_lens_[min_i - 1];
                             sum_freqs_[min_i - 1] += old->fre_count;
                             LRU_Append(&lrus_[min_i - 1], old);
+
+                            backup_node_hotness(old);
                         }
 
                         sum_freqs_[e->queue_id] -= e->fre_count;
@@ -576,17 +717,24 @@ deallocate:
                     }
                     e->charge += delta_charge;
                     usage_ += delta_charge;
+
+                    backup_node_hotness(e);
+
                     MayBeShrinkUsage();
                 }
                 else if (e->value_id > 0 && tf->table->getCurrFilterNum(e->value_id - 1) > e->queue_id) {
                     e->queue_id = tf->table->getCurrFilterNum(e->value_id - 1);
-                    size_t delta_charge;
+                    size_t new_charge;
                     if (cache_use_real_size_)
-                        delta_charge = tf->table->getCurrFiltersSize(e->value_id - 1);
+                        new_charge = tf->table->getCurrFiltersSize(e->value_id - 1);
                     else
-                        delta_charge = bits_per_key_per_filter_sum[e->queue_id];
-                    e->charge = delta_charge;
-                    usage_ += delta_charge;
+                        new_charge = bits_per_key_per_filter_sum[e->queue_id];
+                    usage_ -= e->charge;
+                    e->charge = new_charge;
+                    usage_ += e->charge;
+
+                    backup_node_hotness(e);
+
                     MayBeShrinkUsage();
                 }
                 LRU_Remove(e);
@@ -721,6 +869,8 @@ deallocate:
                             ++lru_lens_[k - 1];
                             sum_freqs_[k - 1] += old->fre_count;
                             LRU_Append(&lrus_[k - 1], old);
+
+                            backup_node_hotness(old);
                         }
                         else
                         {
@@ -778,6 +928,7 @@ deallocate:
                         ++lru_lens_[k - 1];
                         sum_freqs_[k - 1] += old->fre_count;
                         MeasureTime(Statistics::GetStatistics().get(), Tickers::REMOVE_HEAD_FILTER_TIME_0 + k, Env::Default()->NowMicros() - start_micros);
+                        backup_node_hotness(old);
                     }
                 }
                 return true;
@@ -873,12 +1024,31 @@ deallocate:
                 e->next_region = NULL;
 
                 e->in_cache = true;
-                // mutex_.lock();
+
+                if (should_recovery_hotness_) {
+                    uint64_t key_tmp;
+                    char *key_ptr = (char*) &key_tmp;
+                    uint32_t table_id = tf->file_number;
+                    uint32_t region_id = e->value_id;
+                    memcpy(key_ptr, &table_id, sizeof(uint32_t));
+                    memcpy(key_ptr + sizeof(uint32_t), &region_id, sizeof(uint32_t));
+                    if (freq_info_map.find(key_tmp) != freq_info_map.end()) {
+                        auto hp = freq_info_map[key_tmp];
+
+                        e->queue_id = hp.filter_num;
+                        e->charge = bits_per_key_per_filter_sum[e->queue_id];
+                        e->fre_count = hp.freq;
+                        expection_ += e->fre_count * fps[e->queue_id];
+
+                        tf->table->AdjustFilters(e->queue_id, e->value_id - 1);
+                    }
+                }
+
                 LRU_Append(&lrus_[e->queue_id], e);
                 ++lru_lens_[e->queue_id];
                 ++sum_lru_len;
 
-                usage_ += charge;
+                usage_ += e->charge;
                 auto redun_handle = table_.Insert(e);
                 if(redun_handle != NULL)
                 {
@@ -949,9 +1119,9 @@ deallocate:
 
     };
 
-    Cache *NewMultiQueue(size_t capacity, int lrus_num, uint64_t life_time, double change_ratio, bool cache_use_real_size)
+    Cache *NewMultiQueue(const std::string& dbname, size_t capacity, int lrus_num, uint64_t life_time, double change_ratio, bool cache_use_real_size, bool should_recovery_hotness)
     {
-        return new multiqueue_ns::MultiQueue(capacity, lrus_num, life_time, change_ratio, cache_use_real_size);
+        return new multiqueue_ns::MultiQueue(dbname, capacity, lrus_num, life_time, change_ratio, cache_use_real_size, should_recovery_hotness);
     }
 
 };

@@ -21,6 +21,7 @@ namespace leveldb {
 struct TableAndFile {
   RandomAccessFile* file;
   Table* table;
+  uint64_t file_number;
   uint32_t refs;
 };
 class Env;
