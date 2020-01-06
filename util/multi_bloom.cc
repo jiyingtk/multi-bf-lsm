@@ -63,14 +63,14 @@ static uint32_t BloomHash(const Slice &key, int id)
 	}
 }
 
-class ChildBloomFilterPolicy : public FilterPolicy
+class TraditionalBloomFilterPolicy : public FilterPolicy
 {
 private:
 	size_t bits_per_key_;
 	size_t k_;
 	int id_; //begin from 0
 public:
-	explicit ChildBloomFilterPolicy(int bits_per_key, int id)
+	explicit TraditionalBloomFilterPolicy(int bits_per_key, int id)
 		: bits_per_key_(bits_per_key), id_(id)
 	{
 		// We intentionally round down to reduce probing cost a little bit
