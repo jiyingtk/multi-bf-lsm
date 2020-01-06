@@ -390,6 +390,10 @@ public:
 		cfas = new CreateFilterArg[filters.size()];
 		i = 0;
 
+	#ifdef ChildPolicy
+		printf("Used ChildPolicy: %s\n", STR(ChildPolicy));
+	#endif
+
 		for (std::vector<ChildPolicy *>::const_iterator iter = filters.begin(); iter != filters.end(); iter++)
 		{
 			int *temp_id = new int(i);

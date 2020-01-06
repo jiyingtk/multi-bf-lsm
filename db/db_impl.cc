@@ -173,10 +173,11 @@ DBImpl::DBImpl(const Options& raw_options, const std::string& dbname)
   leveldb::directIO_of_RandomAccess = options_.opEp_.no_cache_io_;
 
   printf("DBImpl l0sizeraito %lf\n", options_.opEp_.l0_base_ratio);
-  fp_reqs = fp_io = fp_nums = read_nums = 0;
+  fp_reqs = fp_io = fp_nums = read_nums = filter_info = 0;
   fp_sum = 0;
   last_fp = 0;
   fp_calc_fpr_str.clear();
+  filter_info_str.clear();
   fp_access_file_str.clear();
   fp_real_fpr_str.clear();
   fp_real_io_str.clear();
@@ -1270,7 +1271,7 @@ Status DBImpl::Get(const ReadOptions& options,
   alloc_stop_watch.construct(p,env_,statis_,MEM_READ_TIME);
   // Unlock while reading from files and memtables
 
-  uint64_t fp_reqs_ = 0, read_nums_ = 0, fp_nums_ = 0, fp_io_ = 0;
+  uint64_t fp_reqs_ = 0, filter_info_ = 0, read_nums_ = 0, fp_nums_ = 0, fp_io_ = 0;
   // double fp_sum_ = 0;
   {
     mutex_.Unlock();
@@ -1306,6 +1307,7 @@ Status DBImpl::Get(const ReadOptions& options,
       fp_reqs_ = __sync_add_and_fetch(&fp_reqs, 1);
       // fp_sum_ = __sync_add_and_fetch(&fp_sum, options.total_fpr);
       fp_sum += options.total_fpr;
+      filter_info_ = __sync_add_and_fetch(&filter_info, options.filter_info);
       read_nums_ = __sync_add_and_fetch(&read_nums, options.access_file_nums);
       fp_nums_ = __sync_add_and_fetch(&fp_nums, options.read_file_nums);
       fp_io_ = __sync_add_and_fetch(&fp_io, options.read_file_nums);
@@ -1343,6 +1345,8 @@ Status DBImpl::Get(const ReadOptions& options,
     // snprintf(buf, sizeof(buf), "%lu,", fp_reqs);
     snprintf(buf, sizeof(buf), "%.5lf,", (double)(1.0*fp_sum/fp_reqs_));
     fp_calc_fpr_str.append(buf);
+    snprintf(buf, sizeof(buf), "%.5lf,", (double)(1.0*filter_info_/fp_reqs_));
+    filter_info_str.append(buf);
     snprintf(buf, sizeof(buf), "%.5lf,", (double)(1.0*read_nums_/fp_reqs_));
     fp_access_file_str.append(buf);
     snprintf(buf, sizeof(buf), "%.5lf,", (double)(1.0*fp_nums_/options_.opEp_.fp_stat_num));
@@ -1789,6 +1793,9 @@ bool DBImpl::GetProperty(const Slice& property, std::string* value) {
       return true;
   } else if (in == "fp-stat-calc_fpr") {
     value->append(fp_calc_fpr_str);
+    return true;
+  } else if (in == "filter-info") {
+    value->append(filter_info_str);
     return true;
   } else if (in == "fp-stat-access_file") {
     value->append(fp_access_file_str);

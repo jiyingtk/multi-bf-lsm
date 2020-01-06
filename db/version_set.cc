@@ -344,6 +344,7 @@ Status Version::Get(const ReadOptions& options,
   FileMetaData* last_file_read = NULL;
   int last_file_read_level = -1;
   options.read_file_nums = 0;
+  options.filter_info = 0;
   options.access_file_nums = 0;
   options.access_compacted_file_nums = 0;
   options.total_fpr = 0;

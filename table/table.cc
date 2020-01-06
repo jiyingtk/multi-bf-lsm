@@ -858,7 +858,6 @@ namespace leveldb
         Iterator *iiter = rep_->index_block->NewIterator(rep_->options.comparator);
 
         iiter->Seek(k);
-        uint64_t start_micros = Env::Default()->NowMicros();
         if (iiter->Valid())
         {
             options.access_file_nums++;
@@ -884,6 +883,10 @@ namespace leveldb
                 rep_->mutex_.unlock();
             }
 
+            if (getCurrFilterNum(*id_ - 1) > 3)
+                options.filter_info += 1;
+
+            uint64_t start_micros = Env::Default()->NowMicros();
             bool not_found = filter != NULL &&
                     ds.ok() &&
                     !filter->KeyMayMatch(handle.offset(), k);
