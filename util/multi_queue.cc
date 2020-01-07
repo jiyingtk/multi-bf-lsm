@@ -198,7 +198,6 @@ namespace leveldb
             std::vector<double> fps;
             std::vector<size_t> bits_per_key_per_filter_, bits_per_key_per_filter_sum;  //begin from 0 bits
             bool need_adjust;
-            uint64_t dynamic_merge_counter[2];
             bool cache_use_real_size_;
             int counters[16];
             FILE * freq_info_diff_file;
@@ -296,8 +295,6 @@ namespace leveldb
                 bits_per_key_per_filter_sum.push_back(sum_bits);
             }
 
-            dynamic_merge_counter[0] = dynamic_merge_counter[1] = 0;
-
             for (int i = 0; i < 16; i++)counters[i] = 0;
 
             if (should_recovery_hotness_)
@@ -349,8 +346,7 @@ namespace leveldb
                     e = next;
                 }
             }
-            double avg_merge_region_nums = dynamic_merge_counter[0] == 0 ? 0 : dynamic_merge_counter[1] / dynamic_merge_counter[0];
-            fprintf(stderr, "multi_queue_init is %s, expection_ is %lf, avg_merge_region_nums is %lf\n", multi_queue_init ? "true" : "false", expection_, avg_merge_region_nums);
+            fprintf(stderr, "multi_queue_init is %s, expection_ is %lf\n", multi_queue_init ? "true" : "false", expection_);
             for (int i = 0; i < 16; i++)
                 fprintf(stderr, "counters[%d] = %d\n", i, counters[i]);
             mutex_.unlock();

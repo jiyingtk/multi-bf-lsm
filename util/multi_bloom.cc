@@ -373,6 +373,7 @@ public:
 		int i;
 		int cpu_count = sysconf(_SC_NPROCESSORS_CONF);
 		int base_cpu_id = 8;
+		int filter_nums = 0;
 
 		bits_per_key_per_filter_ = new size_t[16]();
 		char name_buf[24];
@@ -383,6 +384,7 @@ public:
 			filters.push_back(ch_filter);
 			bits_per_key_per_filter_[i] = bits_per_key_per_filter[i];
 			filled_[i] = false;
+			filter_nums++;
 		}
 		curr_completed_filter_num_ = 0;
 		filter_num_ = i;
@@ -393,6 +395,12 @@ public:
 	#ifdef ChildPolicy
 		printf("Used ChildPolicy: %s\n", STR(ChildPolicy));
 	#endif
+
+		printf("FilterMergeThreshold: %d\n", FilterMergeThreshold);
+		if (FilterMergeThreshold <= 1 || FilterMergeThreshold > filter_nums) {
+			fprintf(stderr, "set FilterMergeThreshold error!\n");
+			exit(1);
+		}
 
 		for (std::vector<ChildPolicy *>::const_iterator iter = filters.begin(); iter != filters.end(); iter++)
 		{
@@ -480,14 +488,20 @@ public:
 	virtual bool KeyMayMatchFilters(const Slice& key, const MultiFilters* multi_filters) const
 	{
 		std::vector<ChildPolicy *>::const_iterator filter_iter = filters.begin();
-		for (std::list<Slice>::const_iterator filter_strs_iter = multi_filters->seperated_filters.begin(); filter_strs_iter != multi_filters->seperated_filters.end(); filter_strs_iter++)
-		{
-			if (!(*filter_iter)->KeyMayMatch(key, *filter_strs_iter))
+
+		if (!multi_filters->is_merged) {
+			for (std::list<Slice>::const_iterator filter_strs_iter = multi_filters->seperated_filters.begin(); filter_strs_iter != multi_filters->seperated_filters.end(); filter_strs_iter++)
 			{
-				return false;
+				if (!(*filter_iter)->KeyMayMatch(key, *filter_strs_iter))
+				{
+					return false;
+				}
+				filter_iter++;
 			}
-			filter_iter++;
+		} else { //merged filters
+
 		}
+
 		return true;
 	}
 
@@ -536,6 +550,19 @@ void MultiFilters::addFilter(Slice &contents) {
 	if (!is_merged && !is_compressed) {
 		seperated_filters.push_back(contents);
 		curr_num_of_filters++;
+
+		if (curr_num_of_filters >= FilterMergeThreshold) {
+			is_merged = true;
+			merge();
+		}
+	} else { //merged filters
+		//Waiting to be optimized
+		seperate();
+
+		seperated_filters.push_back(contents);
+		curr_num_of_filters++;
+
+		merge();
 	}
 }
 
@@ -543,6 +570,19 @@ void MultiFilters::removeFilter() {
 	if (!is_merged && !is_compressed) {
 		seperated_filters.pop_back();
 		curr_num_of_filters--;
+	} else if (curr_num_of_filters == FilterMergeThreshold) {
+		is_merged = false;
+		seperate();
+
+		seperated_filters.pop_back();
+		curr_num_of_filters--;
+	} else { //Waiting to be optimized
+		seperate();
+
+		seperated_filters.pop_back();
+		curr_num_of_filters--;
+
+		merge();
 	}
 }
 

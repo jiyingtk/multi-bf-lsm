@@ -16,6 +16,8 @@
 #ifndef STORAGE_LEVELDB_INCLUDE_FILTER_POLICY_H_
 #define STORAGE_LEVELDB_INCLUDE_FILTER_POLICY_H_
 
+#define FilterMergeThreshold 3
+
 // #define ChildPolicy BlockedBloomFilterPolicy
 #define ChildPolicy TraditionalBloomFilterPolicy
 
