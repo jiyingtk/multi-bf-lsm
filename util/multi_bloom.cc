@@ -186,8 +186,6 @@ public:
 			k_ = 1;
 		if (k_ > 30)
 			k_ = 30;
-		k_ = 2;
-		fprintf(stderr,"we choose k hash functions:%u\n",k_);
 	}
 
 	virtual const char *Name() const
@@ -492,7 +490,7 @@ public:
 		std::vector<ChildPolicy *>::const_iterator filter_iter = filters.begin();
 
 		if (!multi_filters->is_merged) {
-			for (std::list<Slice>::const_iterator filter_strs_iter = multi_filters->seperated_filters.begin(); filter_strs_iter != multi_filters->seperated_filters.end(); filter_strs_iter++)
+			for (std::list<Slice>::const_iterator filter_strs_iter = multi_filters->separated_filters.begin(); filter_strs_iter != multi_filters->separated_filters.end(); filter_strs_iter++)
 			{
 				if (!(*filter_iter)->KeyMayMatch(key, *filter_strs_iter))
 				{
@@ -527,7 +525,7 @@ public:
 			iter = filters.erase(iter);
 			pthread_join(pids_[i++], NULL);
 		}
-		fprintf(stderr, "Multi_bloom_filter destructor is called");
+		fprintf(stderr, "Multi_bloom_filter destructor is called\n");
 	}
 };
 
@@ -550,7 +548,7 @@ MultiFilters::~MultiFilters() {
 
 void MultiFilters::addFilter(Slice &contents) {
 	if (!is_merged && !is_compressed) {
-		seperated_filters.push_back(contents);
+		separated_filters.push_back(contents);
 		curr_num_of_filters++;
 
 		if (curr_num_of_filters >= FilterMergeThreshold) {
@@ -559,9 +557,9 @@ void MultiFilters::addFilter(Slice &contents) {
 		}
 	} else { //merged filters
 		//Waiting to be optimized
-		seperate();
+		separate();
 
-		seperated_filters.push_back(contents);
+		separated_filters.push_back(contents);
 		curr_num_of_filters++;
 
 		merge();
@@ -570,18 +568,18 @@ void MultiFilters::addFilter(Slice &contents) {
 
 void MultiFilters::removeFilter() {
 	if (!is_merged && !is_compressed) {
-		seperated_filters.pop_back();
+		separated_filters.pop_back();
 		curr_num_of_filters--;
 	} else if (curr_num_of_filters == FilterMergeThreshold) {
 		is_merged = false;
-		seperate();
+		separate();
 
-		seperated_filters.pop_back();
+		separated_filters.pop_back();
 		curr_num_of_filters--;
 	} else { //Waiting to be optimized
-		seperate();
+		separate();
 
-		seperated_filters.pop_back();
+		separated_filters.pop_back();
 		curr_num_of_filters--;
 
 		merge();
@@ -592,8 +590,16 @@ void MultiFilters::merge() {
 
 }
 
-void MultiFilters::seperate() {
+void MultiFilters::separate() {
 
+}
+
+void MultiFilters::push_back_merged_filters(const Slice &contents) {
+
+}
+
+void MultiFilters::pop_back_merged_filters() {
+	
 }
 
 size_t *leveldb::FilterPolicy::bits_per_key_per_filter_ = nullptr;

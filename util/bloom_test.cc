@@ -21,7 +21,7 @@ static Slice Key(int i, char *buffer)
   EncodeFixed32(buffer, i);
   return Slice(buffer, sizeof(uint32_t));
 }
-int bits_per_key_per_filter[] = {4,0};
+int bits_per_key_per_filter[] = {4, 4, 4, 4, 0};
 const int filter_len = sizeof(bits_per_key_per_filter) / sizeof(int) - 1;
 class BloomTest
 {
@@ -108,6 +108,10 @@ public:
     return policy_->KeyMayMatchFilters(s, tmp_filters);
   }
 
+  bool Matches(const Slice &s, const MultiFilters *mf) {
+    return policy_->KeyMayMatchFilters(s, mf);
+  }
+
   double CompressRatio(){
     if (!keys_.empty())
     {
@@ -123,24 +127,33 @@ public:
       if(output.size() > 0){
         compress_ratio += output.size() / (iter->size()+0.0) ;
         compress_times += 1;
-        fprintf(stderr,"before compress: %u\nafter compress: %u\n",iter->size(),output.size());
+        fprintf(stderr,"before compress: %zu \nafter compress: %zu \n", iter->size(), output.size());
       }
     }
     return compress_ratio/compress_times;
   }
 
-  double FalsePositiveRate()
+  double FalsePositiveRate(int num = 100000)
   {
     char buffer[sizeof(int)];
     int result = 0;
-    for (int i = 0; i < 10000; i++)
+    for (int i = 0; i < num; i++)
     {
       if (Matches(Key(i + 1000000000, buffer)))
       {
         result++;
       }
     }
-    return result / 10000.0;
+    return result * 1.0 / num;
+  }
+
+  Slice* GetFilters() {
+    Slice *fs = new Slice[filter_len];
+    int i = 0;
+    for (auto iter = filters_->begin(); iter != filters_->end(); iter++) {
+      fs[i++] = Slice(*iter);
+    }
+    return fs;
   }
 
   const char * Name() {
@@ -244,6 +257,7 @@ float getInterval(struct timeval m_begin, struct timeval m_end)
 
   return (m_end.tv_sec - m_begin.tv_sec) + (m_end.tv_usec - m_begin.tv_usec) / 1000000.0;
 }
+
 TEST(BloomTest, CompressRatio){
   char buffer[sizeof(int)];
   long length = 10000000;
@@ -258,6 +272,72 @@ TEST(BloomTest, CompressRatio){
   ASSERT_GE(compress_ratio,0);
 
 }
+
+TEST(BloomTest, MergeSeparate){
+  char buffer[sizeof(int)];
+  long length = 1000000;
+  double fpr = 0;
+  ASSERT_TRUE(FilterMergeThreshold > 1);
+  Reset();
+  for (long i = 0; i < length; i++)
+  {
+    Add(Key(i, buffer));
+  }
+  Build();
+
+  MultiFilters *mf = new MultiFilters();
+  auto filters = GetFilters();
+  for (int i = 0; i < FilterMergeThreshold - 1; i++) {
+    mf->addFilter(filters[i]);
+  }
+
+  fprintf(stderr, "init with %d separated filters: Testing correctness\n", FilterMergeThreshold);
+  for (int i = 0; i < length; i++)
+  {
+    ASSERT_TRUE(Matches(Key(i, buffer), mf));
+  }
+  fpr = FalsePositiveRate();
+  fprintf(stderr, "False positive rate:%5.4f%%\n", fpr * 100);
+
+  mf->addFilter(filters[FilterMergeThreshold - 1]);
+  fprintf(stderr, "add one filter, current %d filters, is_merged %s: Test merge\n", mf->curr_num_of_filters, (mf->is_merged?"true":"false"));
+  for (int i = 0; i < length; i++)
+  {
+    ASSERT_TRUE(Matches(Key(i, buffer), mf));
+  }
+  fpr = FalsePositiveRate();
+  fprintf(stderr, "False positive rate:%5.4f%%\n", fpr * 100);
+  
+  if (FilterMergeThreshold < filter_len) {
+    mf->addFilter(filters[FilterMergeThreshold]);
+    fprintf(stderr, "add one Filter, current %d filters: Test push_back_merged_filter\n", mf->curr_num_of_filters);
+    for (int i = 0; i < length; i++)
+    {
+      ASSERT_TRUE(Matches(Key(i, buffer), mf));
+    }
+    fpr = FalsePositiveRate();
+    fprintf(stderr, "False positive rate:%5.4f%%\n", fpr * 100);
+
+    mf->removeFilter();
+    fprintf(stderr, "remove one filter, current %d filters: Test pop_back_merged_filters\n", mf->curr_num_of_filters);
+    for (int i = 0; i < length; i++)
+    {
+      ASSERT_TRUE(Matches(Key(i, buffer), mf));
+    }
+    fpr = FalsePositiveRate();
+    fprintf(stderr, "False positive rate:%5.4f%%\n", fpr * 100);
+
+    mf->removeFilter();
+    fprintf(stderr, "remove one filter, current %d filters, is_merged %s: Test seprate\n", mf->curr_num_of_filters, (mf->is_merged?"true":"false"));
+    for (int i = 0; i < length; i++)
+    {
+      ASSERT_TRUE(Matches(Key(i, buffer), mf));
+    }
+    fpr = FalsePositiveRate();
+    fprintf(stderr, "False positive rate:%5.4f%%\n", fpr * 100);
+  }
+}
+
 TEST(BloomTest, Performance)
 {
   char buffer[sizeof(int)];
@@ -272,6 +352,11 @@ TEST(BloomTest, Performance)
 #else
   fprintf(stderr, "Test Bloom filter: %s\n", Name());
 #endif
+
+  fprintf(stderr, "bits per key array: ");
+  for (int i = 0; i < filter_len; i++)
+    fprintf(stderr, "%d ", bits_per_key_per_filter[i]);
+  fprintf(stderr, "\n");
 
   Reset();
   for (long i = 0; i < length; i++)

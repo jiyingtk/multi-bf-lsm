@@ -38,7 +38,7 @@ namespace leveldb {
         /*
          * indexDB: <key,offset+value size>
          * vlog: <key size, value size, key, value>
-         * use '$' to seperate offset and value size, key size and value size, value size and key
+         * use '$' to separate offset and value size, key size and value size, value size and key
         */
         Status Put(const WriteOptions writeOptions,const string& key, const string& val){
             long keySize = key.size();

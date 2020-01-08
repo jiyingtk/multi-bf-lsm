@@ -18,8 +18,8 @@
 
 #define FilterMergeThreshold 3
 
-// #define ChildPolicy BlockedBloomFilterPolicy
-#define ChildPolicy TraditionalBloomFilterPolicy
+#define ChildPolicy BlockedBloomFilterPolicy
+// #define ChildPolicy TraditionalBloomFilterPolicy
 
 #define _STR(R) #R
 #define STR(R) _STR(R)
@@ -35,7 +35,7 @@ class ChildPolicy;
 
 class MultiFilters {
   public:
-    std::list<Slice> seperated_filters;
+    std::list<Slice> separated_filters;
     char* merged_filters;
     bool is_merged;
     bool is_compressed;
@@ -45,8 +45,12 @@ class MultiFilters {
     ~MultiFilters();
     void addFilter(Slice &contents);
     void removeFilter();
+    
     void merge();
-    void seperate();
+    void separate();
+    
+    void push_back_merged_filters(const Slice &contents);
+    void pop_back_merged_filters();
 };
 
 class FilterPolicy {
