@@ -502,8 +502,8 @@ public:
 				filter_iter++;
 			}
 		} else { //merged filters
-			const char *array_of_all = multi_filters->merged_filters.data();
-			const size_t len_of_all = multi_filters->merged_filters.size();
+			const char *array_of_all = &(*multi_filters->merged_filters)[0];
+			const size_t len_of_all = multi_filters->merged_filters->size();
 			const size_t k = array_of_all[len_of_all - 5];
 			const size_t num_lines = DecodeFixed32(array_of_all + len_of_all - 4);
 
@@ -561,7 +561,9 @@ bool MultiFilter::end_thread(false);
 
 
 MultiFilters::~MultiFilters() {
-
+	delete this->merged_filters;
+	for(auto iter: this->separated_filters)
+		iter.clear();
 }
 
 void MultiFilters::addFilter(Slice &contents) {
@@ -575,12 +577,9 @@ void MultiFilters::addFilter(Slice &contents) {
 		}
 	} else { //merged filters
 		//Waiting to be optimized
-		separate();
-
-		separated_filters.push_back(contents);
+		this->push_back_merged_filters(contents);
 		curr_num_of_filters++;
 
-		merge();
 	}
 }
 
@@ -595,73 +594,128 @@ void MultiFilters::removeFilter() {
 		separated_filters.pop_back();
 		curr_num_of_filters--;
 	} else { //Waiting to be optimized
-		separate();
-
-		separated_filters.pop_back();
+		this->pop_back_merged_filters();
 		curr_num_of_filters--;
 
-		merge();
 	}
 }
 
 void MultiFilters::merge() {
-	const size_t len_of_one = separated_filters.front().size();	
-	const char *array_of_one = separated_filters.front().data();
-	const size_t k = array_of_one[len_of_one - 5];
-	const size_t num_lines = DecodeFixed32(array_of_one + len_of_one - 4);
+	//decide the target size
+	uint32_t merged_filters_size = 0;
+	for(Slice iter : this->separated_filters){
+		merged_filters_size += iter.size() - 5;
+	}
+	if(this->merged_filters == NULL)
+		this->merged_filters = new std::string();
+	this->merged_filters ->resize(merged_filters_size + 5,0);
+	char * dst = &(*this->merged_filters)[0];
+	// copy the tail information from front element
+	auto front_filter = this->separated_filters.front().data();
+	uint32_t font_filter_len = this->separated_filters.front().size();
+	dst[merged_filters_size] = front_filter[font_filter_len - 5];
+	uint32_t num_lines = DecodeFixed32(front_filter + font_filter_len - 4);
+	EncodeFixed32(dst + merged_filters_size + 1,static_cast<uint32_t>(num_lines));
 
-	//clean
-	// delete merged_filters.data();
-
-	size_t len_of_all = (len_of_one - 5) * curr_num_of_filters + 5;
-	char *array_of_all = new char[len_of_all];
-	merged_filters = Slice(array_of_all, len_of_all);
-
-	for (size_t i = 0; i < num_lines; i++) {
-		size_t j = 0;
-		for (auto iter = separated_filters.begin(); iter != separated_filters.end(); iter++, j++) {
-			memcpy(array_of_all + (i * curr_num_of_filters + j) * CACHE_LINE_SIZE, (*iter).data() + i * CACHE_LINE_SIZE, CACHE_LINE_SIZE);
+	//get needed information: numlines, start to copy inforamtion
+	int k = this->separated_filters.size();
+	for(uint32_t i = 0; i < num_lines; i++){
+		char *tmp = dst + i * k * CACHE_LINE_SIZE;
+		uint32_t offset = 0;
+		for(auto iter : this->separated_filters){
+			memcpy(tmp + offset,iter.data() + i* CACHE_LINE_SIZE, CACHE_LINE_SIZE);
+			offset += CACHE_LINE_SIZE;
 		}
 	}
-	array_of_all[len_of_all - 5] = static_cast<char>(k);
-	EncodeFixed32(array_of_all + (len_of_all - 4), static_cast<uint32_t>(num_lines));
+	
 }
 
 void MultiFilters::separate() {
-	const char *array_of_all = merged_filters.data();
-	const size_t len_of_all = merged_filters.size();
-	const size_t k = array_of_all[len_of_all - 5];
-	const size_t num_lines = DecodeFixed32(array_of_all + len_of_all - 4);	
-	const size_t len_of_one = (len_of_all - 5) / curr_num_of_filters + 5;	
-
-	char* arrays[32];
-	int which = 0;
-	for (auto iter = separated_filters.begin(); iter != separated_filters.end(); iter++) {
-		//clean
-		// delete (*iter).data();
-
-		char *array_of_one = new char[len_of_one];
-		(*iter) = Slice(array_of_one, len_of_one);
-		array_of_one[len_of_one - 5] = static_cast<char>(k);
-		EncodeFixed32(array_of_one + (len_of_one - 4), static_cast<uint32_t>(num_lines));
-		arrays[which++] = array_of_one;
+	uint32_t source_size = this->merged_filters->size() -5;
+	uint32_t dst_size = source_size/this->curr_num_of_filters;
+	char * source = &(*this->merged_filters)[0];
+	const size_t num_lines = DecodeFixed32(source + source_size +1);
+	
+	//init the sepearted_filters
+	std::list<std::string *> tmp_list;
+	for(int i = 0 ; i < this->curr_num_of_filters; i++){
+		std::string*tmp = new std::string();
+		tmp->resize(dst_size+5,0);
+		char * target = &(*tmp)[0];
+		target[dst_size] = source[source_size];
+		EncodeFixed32(target + dst_size +1,static_cast<uint32_t>(num_lines));
+		tmp_list.push_back(tmp);
 	}
+	for(int i = 0; i < num_lines; i++){
+		uint32_t source_offset = i * this->curr_num_of_filters * CACHE_LINE_SIZE;
+		uint32_t dst_offset = i * CACHE_LINE_SIZE;
+		uint32_t multi_cache_line_offset = 0;
 
-	for (size_t i = 0; i < num_lines; i++) {
-		size_t j = 0;
-		which = 0;
-		for (auto iter = separated_filters.begin(); iter != separated_filters.end(); iter++, j++) {
-			char *array_of_one = arrays[which++];
-			memcpy(array_of_one + i * CACHE_LINE_SIZE, array_of_all + (i * curr_num_of_filters + j) * CACHE_LINE_SIZE, CACHE_LINE_SIZE);
+		for(auto iter: tmp_list){
+			char * dst = &(*iter)[0];
+			memcpy(dst + dst_offset, source + source_offset + multi_cache_line_offset,CACHE_LINE_SIZE);
+			multi_cache_line_offset += CACHE_LINE_SIZE;
 		}
 	}
+
+	this->separated_filters.clear();
+	for(auto iter: tmp_list){
+		this->separated_filters.push_back(Slice(*iter));	
+	}
+	
+	delete this->merged_filters;
+	this->merged_filters = NULL;
+	
 }
 
-void MultiFilters::push_back_merged_filters(const Slice &contents) {
+void MultiFilters::push_back_merged_filters(const Slice &contents){
+	uint32_t input_size = contents.size() - 5;
+	uint32_t dst_size = input_size + this->merged_filters->size() - 5;
+	const char *input_data = contents.data();
+	this->merged_filters->resize(dst_size + 5,0);
+	char * dst = &(*this->merged_filters)[0];
+	
+
+	//start to move the tail information
+	dst[dst_size] = input_data[input_size];
+	uint32_t num_lines = DecodeFixed32(input_data + input_size + 1);
+	EncodeFixed32(dst + dst_size + 1,static_cast<uint32_t>(num_lines));
+	//move the dst elements for space
+	for(int i = num_lines - 1; i >= 0; i--){
+		uint32_t origin_offset = i * this->curr_num_of_filters * CACHE_LINE_SIZE;
+		uint32_t dst_offset = i*(this->curr_num_of_filters+1) *CACHE_LINE_SIZE;
+		memcpy(dst+dst_offset,dst+ origin_offset,this->curr_num_of_filters*CACHE_LINE_SIZE);
+	}
+
+	//copy the input elements to dst
+	for(int i = num_lines -1; i >= 0; i--){
+		uint32_t origin_offset = i * CACHE_LINE_SIZE;
+		uint32_t dst_offset = i*(this->curr_num_of_filters+1) *CACHE_LINE_SIZE + this->curr_num_of_filters * CACHE_LINE_SIZE;
+		memcpy(dst+dst_offset,input_data+ origin_offset,CACHE_LINE_SIZE);
+	}
+	fprintf(stderr,"the num_lines is %d",num_lines);
+	fprintf(stderr,"the k is %d\n",static_cast<uint32_t>(dst[dst_size]));
 
 }
 
-void MultiFilters::pop_back_merged_filters() {
+void MultiFilters::pop_back_merged_filters(){
+	uint32_t input_size = this->merged_filters->size() - 5;
+	char *input , *dst;
+	input = dst = &(*this->merged_filters)[0];
+	uint32_t num_lines = DecodeFixed32(input + input_size + 1);
+	uint32_t k_ = input[input_size];
+	uint32_t dst_size =  this->merged_filters->size() - num_lines*CACHE_LINE_SIZE- 5;	
+
+	//start to move data
+	for(int i = 0 ; i < num_lines; i++){
+		uint32_t origin_offset = i*this->curr_num_of_filters*CACHE_LINE_SIZE;
+		uint32_t dst_offset = i*(this->curr_num_of_filters-1)*CACHE_LINE_SIZE;
+		memcpy(dst + dst_offset,input + origin_offset,(this->curr_num_of_filters-1)*CACHE_LINE_SIZE);
+	}
+	this->merged_filters->resize(dst_size + 5,0);
+	dst[dst_size] = k_;
+	EncodeFixed32(dst+dst_size + 1,static_cast<uint32_t>(num_lines));
+
 	
 }
 

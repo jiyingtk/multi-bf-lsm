@@ -258,20 +258,20 @@ float getInterval(struct timeval m_begin, struct timeval m_end)
   return (m_end.tv_sec - m_begin.tv_sec) + (m_end.tv_usec - m_begin.tv_usec) / 1000000.0;
 }
 
-TEST(BloomTest, CompressRatio){
-  char buffer[sizeof(int)];
-  long length = 10000000;
-  Reset();
-  for (long i = 0; i < length; i++)
-  {
-    Add(Key(i, buffer));
-  }
-  Build();
-  double compress_ratio = CompressRatio();
-  fprintf(stderr,"the compress ratio is: %lf\n",compress_ratio);
-  ASSERT_GE(compress_ratio,0);
+// TEST(BloomTest, CompressRatio){
+//   char buffer[sizeof(int)];
+//   long length = 10000000;
+//   Reset();
+//   for (long i = 0; i < length; i++)
+//   {
+//     Add(Key(i, buffer));
+//   }
+//   Build();
+//   double compress_ratio = CompressRatio();
+//   fprintf(stderr,"the compress ratio is: %lf\n",compress_ratio);
+//   ASSERT_GE(compress_ratio,0);
 
-}
+// }
 
 TEST(BloomTest, MergeSeparate){
   char buffer[sizeof(int)];

@@ -36,12 +36,14 @@ class ChildPolicy;
 class MultiFilters {
   public:
     std::list<Slice> separated_filters;
-    Slice merged_filters;
+    std::string * merged_filters;
     bool is_merged;
     bool is_compressed;
     int curr_num_of_filters;
 
-    MultiFilters() : is_merged(false), is_compressed(false), curr_num_of_filters(0){}
+    MultiFilters() : is_merged(false), is_compressed(false), curr_num_of_filters(0){
+      this->merged_filters = new std::string();
+    }
     ~MultiFilters();
     void addFilter(Slice &contents);
     void removeFilter();
