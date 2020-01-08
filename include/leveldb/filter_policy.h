@@ -36,7 +36,7 @@ class ChildPolicy;
 class MultiFilters {
   public:
     std::list<Slice> separated_filters;
-    char* merged_filters;
+    Slice merged_filters;
     bool is_merged;
     bool is_compressed;
     int curr_num_of_filters;

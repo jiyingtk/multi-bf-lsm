@@ -175,7 +175,7 @@ private:
 	size_t bits_per_key_;
 	size_t k_;
 	int id_; //begin from 0
-	const bool ExtraRotates = true;
+	static const bool ExtraRotates = true;
 public:
 	explicit BlockedBloomFilterPolicy(int bits_per_key, int id)
 		: bits_per_key_(bits_per_key), id_(id)
@@ -207,7 +207,7 @@ public:
 		return num_lines * (CACHE_LINE_SIZE * 8);
 	}
 
-	inline uint32_t GetLine(uint32_t h, uint32_t num_lines) const {
+	static inline uint32_t GetLine(uint32_t h, uint32_t num_lines) {
 		uint32_t offset_h = ExtraRotates ? (h >> 11) | (h << 21) : h;
 		return offset_h % num_lines;
 	}
@@ -228,12 +228,14 @@ public:
 
 		for (int i = 0; i < n; i++)
 		{
-			uint32_t h = BloomHash(keys[i], id_);
+			uint32_t h = BloomHash(keys[i], 11);
 
 			const int log2_cache_line_bits = LOG2_CACHE_LINE_BYTES + 3;
 
 			char *data_at_offset =
 				array + (GetLine(h, num_lines) << LOG2_CACHE_LINE_BYTES);
+
+			h = BloomHash(keys[i], id_);
 			const uint32_t delta = (h >> 17) | (h << 15);
 			for (int i = 0; i < k_; ++i) {
 				// Mask to bit-within-cache-line address
@@ -267,8 +269,8 @@ public:
 		*byte_offset = b;
 	}
 
-	inline bool HashMayMatchPrepared(uint32_t h, int num_probes,
-                                          const char *data_at_offset) const {
+	static inline bool HashMayMatchPrepared(uint32_t h, int num_probes,
+                                          const char *data_at_offset) {
 		const int log2_cache_line_bits = LOG2_CACHE_LINE_BYTES + 3;
 
 		const uint32_t delta = (h >> 17) | (h << 15);
@@ -306,10 +308,11 @@ public:
 			return true;
 		}
 
-		uint32_t h = BloomHash(key, id_);
+		uint32_t h = BloomHash(key, 11);
 
 		uint32_t byte_offset;
 		PrepareHashMayMatch(h, num_lines, array, &byte_offset);
+		h = BloomHash(key, id_);
 		return HashMayMatchPrepared(h, k, array + byte_offset);
 	}
 
@@ -499,7 +502,22 @@ public:
 				filter_iter++;
 			}
 		} else { //merged filters
+			const char *array_of_all = multi_filters->merged_filters.data();
+			const size_t len_of_all = multi_filters->merged_filters.size();
+			const size_t k = array_of_all[len_of_all - 5];
+			const size_t num_lines = DecodeFixed32(array_of_all + len_of_all - 4);
 
+			uint32_t h = BloomHash(key, 11);
+			uint32_t byte_offset;
+
+			byte_offset = BlockedBloomFilterPolicy::GetLine(h, num_lines) * multi_filters->curr_num_of_filters * CACHE_LINE_SIZE;
+			for (int i = 0; i < multi_filters->curr_num_of_filters; i++) {
+				h = BloomHash(key, i);
+				if (!BlockedBloomFilterPolicy::HashMayMatchPrepared(h, k, array_of_all + byte_offset)) {
+					return false;
+				}
+				byte_offset += CACHE_LINE_SIZE;
+			}
 		}
 
 		return true;
@@ -587,11 +605,56 @@ void MultiFilters::removeFilter() {
 }
 
 void MultiFilters::merge() {
+	const size_t len_of_one = separated_filters.front().size();	
+	const char *array_of_one = separated_filters.front().data();
+	const size_t k = array_of_one[len_of_one - 5];
+	const size_t num_lines = DecodeFixed32(array_of_one + len_of_one - 4);
 
+	//clean
+	// delete merged_filters.data();
+
+	size_t len_of_all = (len_of_one - 5) * curr_num_of_filters + 5;
+	char *array_of_all = new char[len_of_all];
+	merged_filters = Slice(array_of_all, len_of_all);
+
+	for (size_t i = 0; i < num_lines; i++) {
+		size_t j = 0;
+		for (auto iter = separated_filters.begin(); iter != separated_filters.end(); iter++, j++) {
+			memcpy(array_of_all + (i * curr_num_of_filters + j) * CACHE_LINE_SIZE, (*iter).data() + i * CACHE_LINE_SIZE, CACHE_LINE_SIZE);
+		}
+	}
+	array_of_all[len_of_all - 5] = static_cast<char>(k);
+	EncodeFixed32(array_of_all + (len_of_all - 4), static_cast<uint32_t>(num_lines));
 }
 
 void MultiFilters::separate() {
+	const char *array_of_all = merged_filters.data();
+	const size_t len_of_all = merged_filters.size();
+	const size_t k = array_of_all[len_of_all - 5];
+	const size_t num_lines = DecodeFixed32(array_of_all + len_of_all - 4);	
+	const size_t len_of_one = (len_of_all - 5) / curr_num_of_filters + 5;	
 
+	char* arrays[32];
+	int which = 0;
+	for (auto iter = separated_filters.begin(); iter != separated_filters.end(); iter++) {
+		//clean
+		// delete (*iter).data();
+
+		char *array_of_one = new char[len_of_one];
+		(*iter) = Slice(array_of_one, len_of_one);
+		array_of_one[len_of_one - 5] = static_cast<char>(k);
+		EncodeFixed32(array_of_one + (len_of_one - 4), static_cast<uint32_t>(num_lines));
+		arrays[which++] = array_of_one;
+	}
+
+	for (size_t i = 0; i < num_lines; i++) {
+		size_t j = 0;
+		which = 0;
+		for (auto iter = separated_filters.begin(); iter != separated_filters.end(); iter++, j++) {
+			char *array_of_one = arrays[which++];
+			memcpy(array_of_one + i * CACHE_LINE_SIZE, array_of_all + (i * curr_num_of_filters + j) * CACHE_LINE_SIZE, CACHE_LINE_SIZE);
+		}
+	}
 }
 
 void MultiFilters::push_back_merged_filters(const Slice &contents) {
