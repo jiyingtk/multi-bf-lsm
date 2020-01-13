@@ -831,9 +831,13 @@ class PosixEnv : public Env {
   }
 
   virtual uint64_t NowMicros() {
-    struct timeval tv;
-    gettimeofday(&tv, NULL);
-    return static_cast<uint64_t>(tv.tv_sec) * 1000000 + tv.tv_usec;
+    // struct timeval tv;
+    // gettimeofday(&tv, NULL);
+    // return static_cast<uint64_t>(tv.tv_sec) * 1000000 + tv.tv_usec;
+
+    struct timespec time_start;
+    clock_gettime(CLOCK_REALTIME, &time_start);
+    return static_cast<uint64_t>(time_start.tv_sec) * 1000000000 + time_start.tv_nsec;  //nanoseconds
   }
 
   virtual void SleepForMicroseconds(int micros) {

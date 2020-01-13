@@ -223,6 +223,7 @@ void FilterBlockReader::AddFilter(Slice &contents, int regionId)
 {
   assert(1 + curr_num_of_filters_regions_[regionId] <= max_num_of_filters_);
 
+  uint64_t start_micros = Env::Default()->NowMicros();
   int cur_filter_id = curr_num_of_filters_regions_[regionId];
   for (int i = 0; i < regionFilters; i++) {
     int index = regionId * regionFilters + i;
@@ -244,6 +245,7 @@ void FilterBlockReader::AddFilter(Slice &contents, int regionId)
         exit(1);
     }
   }
+  MeasureTime(Statistics::GetStatistics().get(), Tickers::FILTER_ADD_TIME, Env::Default()->NowMicros() - start_micros);
 
   curr_num_of_filters_regions_[regionId]++;
 }
@@ -258,6 +260,7 @@ size_t FilterBlockReader::RemoveFilters(int n, int regionId)
   }
 
     while(n--){
+      uint64_t start_micros = Env::Default()->NowMicros();
       size_t loc = regionId * regionFilters;
 
       int i = curr_num_of_filters_regions_[regionId] - 1;
@@ -275,7 +278,8 @@ size_t FilterBlockReader::RemoveFilters(int n, int regionId)
       for (int j = 0 ; j < regionFilters && loc + j < num_ - 1; j++) {
         filter_datas_[loc + j]->removeFilter();
       }
-      
+      MeasureTime(Statistics::GetStatistics().get(), Tickers::FILTER_REMOVE_TIME, Env::Default()->NowMicros() - start_micros);
+
     	curr_num_of_filters_regions_[regionId]--;
     }
   

@@ -229,13 +229,14 @@ public:
 		for (int i = 0; i < n; i++)
 		{
 			uint32_t h = BloomHash(keys[i], 11);
+			uint32_t h2 = BloomHash(keys[i], id_);
 
 			const int log2_cache_line_bits = LOG2_CACHE_LINE_BYTES + 3;
 
 			char *data_at_offset =
 				array + (GetLine(h, num_lines) << LOG2_CACHE_LINE_BYTES);
 
-			h = BloomHash(keys[i], id_);
+			h = h2;
 			const uint32_t delta = (h >> 17) | (h << 15);
 			for (int i = 0; i < k_; ++i) {
 				// Mask to bit-within-cache-line address
@@ -308,12 +309,12 @@ public:
 			return true;
 		}
 
-		uint32_t h = BloomHash(key, 11);
+		uint32_t h1 = BloomHash(key, 11);
+		uint32_t h2 = BloomHash(key, id_);
 
 		uint32_t byte_offset;
-		PrepareHashMayMatch(h, num_lines, array, &byte_offset);
-		h = BloomHash(key, id_);
-		return HashMayMatchPrepared(h, k, array + byte_offset);
+		PrepareHashMayMatch(h1, num_lines, array, &byte_offset);
+		return HashMayMatchPrepared(h2, k, array + byte_offset);
 	}
 
 	virtual int filterNums() const
@@ -376,7 +377,6 @@ public:
 		int i;
 		int cpu_count = sysconf(_SC_NPROCESSORS_CONF);
 		int base_cpu_id = 8;
-		int filter_nums = 0;
 
 		bits_per_key_per_filter_ = new size_t[16]();
 		char name_buf[24];
@@ -387,11 +387,15 @@ public:
 			filters.push_back(ch_filter);
 			bits_per_key_per_filter_[i] = bits_per_key_per_filter[i];
 			filled_[i] = false;
-			filter_nums++;
 		}
 		curr_completed_filter_num_ = 0;
 		filter_num_ = i;
-		printf("filters size:%ld\n", filters.size());
+		fprintf(stderr, "filters size:%ld\n", filters.size());
+		fprintf(stderr, "bits per key array: ");
+		for (int i = 0; i < filters.size(); i++)
+			fprintf(stderr, "%d ", bits_per_key_per_filter[i]);
+		fprintf(stderr, "\n");
+
 		cfas = new CreateFilterArg[filters.size()];
 		i = 0;
 
@@ -399,11 +403,13 @@ public:
 		printf("Used ChildPolicy: %s\n", STR(ChildPolicy));
 	#endif
 
+	#ifdef FilterMergeThreshold 
 		printf("FilterMergeThreshold: %d\n", FilterMergeThreshold);
-		if (FilterMergeThreshold <= 1 || FilterMergeThreshold > filter_nums) {
+		if (FilterMergeThreshold <= 1 || FilterMergeThreshold > filters.size()) {
 			fprintf(stderr, "set FilterMergeThreshold error!\n");
-			exit(1);
+			// exit(1);
 		}
+	#endif
 
 		for (std::vector<ChildPolicy *>::const_iterator iter = filters.begin(); iter != filters.end(); iter++)
 		{
@@ -507,13 +513,20 @@ public:
 			const size_t k = array_of_all[len_of_all - 5];
 			const size_t num_lines = DecodeFixed32(array_of_all + len_of_all - 4);
 
-			uint32_t h = BloomHash(key, 11);
-			uint32_t byte_offset;
+			uint32_t hs[16];
+			hs[0] = BloomHash(key, 11);
+			// for (int i = 0; i < multi_filters->curr_num_of_filters; i++) {
+			// 	hs[i + 1] = BloomHash(key, i);
+			// }
 
-			byte_offset = BlockedBloomFilterPolicy::GetLine(h, num_lines) * multi_filters->curr_num_of_filters * CACHE_LINE_SIZE;
+			// uint32_t h = BloomHash(key, 11);
+
+			uint32_t byte_offset;
+			byte_offset = BlockedBloomFilterPolicy::GetLine(hs[0], num_lines) * multi_filters->curr_num_of_filters * CACHE_LINE_SIZE;
 			for (int i = 0; i < multi_filters->curr_num_of_filters; i++) {
-				h = BloomHash(key, i);
-				if (!BlockedBloomFilterPolicy::HashMayMatchPrepared(h, k, array_of_all + byte_offset)) {
+				hs[0] = BloomHash(key, i);
+				PREFETCH(array_of_all + byte_offset, 0 /* rw */, 1);
+				if (!BlockedBloomFilterPolicy::HashMayMatchPrepared(hs[0], k, array_of_all + byte_offset)) {
 					return false;
 				}
 				byte_offset += CACHE_LINE_SIZE;
@@ -561,46 +574,57 @@ bool MultiFilter::end_thread(false);
 
 
 MultiFilters::~MultiFilters() {
-	delete this->merged_filters;
+	if (this->merged_filters)
+		delete this->merged_filters;
 	for(auto iter: this->separated_filters)
 		iter.clear();
 }
 
 void MultiFilters::addFilter(Slice &contents) {
+#ifdef FilterMergeThreshold
 	if (!is_merged && !is_compressed) {
 		separated_filters.push_back(contents);
 		curr_num_of_filters++;
 
 		if (curr_num_of_filters >= FilterMergeThreshold) {
-			is_merged = true;
 			merge();
+			is_merged = true;
 		}
 	} else { //merged filters
-		//Waiting to be optimized
 		this->push_back_merged_filters(contents);
 		curr_num_of_filters++;
-
 	}
+#else
+	separated_filters.push_back(contents);
+	curr_num_of_filters++;
+#endif
 }
 
 void MultiFilters::removeFilter() {
+#ifdef FilterMergeThreshold
 	if (!is_merged && !is_compressed) {
 		separated_filters.pop_back();
 		curr_num_of_filters--;
 	} else if (curr_num_of_filters == FilterMergeThreshold) {
-		is_merged = false;
 		separate();
+		is_merged = false;
 
 		separated_filters.pop_back();
 		curr_num_of_filters--;
 	} else { //Waiting to be optimized
 		this->pop_back_merged_filters();
 		curr_num_of_filters--;
-
 	}
+#else
+	separated_filters.pop_back();
+	curr_num_of_filters--;
+#endif
 }
 
 void MultiFilters::merge() {
+	if (is_merged)
+		return;
+
 	//decide the target size
 	uint32_t merged_filters_size = 0;
 	for(Slice iter : this->separated_filters){
@@ -631,6 +655,9 @@ void MultiFilters::merge() {
 }
 
 void MultiFilters::separate() {
+	if (!is_merged)
+		return;
+		
 	uint32_t source_size = this->merged_filters->size() -5;
 	uint32_t dst_size = source_size/this->curr_num_of_filters;
 	char * source = &(*this->merged_filters)[0];
@@ -693,9 +720,6 @@ void MultiFilters::push_back_merged_filters(const Slice &contents){
 		uint32_t dst_offset = i*(this->curr_num_of_filters+1) *CACHE_LINE_SIZE + this->curr_num_of_filters * CACHE_LINE_SIZE;
 		memcpy(dst+dst_offset,input_data+ origin_offset,CACHE_LINE_SIZE);
 	}
-	fprintf(stderr,"the num_lines is %d",num_lines);
-	fprintf(stderr,"the k is %d\n",static_cast<uint32_t>(dst[dst_size]));
-
 }
 
 void MultiFilters::pop_back_merged_filters(){
@@ -714,9 +738,7 @@ void MultiFilters::pop_back_merged_filters(){
 	}
 	this->merged_filters->resize(dst_size + 5,0);
 	dst[dst_size] = k_;
-	EncodeFixed32(dst+dst_size + 1,static_cast<uint32_t>(num_lines));
-
-	
+	EncodeFixed32(dst+dst_size + 1,static_cast<uint32_t>(num_lines));	
 }
 
 size_t *leveldb::FilterPolicy::bits_per_key_per_filter_ = nullptr;

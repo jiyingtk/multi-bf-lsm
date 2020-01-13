@@ -414,7 +414,7 @@ namespace leveldb
 
                 uint64_t start_micros = Env::Default()->NowMicros();
                 mq->backup_all();
-                MeasureTime(Statistics::GetStatistics().get(), Tickers::BACKUP_TIME, Env::Default()->NowMicros() - start_micros);
+                MeasureTime(Statistics::GetStatistics().get(), Tickers::MQ_BACKUP_TIME, Env::Default()->NowMicros() - start_micros);
             }
 
             return NULL;

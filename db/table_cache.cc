@@ -114,7 +114,7 @@ Status TableCache::FindTable(uint64_t file_number, uint64_t file_size,
   
   // uint64_t start_micros_l = Env::Default()->NowMicros();
   *handle = cache_->Lookup(key, false); //Get
-  // MeasureTime(Statistics::GetStatistics().get(),Tickers::FILTER_LOOKUP_TIME,Env::Default()->NowMicros() - start_micros_l);
+  // MeasureTime(Statistics::GetStatistics().get(),Tickers::MQ_LOOKUP_TIME,Env::Default()->NowMicros() - start_micros_l);
 
   if (*handle == NULL) {
     uint32_t hash = Hash((const char*)&file_number, sizeof(file_number), 0) % 64;
@@ -390,7 +390,7 @@ Status TableCache::Get(const ReadOptions& options,
       if (cache_handle != NULL)
         cache_->Release(cache_handle);
     }
-    MeasureTime(Statistics::GetStatistics().get(),Tickers::FILTER_LOOKUP_TIME,Env::Default()->NowMicros() - start_micros);
+    MeasureTime(Statistics::GetStatistics().get(),Tickers::MQ_LOOKUP_TIME,Env::Default()->NowMicros() - start_micros);
 
     start_micros = env_->NowMicros();
     cache_->Release(handle);

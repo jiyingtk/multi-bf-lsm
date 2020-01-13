@@ -17,8 +17,8 @@
 #include "util/mutexlock.h"
 #include <iostream>
 #include <list>
-#include <boost/config/detail/posix_features.hpp>
-//#include <boost/config/posix_features.hpp>
+// #include <boost/config/detail/posix_features.hpp>
+#include <boost/config/posix_features.hpp>
 
 
 //filter memory space overhead
@@ -890,10 +890,10 @@ namespace leveldb
             bool not_found = filter != NULL &&
                     ds.ok() &&
                     !filter->KeyMayMatch(handle.offset(), k);
+            MeasureTime(Statistics::GetStatistics().get(), Tickers::FILTER_MATCHES_TIME, Env::Default()->NowMicros() - start_micros);
             if (not_found)
             {
                 // Not found
-                MeasureTime(Statistics::GetStatistics().get(), Tickers::FILTER_MATCHES_TIME, Env::Default()->NowMicros() - start_micros);
             }
             else
             {

@@ -86,6 +86,8 @@ namespace leveldb{
 	BLOCKREADER_CACHE_TIME,
 	BLOCKREADER_NOCACHE_TIME,
 	FILTER_MATCHES_TIME,
+	FILTER_ADD_TIME,
+	FILTER_REMOVE_TIME,
 	OPEN_TABLE_TIME,
 	SLOW_DOWN_WRITE,
 	STOP_WRITE,
@@ -95,8 +97,8 @@ namespace leveldb{
         MAKE_ROOM_FOR_WRITE,
 	COMPACTION_TIME,
 	COMPACTION_READ_TIME,
-	FILTER_LOOKUP_TIME,
-	BACKUP_TIME,
+	MQ_LOOKUP_TIME,
+	MQ_BACKUP_TIME,
 	TICKER_ENUM_MAX
  };  
 
@@ -181,6 +183,8 @@ namespace leveldb{
      {BLOCKREADER_CACHE_TIME,"leveldb.block.read.cache.time"},
      {BLOCKREADER_NOCACHE_TIME,"leveldb.block.read.no.cache.time"},
      {FILTER_MATCHES_TIME,"leveldb.filter.matches.time"},
+     {FILTER_ADD_TIME,"leveldb.filter.add.time"},
+     {FILTER_REMOVE_TIME,"leveldb.filter.remove.time"},
      {OPEN_TABLE_TIME,"leveldb.open.table.time"},
      {SLOW_DOWN_WRITE,"leveldb.slow.down.time"},
      {STOP_WRITE,"leveldb.stop.write.time"},
@@ -190,8 +194,8 @@ namespace leveldb{
      {MAKE_ROOM_FOR_WRITE,"leveldb.make.room.for.write"},
      {COMPACTION_TIME,"leveldb.compaction.time"},
      {COMPACTION_READ_TIME,"leveldb.compaction.read.time"},
-     {FILTER_LOOKUP_TIME,"leveldb.multiqueue.lookup.time"},
-     {BACKUP_TIME,"leveldb.multiqueue.backup.time"}
+     {MQ_LOOKUP_TIME,"leveldb.multiqueue.lookup.time"},
+     {MQ_BACKUP_TIME,"leveldb.multiqueue.backup.time"}
 };
 
 struct HistogramData{
