@@ -16,10 +16,10 @@
 #ifndef STORAGE_LEVELDB_INCLUDE_FILTER_POLICY_H_
 #define STORAGE_LEVELDB_INCLUDE_FILTER_POLICY_H_
 
-#define FilterMergeThreshold 2
+// #define FilterMergeThreshold 2
+// #define ChildPolicy BlockedBloomFilterPolicy
 
-#define ChildPolicy BlockedBloomFilterPolicy
-// #define ChildPolicy TraditionalBloomFilterPolicy
+#define ChildPolicy TraditionalBloomFilterPolicy
 
 #define _STR(R) #R
 #define STR(R) _STR(R)

@@ -122,6 +122,13 @@ Options SanitizeOptions(const std::string& dbname,
   std::string freq_info_fn = dbname + name_buf;
   // result.opEp_.should_recovery_hotness = (access(freq_info_fn.c_str(), F_OK) != -1) && !result.opEp_.cache_use_real_size;
   fprintf(stderr, "should recovery hotness: %s\n", (result.opEp_.should_recovery_hotness?"True":"False"));
+
+#ifdef Micros_Stat
+  fprintf(stderr, "duration unit: us\n");
+#else
+  fprintf(stderr, "duration unit: ns\n");
+#endif
+
   return result;
 }
 
