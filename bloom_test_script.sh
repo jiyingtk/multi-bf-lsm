@@ -11,10 +11,23 @@ run(){
     echo ""  >> $OUTFILE
 }
 
+if false;then
+run 4 1 4000
+run 4 2 4000
+run 4 3 4000
+run 4 4 4000
+run 4 5 4000
+run 4 6 4000
+fi
 
-run 4 1 2000
-run 4 2 2000
-run 4 3 2000
-run 4 4 2000
-run 4 5 2000
-run 4 6 2000
+if false;then
+run 4 1 100000000
+run 4 2 100000000
+run 4 3 100000000
+run 4 4 100000000
+run 4 5 100000000
+run 4 6 100000000
+fi
+
+#run 4 1 200000000
+#run 4 2 100000000
