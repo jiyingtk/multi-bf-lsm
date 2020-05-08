@@ -6,7 +6,10 @@
 #define STORAGE_LEVELDB_INCLUDE_OPTIONS_H_
 
 #include <stddef.h>
-#include"leveldb/statistics.h"
+
+#include "leveldb/statistics.h"
+#include "leveldb/hotness.h"
+
 namespace leveldb {
 
 class Cache;
@@ -215,6 +218,7 @@ struct ReadOptions {
   mutable unsigned short access_compacted_file_nums;
   mutable double total_fpr;
   mutable uint64_t file_number;
+  mutable HotnessInfos hot_infos;
  
   // If "snapshot" is non-NULL, read as of the supplied snapshot
   // (which must belong to the DB that is being read and which must

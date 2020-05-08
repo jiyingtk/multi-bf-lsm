@@ -17,8 +17,8 @@
 #include "util/mutexlock.h"
 #include <iostream>
 #include <list>
-// #include <boost/config/detail/posix_features.hpp>
-#include <boost/config/posix_features.hpp>
+#include <boost/config/detail/posix_features.hpp>
+// #include <boost/config/posix_features.hpp>
 
 
 //filter memory space overhead

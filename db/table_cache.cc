@@ -357,7 +357,6 @@ void TableCache::TurnOffAdjustment() {
   cache_->TurnOffAdjustment();
 }
 
-
 Status TableCache::Get(const ReadOptions& options,
                        uint64_t file_number,
                        uint64_t file_size,
@@ -387,8 +386,11 @@ Status TableCache::Get(const ReadOptions& options,
     if (*id_ != (uint32_t)-1) {
       Slice key(buf, sizeof(buf));
       Cache::Handle* cache_handle = cache_->Lookup(key, true);
-      if (cache_handle != NULL)
+      if (cache_handle != NULL) {
+        cache_->CheckUpperLevelHotness(cache_handle, options.hot_infos);
         cache_->Release(cache_handle);
+
+      }
     }
     MeasureTime(Statistics::GetStatistics().get(),Tickers::MQ_LOOKUP_TIME,Env::Default()->NowMicros() - start_micros);
 

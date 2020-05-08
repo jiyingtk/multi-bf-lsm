@@ -12,12 +12,14 @@
 #include <thread>
 #include <chrono>
 #include <condition_variable>
+
+#include "db/table_cache.h"
 #include "leveldb/cache.h"
 #include "port/port.h"
 #include "util/hash.h"
 #include "util/coding.h"
 #include "util/mutexlock.h"
-#include "db/table_cache.h"
+
 using namespace std;
 #define handle_error_en(en, msg) \
   do { errno = en; perror(msg); exit(EXIT_FAILURE); } while (0)
@@ -227,6 +229,7 @@ namespace leveldb
             uint64_t LookupFreCount(const Slice &key);
             void SetFreCount(const Slice &key, uint64_t freCount);
             virtual int AllocFilterNums(int freq) override;
+            void CheckUpperLevelHotness(Cache::Handle *handle, HotnessInfos &hot_infos) override;
 
             void Release(Cache::Handle *handle);
             virtual Handle *Insert(const Slice &key, void *value, size_t charge,
@@ -946,6 +949,17 @@ deallocate:
             }
             // return last_ + 1 < lrus_num_ ? last_ + 1 : last_;
             return last_;
+        }
+
+        void MultiQueue::CheckUpperLevelHotness(Cache::Handle *handle, HotnessInfos &hot_infos)
+        {
+            LRUQueueHandle *h = (LRUQueueHandle *) handle;
+            if (hot_infos.used_num == 0) {
+                hot_infos.Insert(h->fre_count, h->queue_id);
+            } else {
+                hot_infos.Check(h->fre_count, h->queue_id);
+                hot_infos.Insert(h->fre_count, h->queue_id); 
+            }
         }
 
         inline bool MultiQueue::IsCacheFull() const

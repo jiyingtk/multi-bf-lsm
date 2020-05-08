@@ -6,8 +6,10 @@
 #define STORAGE_LEVELDB_INCLUDE_TABLE_H_
 
 #include <stdint.h>
+#include <vector>
+
 #include "leveldb/iterator.h"
-#include<vector>
+
 namespace leveldb {
 
 class Block;

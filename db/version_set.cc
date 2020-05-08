@@ -644,23 +644,23 @@ void Version::printTables(int level, std::string* file_strs,const char *property
  	    snprintf(buf,sizeof(buf),",%d",files_[level][i]->access_time);
 	 }
 
-          // Cache::Handle* handle = NULL;
-          // Status s = table_cache->FindTable(files_[level][i]->number, files_[level][i]->file_size, &handle);
-          // Table* t = reinterpret_cast<TableAndFile*>(table_cache->getCacheValue(handle))->table;
-          // table_cache->releaseCacheHandle(handle);
+          Cache::Handle* handle = NULL;
+          Status s = table_cache->FindTable(files_[level][i]->number, files_[level][i]->file_size, &handle);
+          Table* t = reinterpret_cast<TableAndFile*>(table_cache->getCacheValue(handle))->table;
+          table_cache->releaseCacheHandle(handle);
         
-          // if (i == 0)
-          //   file_strs->append("(");
-          // else
-          //   file_strs->append(",(");
-          // for (int j = 0; j < t->freq_count; j++) {
-          //   if (j == 0)
-          //    snprintf(buf, sizeof(buf),"%d",t->freqs[j]);
-          //   else
-          //    snprintf(buf, sizeof(buf),",%d",t->freqs[j]);
-  	       //  file_strs->append(buf);
-          // }
-          // file_strs->append(")");
+          if (i == 0)
+            file_strs->append("(");
+          else
+            file_strs->append(",(");
+          for (int j = 0; j < t->freq_count; j++) {
+            if (j == 0)
+             snprintf(buf, sizeof(buf),"%d",t->freqs[j]);
+            else
+             snprintf(buf, sizeof(buf),",%d",t->freqs[j]);
+  	        file_strs->append(buf);
+          }
+          file_strs->append(")");
 
        }
        file_strs->append("\n");

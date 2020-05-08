@@ -19,7 +19,9 @@
 #define STORAGE_LEVELDB_INCLUDE_CACHE_H_
 
 #include <stdint.h>
+
 #include "leveldb/slice.h"
+#include "leveldb/hotness.h"
 
 namespace leveldb {
 
@@ -63,6 +65,7 @@ class Cache {
   virtual uint64_t LookupFreCount(const Slice & key) {}
   virtual void SetFreCount(const Slice & key,uint64_t freCount) {}
   virtual int AllocFilterNums(int freq) {}
+  virtual void CheckUpperLevelHotness(Handle *handle, HotnessInfos &hot_infos) {}
 
   virtual void SupportCacheDeletedEntry(bool flag) {}
   
