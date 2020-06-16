@@ -11,18 +11,24 @@
 
 extern bool multi_queue_init;
 
-namespace leveldb {
+// #define DEBUG_HOTNESS_INHERIT
+
+namespace leveldb
+{
 bool directIO_of_RandomAccess = false;
 
-
-static void DeleteEntry(const Slice& key, void* value, const bool realDelete = true) {
-  TableAndFile* tf = reinterpret_cast<TableAndFile*>(value);
+static void DeleteEntry(const Slice &key, void *value, const bool realDelete = true)
+{
+  TableAndFile *tf = reinterpret_cast<TableAndFile *>(value);
   // if (--tf->refs == 0) {
-  if (realDelete) {
+  if (realDelete)
+  {
     delete tf->table;
     delete tf->file;
     delete tf;
-  } else {  //drop bloom filter
+  }
+  else
+  { //drop bloom filter
     // int regionNum = tf->table->getRegionNum();
     // for (int i = 0; i < regionNum; i++) {
     //   tf->table->RemoveFilters(-1, i);
@@ -31,124 +37,165 @@ static void DeleteEntry(const Slice& key, void* value, const bool realDelete = t
   // }
 }
 
-static void UnrefEntry(void* arg1, void* arg2) {
-  Cache* cache = reinterpret_cast<Cache*>(arg1);
-  Cache::Handle* h = reinterpret_cast<Cache::Handle*>(arg2);
+static void UnrefEntry(void *arg1, void *arg2)
+{
+  Cache *cache = reinterpret_cast<Cache *>(arg1);
+  Cache::Handle *h = reinterpret_cast<Cache::Handle *>(arg2);
   cache->Release(h);
 }
 
-static void DeleteEntry(void* arg1, void* arg2) {
-  TableAndFile* tf = reinterpret_cast<TableAndFile*>(arg2);
+static void DeleteEntry(void *arg1, void *arg2)
+{
+  TableAndFile *tf = reinterpret_cast<TableAndFile *>(arg2);
   delete tf->table;
   delete tf->file;
   delete tf;
 }
-TableCache::TableCache(const std::string& dbname,
-                       const Options* options,
+TableCache::TableCache(const std::string &dbname,
+                       const Options *options,
                        size_t entries)
     : env_(options->env),
       dbname_(dbname),
       options_(options),
       cache_(),
-      level0_freq(0) {
-        if (options->opEp_.useLRUCache) {
-          cache_ = NewLRUCache(entries);
-          cache_->SupportCacheDeletedEntry(true);
-        }
-        else {
-          cache_ = NewMultiQueue(dbname, entries,options->opEp_.lrus_num_, options->opEp_.life_time,
-            options_->opEp_.change_ratio, options_->opEp_.cache_use_real_size, options_->opEp_.should_recovery_hotness);
-        }
+      level0_freq(0)
+{
+  if (options->opEp_.useLRUCache)
+  {
+    cache_ = NewLRUCache(entries);
+    cache_->SupportCacheDeletedEntry(true);
+  }
+  else
+  {
+    cache_ = NewMultiQueue(dbname, entries, options->opEp_.lrus_num_, options->opEp_.life_time,
+                           options_->opEp_.change_ratio, options_->opEp_.cache_use_real_size, options_->opEp_.should_recovery_hotness);
+  }
 }
 
-TableCache::~TableCache() {
+TableCache::~TableCache()
+{
   delete cache_;
 }
 
 Status TableCache::FindBufferedTable(uint64_t file_number, uint64_t file_size,
-                             Cache::Handle** handle,TableAndFile *rtf){
-    Status s;
-    char buf[sizeof(file_number)];
-    EncodeFixed64(buf, file_number);
-    Slice key(buf, sizeof(buf));
-    std::string fname = TableFileName(dbname_, file_number);
-    RandomAccessFile* file = NULL;
-    Table* table = NULL;
-    s = env_->NewBufferedRandomAccessFile(fname, &file);
-    if (!s.ok()) {
-      std::string old_fname = SSTTableFileName(dbname_, file_number);
-      if (env_->NewBufferedRandomAccessFile(old_fname, &file).ok()) {
-        s = Status::OK();
-      }
+                                     Cache::Handle **handle, TableAndFile *rtf)
+{
+  Status s;
+  char buf[sizeof(file_number)];
+  EncodeFixed64(buf, file_number);
+  Slice key(buf, sizeof(buf));
+  std::string fname = TableFileName(dbname_, file_number);
+  RandomAccessFile *file = NULL;
+  Table *table = NULL;
+  s = env_->NewBufferedRandomAccessFile(fname, &file);
+  if (!s.ok())
+  {
+    std::string old_fname = SSTTableFileName(dbname_, file_number);
+    if (env_->NewBufferedRandomAccessFile(old_fname, &file).ok())
+    {
+      s = Status::OK();
     }
-    size_t *charge = NULL;
-    if (s.ok()) {
-      s = Table::Open(*options_, file, file_size, &table, charge,false);
+  }
+  size_t *charge = NULL;
+  if (s.ok())
+  {
+    s = Table::Open(*options_, file, file_size, &table, charge, false);
+  }
+  delete[] charge;
+  if (!s.ok())
+  {
+    assert(table == NULL);
+    rtf->file = NULL;
+    rtf->table = NULL;
+    delete file;
+    // We do not cache error results so that if the error is transient,
+    // or somebody repairs the file, we recover automatically.
+  }
+  else
+  {
+    //TableAndFile* tf = new TableAndFile;
+    rtf->file = file;
+    rtf->table = table;
+    rtf->file_number = file_number;
+  }
+  return s;
+}
+
+std::string getReadableKey(Slice &input) {
+  int i;
+  for (i = 0; i < input.size(); i++) {
+    char tmp = input[i];
+    if (tmp == '_' || (tmp >= '0' && tmp <= '9') || (tmp >= 'a' && tmp <= 'z') || (tmp >= 'A' && tmp <= 'Z'))
+      continue;
+    else {
+      break;
     }
-    delete [] charge;
-    if (!s.ok()) {
-      assert(table == NULL);
-      rtf->file = NULL;
-      rtf->table = NULL;
-      delete file;
-      // We do not cache error results so that if the error is transient,
-      // or somebody repairs the file, we recover automatically.
-    } else {
-      //TableAndFile* tf = new TableAndFile;
-      rtf->file = file;
-      rtf->table = table;
-      rtf->file_number = file_number;
-     
-    }
-    return s;
+  }
+  std::string ret(input.data(), i + 1);
+  ret[i] = '\0';
+  return ret;
+}
+
+void clearVectorSlice(std::vector<Slice> &vs) {
+  for (auto it = vs.begin(); it != vs.end(); it++) {
+    delete [] (*it).data();
+  }
 }
 
 Status TableCache::FindTable(uint64_t file_number, uint64_t file_size,
-                             Cache::Handle** handle,bool Get,int file_level, TableMetaData *tableMetaData, std::vector<uint64_t> *input_0_numbers, std::vector<uint64_t> *input_1_numbers) {
+                             Cache::Handle **handle, bool Get, int file_level, TableMetaData *tableMetaData, std::vector<uint64_t> *input_0_numbers, std::vector<uint64_t> *input_1_numbers)
+{
   Status s;
   char buf[sizeof(file_number) + sizeof(uint32_t)];
   EncodeFixed64(buf, file_number);
-  uint32_t *id_ = (uint32_t *) (buf + sizeof(file_number));
+  uint32_t *id_ = (uint32_t *)(buf + sizeof(file_number));
   *id_ = 0;
   Slice key(buf, sizeof(buf));
-  
+
   // uint64_t start_micros_l = Env::Default()->NowMicros();
   *handle = cache_->Lookup(key, false); //Get
   // MeasureTime(Statistics::GetStatistics().get(),Tickers::MQ_LOOKUP_TIME,Env::Default()->NowMicros() - start_micros_l);
 
-  if (*handle == NULL) {
-    uint32_t hash = Hash((const char*)&file_number, sizeof(file_number), 0) % 64;
+  if (*handle == NULL)
+  {
+    uint32_t hash = Hash((const char *)&file_number, sizeof(file_number), 0) % 64;
     mutex_[hash].lock();
 
     *handle = cache_->Lookup(key, false);
-    if (*handle != NULL) {
+    if (*handle != NULL)
+    {
       mutex_[hash].unlock();
       return s;
     }
 
     uint64_t start_micros = Env::Default()->NowMicros();
     std::string fname = TableFileName(dbname_, file_number);
-    RandomAccessFile* file = NULL;
-    Table* table = NULL;
-    s = env_->NewRandomAccessFile(fname, &file,directIO_of_RandomAccess);
-    if (!s.ok()) {
+    RandomAccessFile *file = NULL;
+    Table *table = NULL;
+    s = env_->NewRandomAccessFile(fname, &file, directIO_of_RandomAccess);
+    if (!s.ok())
+    {
       std::string old_fname = SSTTableFileName(dbname_, file_number);
-      if (env_->NewRandomAccessFile(old_fname, &file,directIO_of_RandomAccess).ok()) {
+      if (env_->NewRandomAccessFile(old_fname, &file, directIO_of_RandomAccess).ok())
+      {
         s = Status::OK();
       }
     }
 
-    int *freqs = NULL, freq_count = 0;;
-    int total_freq = 0;
-/*    if (input_0_numbers != NULL) {
-      std::vector<std::vector<Slice>>  region_keys_all;
+    int *freqs = NULL, freq_count = 0;
+    int total_freq = 0, max_freq = 0;
+    // start mark
+    if (input_0_numbers != NULL)
+    {
+      std::vector<std::vector<Slice>> region_keys_all;
       std::vector<int *> freqs_all;
       std::vector<int> freq_count_all;
 
       char buf2[sizeof(file_number) + sizeof(uint32_t)];
 
       int table_nums = (input_1_numbers == NULL) ? (*input_0_numbers).size() : (*input_0_numbers).size() + (*input_1_numbers).size();
-      for (int i = 0; i < table_nums; i++) {
+      for (int i = 0; i < table_nums; i++)
+      {
         uint64_t file_number_0;
         if (i < (*input_0_numbers).size())
           file_number_0 = (*input_0_numbers)[i];
@@ -156,22 +203,32 @@ Status TableCache::FindTable(uint64_t file_number, uint64_t file_size,
           file_number_0 = (*input_1_numbers)[i - (*input_0_numbers).size()];
 
         EncodeFixed64(buf2, file_number_0);
-        uint32_t *id_ = (uint32_t *) (buf2 + sizeof(file_number));
+        uint32_t *id_ = (uint32_t *)(buf2 + sizeof(file_number));
         *id_ = 0;
         Slice key2(buf2, sizeof(buf2));
-        Cache::Handle* p_0_handle = cache_->Lookup(key2, false); //Get
-        if (p_0_handle != NULL) {
-          Table* p_0_table = reinterpret_cast<TableAndFile*>(cache_->Value(p_0_handle))->table;
+        Cache::Handle *p_0_handle = cache_->Lookup(key2, false); //Get
+        if (p_0_handle != NULL)
+        {
+          Table *p_0_table = reinterpret_cast<TableAndFile *>(cache_->Value(p_0_handle))->table;
 
           std::vector<Slice> region_keys;
           p_0_table->getRegionKeyRanges(region_keys);
           region_keys_all.push_back(region_keys);
           freqs_all.push_back(p_0_table->freqs);
           freq_count_all.push_back(p_0_table->freq_count);
-assert(p_0_table->freq_count == region_keys.size() - 1);
+          assert(p_0_table->freq_count == region_keys.size() - 1);
           cache_->Release(p_0_handle);
+
+        #ifdef DEBUG_HOTNESS_INHERIT
+          std::cout << "[compacted table keys]: ";
+          for (auto it = region_keys.begin(); it != region_keys.end(); it++)
+            std::cout << getReadableKey(*it) << ", ";
+          std::cout << "\n[compacted table freq]: ";
+          for (int ii = 0; ii < p_0_table->freq_count; ii++)
+            std::cout << p_0_table->freqs[ii] << ", ";
+          std::cout << std::endl;
+        #endif
         }
-        
       }
 
       std::vector<Slice> region_keys_cur;
@@ -179,13 +236,24 @@ assert(p_0_table->freq_count == region_keys.size() - 1);
       freq_count = region_keys_cur.size() - 1;
       freqs = new int[freq_count]();
 
+    #ifdef DEBUG_HOTNESS_INHERIT
+      std::cout << "[target table keys]: ";
+      for (auto it = region_keys_cur.begin(); it != region_keys_cur.end(); it++)
+        std::cout << getReadableKey(*it) << ", ";
+      std::cout << std::endl;
+      std::cout << "[target table freq]: ";
+    #endif
+
       std::vector<int> region_iters(region_keys_all.size());
 
       tableMetaData->region_num = freq_count;
       tableMetaData->load_filter_num = new int[freq_count]();
 
-      for (int i = 0; i < freq_count; i++) {
-        for (int j = 0; j < region_keys_all.size(); j++) {
+      for (int i = 0; i < freq_count; i++)
+      {
+        int overlapped = 0;
+        for (int j = 0; j < region_keys_all.size(); j++)
+        {
           int cur_region = region_iters[j];
           if (cur_region >= freq_count_all[j])
             continue;
@@ -193,7 +261,8 @@ assert(p_0_table->freq_count == region_keys.size() - 1);
           if (options_->comparator->Compare(region_keys_cur[i + 1], t_left_key) <= 0)
             continue;
           Slice t_right_key = region_keys_all[j][cur_region + 1];
-          while (options_->comparator->Compare(t_right_key, region_keys_cur[i]) <= 0) {
+          while (options_->comparator->Compare(t_right_key, region_keys_cur[i]) <= 0)
+          {
             cur_region += 1;
             region_iters[j] += 1;
             if (cur_region >= freq_count_all[j])
@@ -201,41 +270,66 @@ assert(p_0_table->freq_count == region_keys.size() - 1);
             t_right_key = region_keys_all[j][cur_region + 1];
           }
           if (cur_region >= freq_count_all[j])
-            continue;  
+            continue;
 
           freqs[i] += freqs_all[j][cur_region];
+          max_freq = max_freq > freqs_all[j][cur_region] ? max_freq : freqs_all[j][cur_region]; 
+          overlapped++;
         }
-
+      #ifdef DEBUG_HOTNESS_INHERIT
+        std::cout << "(" << freqs[i] << "," << overlapped;
+      #endif
+        freqs[i] = overlapped == 0 ? 0 : freqs[i] / overlapped;
+      
         total_freq += freqs[i];
-        // int filter_num = cache_->AllocFilterNums(freqs[i]);
-        // tableMetaData->load_filter_num[i] = filter_num;
-      }
-      int filter_num = cache_->AllocFilterNums(total_freq);
-      tableMetaData->load_filter_num[0] = filter_num;
 
+      #ifdef DEBUG_HOTNESS_INHERIT
+        int filter_num = cache_->AllocFilterNums(freqs[i]);
+        tableMetaData->load_filter_num[i] = filter_num;
+        std::cout << "," << filter_num << ")";
+      #endif
+      }
+      #ifdef DEBUG_HOTNESS_INHERIT
+        std::cout << std::endl;
+      #endif
+
+      clearVectorSlice(region_keys_cur);
+      for (auto it = region_keys_all.begin(); it != region_keys_all.end(); it++) {
+        clearVectorSlice(*it);
+      }
+
+      int used_freq = total_freq / freq_count;
+      // int used_freq = max_freq;
+
+      int filter_num = cache_->AllocFilterNums(max_freq);
+      tableMetaData->load_filter_num[0] = filter_num;
     }
-*/
+    // end mark
 
     size_t *charge = NULL;
-    if (s.ok()) {
-      // s = Table::Open(*options_, file, file_size, &table, charge, file_level, tableMetaData);
-      s = Table::Open(*options_, file, file_size, &table, charge, file_level, NULL);
+    if (s.ok())
+    {
+      s = Table::Open(*options_, file, file_size, &table, charge, file_level, tableMetaData);
+      // s = Table::Open(*options_, file, file_size, &table, charge, file_level, NULL);
     }
-    MeasureTime(Statistics::GetStatistics().get(),Tickers::OPEN_TABLE_TIME,Env::Default()->NowMicros() - start_micros);
-    if (!s.ok()) {
+    MeasureTime(Statistics::GetStatistics().get(), Tickers::OPEN_TABLE_TIME, Env::Default()->NowMicros() - start_micros);
+    if (!s.ok())
+    {
       assert(table == NULL);
       delete file;
       // We do not cache error results so that if the error is transient,
       // or somebody repairs the file, we recover automatically.
-    } else {
-      TableAndFile* tf = new TableAndFile;
+    }
+    else
+    {
+      TableAndFile *tf = new TableAndFile;
       tf->file = file;
       tf->table = table;
       tf->file_number = file_number;
       tf->refs = 0;
-   //    for(int i = 0 ; i < table->getCurrFilterNum() ; i ++){
-    // charge += FilterPolicy::bits_per_key_per_filter_[i];
-   //    }
+      //    for(int i = 0 ; i < table->getCurrFilterNum() ; i ++){
+      // charge += FilterPolicy::bits_per_key_per_filter_[i];
+      //    }
       // printf("table number %llu, regionNum %d\n", file_number, regionNum);fflush(stdout);
 
       int regionNum = table->getRegionNum();
@@ -243,15 +337,16 @@ assert(p_0_table->freq_count == region_keys.size() - 1);
       if (charge == NULL)
         charge = new size_t[regionNum]();
 
-      
-      for (int i = 0; i <= regionNum; i++) {
+      for (int i = 0; i <= regionNum; i++)
+      {
         *id_ = i;
         Slice key2(buf, sizeof(buf));
         if (i == 0)
-          *handle = cache_->Insert(key2, tf,0, &DeleteEntry);        
-        else {
+          *handle = cache_->Insert(key2, tf, 0, &DeleteEntry);
+        else
+        {
           cache_->Insert(key2, tf, charge[i - 1], &DeleteEntry);
-/*          if (file_level == 0)
+          /*          if (file_level == 0)
             cache_->SetFreCount(key2, level0_freq);
           else if (freq_count != 0)
             cache_->SetFreCount(key2, total_freq);// cache_->SetFreCount(key2, freqs[i - 1]);
@@ -260,61 +355,70 @@ assert(p_0_table->freq_count == region_keys.size() - 1);
 
         tf->refs++;
       }
-      delete [] charge;
+      delete[] charge;
     }
 
     if (freqs)
-      delete [] freqs;
-  
+      delete[] freqs;
+
     mutex_[hash].unlock();
   }
-  else {
-      // std::cout << "cachetable lookup fid " << file_number << std::endl;
+  else
+  {
+    // std::cout << "cachetable lookup fid " << file_number << std::endl;
   }
   return s;
 }
 
-Iterator* TableCache::NewBufferedIterator(const ReadOptions& options,
-                                  uint64_t file_number,
-                                  uint64_t file_size,
-                                  Table** tableptr) {
-    if (tableptr != NULL) {
-	*tableptr = NULL;
-    }
-    TableAndFile *rtf = new TableAndFile;
-    Cache::Handle* handle = NULL;
-    Status s = FindBufferedTable(file_number, file_size, &handle,rtf);
-    if (!s.ok()) {
-	return NewErrorIterator(s);
-    }
-
-    Table* table = rtf->table;
-    Iterator* result = table->NewIterator(options);
-    result->RegisterCleanup(&DeleteEntry,NULL,rtf);
-    if (tableptr != NULL) {
-	*tableptr = table;
-    }
-    return result;								
-}
-
-Iterator* TableCache::NewIterator(const ReadOptions& options,
-                                  uint64_t file_number,
-                                  uint64_t file_size,
-                                  Table** tableptr, TableMetaData *tableMetaData_, std::vector<uint64_t> *input_0_numbers, std::vector<uint64_t> *input_1_numbers) {
-  if (tableptr != NULL) {
+Iterator *TableCache::NewBufferedIterator(const ReadOptions &options,
+                                          uint64_t file_number,
+                                          uint64_t file_size,
+                                          Table **tableptr)
+{
+  if (tableptr != NULL)
+  {
     *tableptr = NULL;
   }
- 
-  Cache::Handle* handle = NULL;
-  Status s = FindTable(file_number, file_size, &handle,false,options.file_level,tableMetaData_, input_0_numbers, input_1_numbers);
-  if (!s.ok()) {
+  TableAndFile *rtf = new TableAndFile;
+  Cache::Handle *handle = NULL;
+  Status s = FindBufferedTable(file_number, file_size, &handle, rtf);
+  if (!s.ok())
+  {
     return NewErrorIterator(s);
   }
 
-  Table* table = reinterpret_cast<TableAndFile*>(cache_->Value(handle))->table;
-  Iterator* result = table->NewIterator(options);
+  Table *table = rtf->table;
+  Iterator *result = table->NewIterator(options);
+  result->RegisterCleanup(&DeleteEntry, NULL, rtf);
+  if (tableptr != NULL)
+  {
+    *tableptr = table;
+  }
+  return result;
+}
+
+Iterator *TableCache::NewIterator(const ReadOptions &options,
+                                  uint64_t file_number,
+                                  uint64_t file_size,
+                                  Table **tableptr, TableMetaData *tableMetaData_, std::vector<uint64_t> *input_0_numbers, std::vector<uint64_t> *input_1_numbers)
+{
+  if (tableptr != NULL)
+  {
+    *tableptr = NULL;
+  }
+
+  Cache::Handle *handle = NULL;
+  Status s = FindTable(file_number, file_size, &handle, false, options.file_level, tableMetaData_, input_0_numbers, input_1_numbers);
+  if (!s.ok())
+  {
+    return NewErrorIterator(s);
+  }
+
+  Table *table = reinterpret_cast<TableAndFile *>(cache_->Value(handle))->table;
+  Iterator *result = table->NewIterator(options);
   result->RegisterCleanup(&UnrefEntry, cache_, handle);
-  if (tableptr != NULL) {
+  if (tableptr != NULL)
+  {
     *tableptr = table;
   }
   return result;
@@ -327,43 +431,47 @@ Iterator* TableCache::NewIterator(const ReadOptions& options,
 
 uint64_t TableCache::LookupFreCount(uint64_t file_number)
 {
-    char buf[sizeof(file_number) + sizeof(uint32_t)];
-    EncodeFixed64(buf, file_number);
-    uint32_t *id_ = (uint32_t *) (buf + sizeof(file_number));
-    *id_ = 1;
-    Slice key(buf, sizeof(buf));
+  char buf[sizeof(file_number) + sizeof(uint32_t)];
+  EncodeFixed64(buf, file_number);
+  uint32_t *id_ = (uint32_t *)(buf + sizeof(file_number));
+  *id_ = 1;
+  Slice key(buf, sizeof(buf));
 
-    return cache_->LookupFreCount(key);
+  return cache_->LookupFreCount(key);
 }
 
 void TableCache::SetFreCount(uint64_t file_number, uint64_t freCount)
 {
-    char buf[sizeof(file_number)];
-    EncodeFixed64(buf, file_number);
-    Slice key(buf, sizeof(buf));
-    cache_->SetFreCount(key,freCount);
+  char buf[sizeof(file_number)];
+  EncodeFixed64(buf, file_number);
+  Slice key(buf, sizeof(buf));
+  cache_->SetFreCount(key, freCount);
 }
 
-void TableCache::SaveLevel0Freq(uint64_t file_number) {
+void TableCache::SaveLevel0Freq(uint64_t file_number)
+{
   uint64_t freq = LookupFreCount(file_number);
   level0_freq = level0_freq < freq ? freq : level0_freq;
 }
 
-void TableCache::TurnOnAdjustment() {
+void TableCache::TurnOnAdjustment()
+{
   cache_->TurnOnAdjustment();
 }
 
-void TableCache::TurnOffAdjustment() {
+void TableCache::TurnOffAdjustment()
+{
   cache_->TurnOffAdjustment();
 }
 
-Status TableCache::Get(const ReadOptions& options,
+Status TableCache::Get(const ReadOptions &options,
                        uint64_t file_number,
                        uint64_t file_size,
-                       const Slice& k,
-                       void* arg,
-                       void (*saver)(void*, const Slice&, const Slice&),uint64_t file_access_time) {
-  Cache::Handle* handle = NULL;
+                       const Slice &k,
+                       void *arg,
+                       void (*saver)(void *, const Slice &, const Slice &), uint64_t file_access_time)
+{
+  Cache::Handle *handle = NULL;
   uint64_t start_micros = env_->NowMicros();
   // options_->opEp_.add_filter = file_access_time > cache_->GetLRUFreCount()?true:false;
   // options_->opEp_.add_filter = true;
@@ -372,47 +480,52 @@ Status TableCache::Get(const ReadOptions& options,
   options_->opEp_.add_filter = false;
 
   options.file_number = file_number;
-  Status s = FindTable(file_number, file_size, &handle,true, options.file_level);
-  MeasureTime(Statistics::GetStatistics().get(),Tickers::FINDTABLE,Env::Default()->NowMicros() - start_micros);
-  if (s.ok()) {
+  Status s = FindTable(file_number, file_size, &handle, true, options.file_level);
+  MeasureTime(Statistics::GetStatistics().get(), Tickers::FINDTABLE, Env::Default()->NowMicros() - start_micros);
+  if (s.ok())
+  {
     start_micros = env_->NowMicros();
-    Table* t = reinterpret_cast<TableAndFile*>(cache_->Value(handle))->table;
+    Table *t = reinterpret_cast<TableAndFile *>(cache_->Value(handle))->table;
     char buf[sizeof(file_number) + sizeof(uint32_t)];
-    uint32_t *id_ = (uint32_t *) (buf + sizeof(uint64_t));
-    *id_ = (uint32_t) (-1);
+    uint32_t *id_ = (uint32_t *)(buf + sizeof(uint64_t));
+    *id_ = (uint32_t)(-1);
     s = t->InternalGet(options, k, arg, saver, buf);
-    MeasureTime(Statistics::GetStatistics().get(),Tickers::INTERNALGET,Env::Default()->NowMicros() - start_micros);
+    MeasureTime(Statistics::GetStatistics().get(), Tickers::INTERNALGET, Env::Default()->NowMicros() - start_micros);
     start_micros = env_->NowMicros();
-    if (*id_ != (uint32_t)-1) {
+    if (*id_ != (uint32_t)-1)
+    {
       Slice key(buf, sizeof(buf));
-      Cache::Handle* cache_handle = cache_->Lookup(key, true);
-      if (cache_handle != NULL) {
+      Cache::Handle *cache_handle = cache_->Lookup(key, true);
+      if (cache_handle != NULL)
+      {
         cache_->CheckUpperLevelHotness(cache_handle, options.hot_infos);
         cache_->Release(cache_handle);
-
       }
     }
-    MeasureTime(Statistics::GetStatistics().get(),Tickers::MQ_LOOKUP_TIME,Env::Default()->NowMicros() - start_micros);
+    MeasureTime(Statistics::GetStatistics().get(), Tickers::MQ_LOOKUP_TIME, Env::Default()->NowMicros() - start_micros);
 
     start_micros = env_->NowMicros();
     cache_->Release(handle);
-    MeasureTime(Statistics::GetStatistics().get(),Tickers::RELEASE,Env::Default()->NowMicros() - start_micros);
+    MeasureTime(Statistics::GetStatistics().get(), Tickers::RELEASE, Env::Default()->NowMicros() - start_micros);
   }
   return s;
 }
 
-void TableCache::Evict(uint64_t file_number) {
+void TableCache::Evict(uint64_t file_number)
+{
   char buf[sizeof(file_number) + sizeof(uint32_t)];
   EncodeFixed64(buf, file_number);
-  uint32_t *id_ = (uint32_t *) (buf + sizeof(file_number));
+  uint32_t *id_ = (uint32_t *)(buf + sizeof(file_number));
   *id_ = 0;
   Slice key(buf, sizeof(buf));
-  Cache::Handle* handle = cache_->Lookup(key, false);
-  if (handle != NULL) {
-    Table* t = reinterpret_cast<TableAndFile*>(cache_->Value(handle))->table;
+  Cache::Handle *handle = cache_->Lookup(key, false);
+  if (handle != NULL)
+  {
+    Table *t = reinterpret_cast<TableAndFile *>(cache_->Value(handle))->table;
     int regionNum = t->getRegionNum();
     cache_->Release(handle);
-    for (int i = 1; i <= regionNum; i++) {
+    for (int i = 1; i <= regionNum; i++)
+    {
       *id_ = i;
       cache_->Erase(Slice(buf, sizeof(buf)));
     }
@@ -422,38 +535,45 @@ void TableCache::Evict(uint64_t file_number) {
   }
 }
 
-void TableCache::adjustFilters(uint64_t file_number, uint64_t file_size,int n)
+void TableCache::adjustFilters(uint64_t file_number, uint64_t file_size, int n)
 {
-    Cache::Handle* handle = NULL;
-    Status s = FindTable(file_number, file_size, &handle);
-    if (s.ok()) {
-    	Table* t = reinterpret_cast<TableAndFile*>(cache_->Value(handle))->table;
-    	if(n > 0){
-    	    t->AddFilters(n, 0);
-    	}else{
-    	    t->RemoveFilters(-n);
-    	}
-    	cache_->Release(handle);
+  Cache::Handle *handle = NULL;
+  Status s = FindTable(file_number, file_size, &handle);
+  if (s.ok())
+  {
+    Table *t = reinterpret_cast<TableAndFile *>(cache_->Value(handle))->table;
+    if (n > 0)
+    {
+      t->AddFilters(n, 0);
     }
+    else
+    {
+      t->RemoveFilters(-n);
+    }
+    cache_->Release(handle);
+  }
 }
 
-size_t TableCache::GetTableCurrFiltersSize(uint64_t file_number,uint64_t file_size){
-    Cache::Handle* handle = NULL;
-    Status s = FindTable(file_number, file_size, &handle);
-    if (s.ok()) {
-      Table* t = reinterpret_cast<TableAndFile*>(cache_->Value(handle))->table;
-      size_t res = t->getCurrFiltersSize();
-      cache_->Release(handle);
-      return res;
-    }else{
-      return 0;
-    }
+size_t TableCache::GetTableCurrFiltersSize(uint64_t file_number, uint64_t file_size)
+{
+  Cache::Handle *handle = NULL;
+  Status s = FindTable(file_number, file_size, &handle);
+  if (s.ok())
+  {
+    Table *t = reinterpret_cast<TableAndFile *>(cache_->Value(handle))->table;
+    size_t res = t->getCurrFiltersSize();
+    cache_->Release(handle);
+    return res;
+  }
+  else
+  {
+    return 0;
+  }
 }
 
 std::string TableCache::LRU_Status()
 {
-    return cache_->LRU_Status();
+  return cache_->LRU_Status();
 }
 
-
-}  // namespace leveldb
+} // namespace leveldb

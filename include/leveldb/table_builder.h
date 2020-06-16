@@ -24,6 +24,9 @@ class BlockHandle;
 class WritableFile;
 // struct TableMetaData;
 struct TableMetaData {
+  TableMetaData() : filter_num(0), region_num(0), load_filter_num(NULL) {
+  }
+
   Slice metaindex_data;
   Slice index_data;
   Slice filter_data[16];
@@ -32,9 +35,15 @@ struct TableMetaData {
   int *load_filter_num;
 
   ~TableMetaData() {
-    // for (int i = 0; i < filter_num; i++)
     if (load_filter_num != NULL)
       delete [] load_filter_num;
+    if (!metaindex_data.empty())
+      delete [] metaindex_data.data();
+    if (!index_data.empty())
+      delete [] index_data.data();
+    for (int i = 0; i < filter_num; i++)
+      if (!filter_data[i].empty())
+        delete [] filter_data[i].data();
   }
 };
 

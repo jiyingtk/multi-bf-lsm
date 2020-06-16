@@ -26,6 +26,8 @@ using namespace std;
   
 bool multi_queue_init = true;
 
+// #define ADJUST_UPPER_FREQ
+
 namespace leveldb
 {
     namespace multiqueue_ns
@@ -205,6 +207,7 @@ namespace leveldb
             FILE * freq_info_diff_file;
             bool should_recovery_hotness_;
             std::unordered_map<uint64_t, HandlePair> freq_info_map;
+            uint64_t check_hotness_failed_nums_;
         public:
             static pthread_t pids_[16];
             static int bg_thread_nums;
@@ -267,7 +270,7 @@ namespace leveldb
 
 
         MultiQueue::MultiQueue(const std::string &dbname, size_t capacity, int lrus_num, uint64_t life_time, double change_ratio, bool cache_use_real_size, bool should_recovery_hotness): dbname_(dbname), capacity_(capacity), lrus_num_(lrus_num), life_time_(life_time)
-            , change_ratio_(change_ratio), sum_lru_len(0), expection_(0), usage_(0), shutting_down_(false), insert_count(0), need_adjust(true), cache_use_real_size_(cache_use_real_size), should_recovery_hotness_(should_recovery_hotness)
+            , change_ratio_(change_ratio), sum_lru_len(0), expection_(0), usage_(0), shutting_down_(false), insert_count(0), need_adjust(true), cache_use_real_size_(cache_use_real_size), should_recovery_hotness_(should_recovery_hotness), check_hotness_failed_nums_(0)
         {
             //TODO: declare outside  class  in_use and lrus parent must be Initialized,avoid lock crush
             in_use_.next = &in_use_;
@@ -324,6 +327,11 @@ namespace leveldb
                 pthread_setname_np(pids_[i], name_buf);
             }
 
+        #ifdef ADJUST_UPPER_FREQ
+            cout << "enable adjust_upper_freq" << endl;
+        #else
+            cout << "disable adjust_upper_freq" << endl;
+        #endif
         }
 
         MultiQueue::~MultiQueue()
@@ -337,6 +345,8 @@ namespace leveldb
             
             mutex_.lock();
             fprintf(stderr, "optimized expection_ is %lf\n", expection_);
+            fprintf(stderr, "check_hotness_failed_nums_ is %lu\n", check_hotness_failed_nums_);
+            
             for(int i = 0 ; i < lrus_num_ ;  i++)
             {
                 for (LRUQueueHandle *e = lrus_[i].next; e != &lrus_[i]; )
@@ -955,10 +965,25 @@ deallocate:
         {
             LRUQueueHandle *h = (LRUQueueHandle *) handle;
             if (hot_infos.used_num == 0) {
-                hot_infos.Insert(h->fre_count, h->queue_id);
+                hot_infos.Insert(h->key_data, h->fre_count, h->queue_id);
             } else {
-                hot_infos.Check(h->fre_count, h->queue_id);
-                hot_infos.Insert(h->fre_count, h->queue_id); 
+                bool pass = hot_infos.Check(h->fre_count, h->queue_id);
+        #ifdef ADJUST_UPPER_FREQ
+                if (!pass) {
+                    check_hotness_failed_nums_++;
+                    int i;
+                    mutex_.lock();
+                    for (i = 0; i < hot_infos.used_num; i++) {
+                        Slice key(hot_infos.handle_keys[i], 12);
+                        uint32_t hash = HashSlice(key);
+                        LRUQueueHandle *pre_handle = table_.Lookup(key, hash);
+                        if (pre_handle->fre_count < h->fre_count)
+                            pre_handle->fre_count = h->fre_count;
+                    }
+                    mutex_.unlock();
+                }
+        #endif
+                hot_infos.Insert(h->key_data, h->fre_count, h->queue_id);
             }
         }
 

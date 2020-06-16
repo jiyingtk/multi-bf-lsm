@@ -13,7 +13,7 @@ bool HotnessInfos::Check(uint64_t freq, int bf_num)
         // }
         if (bf_nums[i] < bf_num)
         {
-            std::cout << "[hotness check]: failed in bf_num, i " << i << ", bf_num " << bf_nums[i] << ", used_num" << used_num << ", cur_bf_num " << bf_num << std::endl;
+            // std::cout << "[hotness check]: failed in bf_num, i " << i << ", bf_num " << bf_nums[i] << ", used_num" << used_num << ", cur_bf_num " << bf_num << std::endl;
             return false;
         }
     }

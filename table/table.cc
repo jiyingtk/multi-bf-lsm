@@ -302,11 +302,9 @@ namespace leveldb
             int i;
             for (i = 0; i < n; i++) {
                 blocks[i].data = tableMetaData->filter_data[i];
+                tableMetaData->filter_data[i] = Slice();
                 blocks[i].heap_allocated = true;
                 blocks[i].cachable = true;
-            }
-            for (; i < tableMetaData->filter_num; i++) {
-                delete [] tableMetaData->filter_data[i].data();
             }
         }
         else if (!ReadBlocks(rep_->file, opt, filter_handles, blocks, n).ok())
