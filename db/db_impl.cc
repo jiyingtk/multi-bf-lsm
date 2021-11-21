@@ -37,6 +37,9 @@
 #include "util/stop_watch.h"
 unsigned long long filter_mem_space = 0;
 unsigned long long filter_num = 0;
+unsigned long long table_meta_space = 0;
+unsigned long long block_cache_hit = 0, bc_hit_prev = 0;
+unsigned long long block_cache_count = 0, bc_count_prev = 0;
 namespace leveldb {
 
 const int kNumNonTableCacheFiles = 10;
@@ -1661,7 +1664,12 @@ bool DBImpl::GetProperty(const Slice& property, std::string* value) {
 	stats_sum += stats_[level].micros;
       }
     }
-    snprintf(buf,sizeof(buf),"filter mem space overhead:%llu filter_num:%llu \n",filter_mem_space,filter_num);
+    unsigned long long tmp_hit = block_cache_hit - bc_hit_prev, tmp_count = block_cache_count - bc_count_prev;
+    bc_hit_prev = block_cache_hit;
+    bc_count_prev = block_cache_count;
+    snprintf(buf,sizeof(buf),"filter mem space overhead:%llu filter_num:%llu table meta mem overhead:%llu \n",filter_mem_space,filter_num,table_meta_space);
+    value->append(buf);
+    snprintf(buf,sizeof(buf),"block cache count:%llu hit:%llu hit rate:%lf, phase hit rate:%lf \n", block_cache_count, block_cache_hit, block_cache_count == 0 ? 0.0 : block_cache_hit * 1.0 / block_cache_count, tmp_count == 0 ? 0 : tmp_hit * 1.0 / tmp_count);
     value->append(buf);
     if(statis_){
 	if(stats_sum != 0){

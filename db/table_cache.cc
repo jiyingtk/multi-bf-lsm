@@ -12,6 +12,8 @@
 extern bool multi_queue_init;
 
 // #define DEBUG_HOTNESS_INHERIT
+FILE *hot_dev = fopen("hotness_dev.txt", "w");
+long long hot_counter = 0;
 
 namespace leveldb
 {
@@ -284,6 +286,11 @@ Status TableCache::FindTable(uint64_t file_number, uint64_t file_size,
         total_freq += freqs[i];
 
       #ifdef DEBUG_HOTNESS_INHERIT
+	double freq_deviation = freqs[i] == 0 ? 0 : (max_freq - freqs[i]) * 1.0/freqs[i];
+        fprintf(hot_dev, "%lf,", freq_deviation);
+	if (hot_counter++ % 100 == 0)
+		fflush(hot_dev);
+
         int filter_num = cache_->AllocFilterNums(freqs[i]);
         tableMetaData->load_filter_num[i] = filter_num;
         std::cout << "," << filter_num << ")";

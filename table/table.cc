@@ -17,13 +17,17 @@
 #include "util/mutexlock.h"
 #include <iostream>
 #include <list>
-#include <boost/config/detail/posix_features.hpp>
-// #include <boost/config/posix_features.hpp>
+//#include <boost/config/detail/posix_features.hpp>
+ #include <boost/config/posix_features.hpp>
 
 
 //filter memory space overhead
 extern unsigned long long filter_mem_space;
 extern unsigned long long filter_num;
+extern unsigned long long table_meta_space;
+extern unsigned long long block_cache_hit;
+extern unsigned long long block_cache_count;
+
 extern bool multi_queue_init;
 namespace leveldb
 {
@@ -125,6 +129,7 @@ namespace leveldb
             if (s.ok())
             {
                 index_block = new Block(contents);
+		table_meta_space += index_block->size();
             }
         }
 
@@ -747,10 +752,12 @@ namespace leveldb
                 EncodeFixed64(cache_key_buffer + 8, handle.offset());
                 Slice key(cache_key_buffer, sizeof(cache_key_buffer));
                 cache_handle = block_cache->Lookup(key);
+		block_cache_count++;
                 if (cache_handle != NULL)
                 {
                     block = reinterpret_cast<Block *>(block_cache->Value(cache_handle));
                     MeasureTime(Statistics::GetStatistics().get(), Tickers::BLOCKREADER_CACHE_TIME, Env::Default()->NowMicros() - start_micros);
+		    block_cache_hit++;
                 }
                 else
                 {

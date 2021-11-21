@@ -459,23 +459,29 @@ namespace leveldb
             queue<HandlePair> q;
 
             mutex_.lock();
+	    double avg_freqs[32];
             for(int i = 0 ; i < lrus_num_; i++)
             {
+		long long freq_count = 0, freq_sum = 0;
                 for (LRUQueueHandle *e = lrus_[i].next; e != &lrus_[i]; )
                 {
                     if (e->value_id != 0) {
                         leveldb::TableAndFile *tf = reinterpret_cast<leveldb::TableAndFile *>(e->value);
                         HandlePair hp = {(uint32_t) tf->file_number, e->value_id, e->fre_count, e->queue_id};
                         q.push(hp);
+			
+			freq_count += 1;
+			freq_sum += e->fre_count;
                     }
 
                     LRUQueueHandle *next = e->next;
                     e = next;
                 }
+		avg_freqs[i] = freq_count == 0 ? 0 : freq_sum * 1.0 / freq_count;
             }
             mutex_.unlock();
 
-            char name_buf[100];
+            char name_buf[256];
             snprintf(name_buf, sizeof(name_buf), "/freq_info");
             std::string freq_info_fn = dbname_ + name_buf;
             FILE *fp = fopen(freq_info_fn.data(), "wb");
@@ -487,6 +493,12 @@ namespace leveldb
             }
 
             fclose(fp);
+
+	    int idx = 0;
+	    for(int i = 0 ; i < lrus_num_; i++) {
+		idx += snprintf(name_buf+idx, sizeof(name_buf) - idx, "%lf,", avg_freqs[i]);
+	    }
+	    fprintf(stderr, "multiqueue avg freq of each queue: %s\n", name_buf);
         }
 
         void MultiQueue::restore_all() {
