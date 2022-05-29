@@ -8,7 +8,6 @@
 #include <stddef.h>
 
 #include "leveldb/statistics.h"
-#include "leveldb/hotness.h"
 
 namespace leveldb {
 
@@ -26,50 +25,72 @@ class Snapshot;
 enum CompressionType {
   // NOTE: do not change the values of existing entries, as these are
   // part of the persistent format on disk.
-  kNoCompression     = 0x0,
+  kNoCompression = 0x0,
   kSnappyCompression = 0x1
 };
-typedef struct OptionExp{
-    bool seek_compaction_;
-    bool no_cache_io_;
-    int lrus_num_;
-    int base_num;
-    int key_value_size;
-    uint64_t life_time;
-    double filter_capacity_ratio;
-    bool findAllTable;
-    bool setFreCountInCompaction;
-    double force_shrink_ratio;
-    double slow_shrink_ratio;
-    double change_ratio;
-    int log_base;
-    int init_filter_nums;
-    std::shared_ptr<Statistics> stats_;
-    double slow_ratio;
-    int size_ratio;
-    mutable bool add_filter;
-    uint64_t fp_stat_num;
-    double l0_base_ratio;
-    bool force_disable_compaction;
-    uint64_t freq_divide_size;
-    uint64_t region_divide_size;
-    size_t kFilterBaseLg;
-    bool force_delete_level0_file;
-    int run_mode;
-    bool cache_use_real_size;
-    double region_merge_threshold;
-    bool useLRUCache;
-    bool should_recovery_hotness;
+typedef struct OptionExp {
+  bool seek_compaction_;
+  bool no_cache_io_;
+  int lrus_num_;
+  int base_num;
+  int key_value_size;
+  uint64_t life_time;
+  double filter_capacity_ratio;
+  bool findAllTable;
+  bool setFreCountInCompaction;
+  double force_shrink_ratio;
+  double slow_shrink_ratio;
+  double change_ratio;
+  int log_base;
+  int init_filter_nums;
+  std::shared_ptr<Statistics> stats_;
+  double slow_ratio;
+  int size_ratio;
+  mutable bool add_filter;
+  uint64_t fp_stat_num;
+  double l0_base_ratio;
+  bool force_disable_compaction;
+  uint64_t freq_divide_size;
+  uint64_t region_divide_size;
+  size_t kFilterBaseLg;
+  bool force_delete_level0_file;
+  int run_mode;
+  bool cache_use_real_size;
+  double region_merge_threshold;
+  bool useLRUCache;
+  bool should_recovery_hotness;
 
-    OptionExp():no_cache_io_(false),seek_compaction_(false),key_value_size(1000),stats_(nullptr),
-    filter_capacity_ratio(1.0),base_num(64),life_time(50),findAllTable(false),
-    setFreCountInCompaction(false), freq_divide_size(8192), region_divide_size(8192), //2097152(2MB), 134217728(128MB)
-    force_shrink_ratio(1.1),slow_shrink_ratio(0.95),change_ratio(0.001),log_base(3),
-    init_filter_nums(2),slow_ratio(0.5),size_ratio(2),add_filter(true),fp_stat_num(10000),
-    l0_base_ratio(1.0),force_disable_compaction(false),kFilterBaseLg(16), 
-    force_delete_level0_file(false), run_mode(0), cache_use_real_size(true),
-    region_merge_threshold(1.0),useLRUCache(false),should_recovery_hotness(false){};
-}OptionExp;
+  OptionExp()
+      : no_cache_io_(false),
+        seek_compaction_(false),
+        key_value_size(1000), // to estimate size of cached Bloom filters
+        stats_(nullptr),
+        filter_capacity_ratio(1.0),
+        base_num(8),
+        life_time(20000),
+        findAllTable(false),
+        setFreCountInCompaction(false),
+        freq_divide_size(4194304),  // should be a multiple of the region_divide_size, often set equal to the region_divide_size
+        region_divide_size(4194304),  // 4MB
+        force_shrink_ratio(1.1),
+        slow_shrink_ratio(0.95),
+        change_ratio(0.0001),
+        log_base(3),
+        init_filter_nums(2),
+        slow_ratio(0.7),
+        size_ratio(10),
+        add_filter(true),
+        fp_stat_num(10000),
+        l0_base_ratio(1.0),
+        force_disable_compaction(false),
+        kFilterBaseLg(16),
+        force_delete_level0_file(false),
+        run_mode(0),
+        cache_use_real_size(false),
+        region_merge_threshold(1.0),
+        useLRUCache(false),
+        should_recovery_hotness(false){};
+} OptionExp;
 // Options to control the behavior of a database (passed to DB::Open)
 struct Options {
   // -------------------
@@ -206,7 +227,7 @@ struct ReadOptions {
   // verified against corresponding checksums.
   // Default: false
   bool verify_checksums;
-  bool isLevel0;  //new file isLevel0?
+  bool isLevel0;  // new file isLevel0?
   mutable int file_level;
   // Should the data read for this iteration be cached in memory?
   // Callers may wish to set this field to false for bulk scans.
@@ -218,20 +239,22 @@ struct ReadOptions {
   mutable unsigned short access_compacted_file_nums;
   mutable double total_fpr;
   mutable uint64_t file_number;
-  mutable HotnessInfos hot_infos;
- 
+
   // If "snapshot" is non-NULL, read as of the supplied snapshot
   // (which must belong to the DB that is being read and which must
   // not have been released).  If "snapshot" is NULL, use an implicit
   // snapshot of the state at the beginning of this read operation.
   // Default: NULL
   const Snapshot* snapshot;
-  
+
   ReadOptions()
-      : verify_checksums(false),isLevel0(false),file_level(1),
+      : verify_checksums(false),
+        isLevel0(false),
+        file_level(1),
         fill_cache(true),
-        snapshot(NULL),read_file_nums(0),total_fpr(0) {
-  }
+        snapshot(NULL),
+        read_file_nums(0),
+        total_fpr(0) {}
 };
 
 // Options that control write operations
@@ -254,9 +277,7 @@ struct WriteOptions {
   // Default: false
   bool sync;
 
-  WriteOptions()
-      : sync(false) {
-  }
+  WriteOptions() : sync(false) {}
 };
 
 }  // namespace leveldb

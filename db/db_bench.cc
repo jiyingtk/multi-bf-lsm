@@ -101,7 +101,7 @@ static int FLAGS_open_files = 0;
 
 // Bloom filter bits per key.
 // Negative means use default settings.
-static int FLAGS_bloom_bits = -1;
+static int FLAGS_bloom_bits = 4;
 
 // If true, do not destroy the existing database.  If you set this
 // flag and also specify a benchmark that wants a fresh database, that
@@ -313,7 +313,7 @@ struct ThreadState {
 };
 
 }  // namespace
-int bits_per_key_per_filters[]={4,4,4,0};
+
 class Benchmark {
  private:
   Cache* cache_;
@@ -403,9 +403,6 @@ class Benchmark {
  public:
   Benchmark()
   : cache_(FLAGS_cache_size >= 0 ? NewLRUCache(FLAGS_cache_size) : NULL),
-    filter_policy_(FLAGS_bloom_bits >= 0
-                   ? NewBloomFilterPolicy(bits_per_key_per_filters,FLAGS_bloom_bits)
-                   : NULL),
     db_(NULL),
     num_(FLAGS_num),
     value_size_(FLAGS_value_size),
@@ -716,8 +713,20 @@ class Benchmark {
     options.max_file_size = FLAGS_max_file_size;
     options.block_size = FLAGS_block_size;
     options.max_open_files = FLAGS_open_files;
-    options.filter_policy = filter_policy_;
     options.reuse_logs = FLAGS_reuse_logs;
+
+    // extra options for ElastcBF
+    options.opEp_.no_cache_io_ = true; // Direct_IO
+    options.opEp_.filter_capacity_ratio = FLAGS_bloom_bits;
+
+    int bits_per_keys[] = {4, 4, 4, 4, 4, 4, 0};
+    filter_policy_ = leveldb::NewBloomFilterPolicy(bits_per_keys, FLAGS_bloom_bits);
+    options.filter_policy = filter_policy_;
+    options.opEp_.init_filter_nums = 2;
+    options.opEp_.lrus_num_ = 6 + 1;
+
+    options.opEp_.stats_ = leveldb::CreateDBStatistics();
+    
     Status s = DB::Open(options, FLAGS_db, &db_);
     if (!s.ok()) {
       fprintf(stderr, "open error: %s\n", s.ToString().c_str());

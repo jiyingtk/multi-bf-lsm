@@ -160,6 +160,7 @@ void *FilterBlockReader::KeyMayMatch_Thread(void* arg)
 	//     }
 	//     start_matches[id] = false;
 	// }
+  return NULL;
 }
 
 

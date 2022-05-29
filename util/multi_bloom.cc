@@ -333,6 +333,7 @@ class MultiFilter : public FilterPolicy {
                   Tickers::CHILD_FILTER_OTHER_TIME,
                   Env::Default()->NowMicros() - start_micros);
     }
+    return NULL;
   }
   explicit MultiFilter(int bits_per_key_per_filter[], int bits_per_key)
       : bits_per_key_(bits_per_key) {
@@ -372,30 +373,30 @@ class MultiFilter : public FilterPolicy {
     }
 #endif
 
-    for (std::vector<ChildPolicy *>::const_iterator iter = filters.begin();
-         iter != filters.end(); iter++) {
-      int *temp_id = new int(i);
-      cpu_set_t cpuset;
-      CPU_ZERO(&cpuset);
-      CPU_SET(base_cpu_id + i, &cpuset);
+    // for (std::vector<ChildPolicy *>::const_iterator iter = filters.begin();
+    //      iter != filters.end(); iter++) {
+    //   int *temp_id = new int(i);
+    //   cpu_set_t cpuset;
+    //   CPU_ZERO(&cpuset);
+    //   CPU_SET(base_cpu_id + i, &cpuset);
 
-      if (pthread_create(pids_ + i, NULL, MultiFilter::CreateFilter_T,
-                         (void *)(temp_id)) != 0) {
-        perror("create thread ");
-      }
-      snprintf(name_buf, sizeof name_buf, "filter:bg%d", i);
-      name_buf[sizeof name_buf - 1] = '\0';
-      pthread_setname_np(pids_[i], name_buf);
+    //   if (pthread_create(pids_ + i, NULL, MultiFilter::CreateFilter_T,
+    //                      (void *)(temp_id)) != 0) {
+    //     perror("create thread ");
+    //   }
+    //   snprintf(name_buf, sizeof name_buf, "filter:bg%d", i);
+    //   name_buf[sizeof name_buf - 1] = '\0';
+    //   pthread_setname_np(pids_[i], name_buf);
 
-      if (base_cpu_id + filters.size() < cpu_count) {
-        int s = pthread_setaffinity_np(pids_[i], sizeof(cpu_set_t), &cpuset);
-        if (s != 0) {
-          handle_error_en(s, "pthread_setaffinity_np");
-        }
-      }
+    //   if (base_cpu_id + filters.size() < cpu_count) {
+    //     int s = pthread_setaffinity_np(pids_[i], sizeof(cpu_set_t), &cpuset);
+    //     if (s != 0) {
+    //       handle_error_en(s, "pthread_setaffinity_np");
+    //     }
+    //   }
 
-      cfas[i++].ch = *iter;
-    }
+    //   cfas[i++].ch = *iter;
+    // }
   }
 
   virtual void CreateFilter(const Slice *keys, int n, std::string *dst) const {
@@ -408,28 +409,36 @@ class MultiFilter : public FilterPolicy {
   }
   virtual void CreateFilter(const Slice *keys, int n,
                             std::list<std::string> &dsts) const {
-    CreateFilterArg *cfa = cfas;
-    keys_ = keys;
-    n_ = n;
     int i = 0;
-    uint64_t start_micros = Env::Default()->NowMicros();
-    for (auto dsts_iter = dsts.begin(); dsts_iter != dsts.end(); ++dsts_iter) {
-      // pthread_mutex_lock(&filter_mutexs_[i]);
-      cfa->dst = &(*dsts_iter);
-      filled_[i] = true;
-      // pthread_mutex_unlock(&filter_mutexs_[i]);
-      // pthread_cond_signal(&filter_conds_[i++]);
-      cfa++;
-      i++;
+
+    for (auto dsts_iter = dsts.begin(); dsts_iter != dsts.end();
+         ++dsts_iter, ++i) {
+      filters[i]->CreateFilter(keys, n, &(*dsts_iter));
     }
-    MeasureTime(Statistics::GetStatistics().get(), Tickers::FILTER_LOCK_TIME,
-                Env::Default()->NowMicros() - start_micros);
-    start_micros = Env::Default()->NowMicros();
-    while (curr_completed_filter_num_ != filter_num_)
-      ;
-    MeasureTime(Statistics::GetStatistics().get(), Tickers::FILTER_WAIT_TIME,
-                Env::Default()->NowMicros() - start_micros);
-    curr_completed_filter_num_ = 0;
+
+    // CreateFilterArg *cfa = cfas;
+    // keys_ = keys;
+    // n_ = n;
+    // int i = 0;
+    // uint64_t start_micros = Env::Default()->NowMicros();
+    // for (auto dsts_iter = dsts.begin(); dsts_iter != dsts.end(); ++dsts_iter)
+    // {
+    //   // pthread_mutex_lock(&filter_mutexs_[i]);
+    //   cfa->dst = &(*dsts_iter);
+    //   filled_[i] = true;
+    //   // pthread_mutex_unlock(&filter_mutexs_[i]);
+    //   // pthread_cond_signal(&filter_conds_[i++]);
+    //   cfa++;
+    //   i++;
+    // }
+    // MeasureTime(Statistics::GetStatistics().get(), Tickers::FILTER_LOCK_TIME,
+    //             Env::Default()->NowMicros() - start_micros);
+    // start_micros = Env::Default()->NowMicros();
+    // while (curr_completed_filter_num_ != filter_num_)
+    //   ;
+    // MeasureTime(Statistics::GetStatistics().get(), Tickers::FILTER_WAIT_TIME,
+    //             Env::Default()->NowMicros() - start_micros);
+    // curr_completed_filter_num_ = 0;
   }
   virtual bool KeyMayMatch(const Slice &key, const Slice &bloom_filter,
                            int id) const {
@@ -504,12 +513,11 @@ class MultiFilter : public FilterPolicy {
   virtual ~MultiFilter() {
     int i = 0;
     end_thread = true;
-    for (auto iter = filters.begin(); !filters.empty();) {
-      delete *iter;
-      iter = filters.erase(iter);
-      pthread_join(pids_[i++], NULL);
-    }
-    fprintf(stderr, "Multi_bloom_filter destructor is called\n");
+    // for (auto iter = filters.begin(); !filters.empty();) {
+    //   delete *iter;
+    //   iter = filters.erase(iter);
+    //   pthread_join(pids_[i++], NULL);
+    // }
   }
 };
 

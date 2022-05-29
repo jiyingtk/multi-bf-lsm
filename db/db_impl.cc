@@ -191,7 +191,6 @@ DBImpl::DBImpl(const Options& raw_options, const std::string& dbname)
       new VersionSet(dbname_, &options_, table_cache_, &internal_comparator_);
   leveldb::directIO_of_RandomAccess = options_.opEp_.no_cache_io_;
 
-  printf("DBImpl l0sizeraito %lf\n", options_.opEp_.l0_base_ratio);
   fp_reqs = fp_io = fp_nums = read_nums = filter_info = 0;
   fp_sum = 0;
   last_fp = 0;

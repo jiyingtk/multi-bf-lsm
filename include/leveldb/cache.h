@@ -21,7 +21,6 @@
 #include <stdint.h>
 
 #include "leveldb/slice.h"
-#include "leveldb/hotness.h"
 
 namespace leveldb {
 
@@ -30,18 +29,21 @@ class Cache;
 // Create a new cache with a fixed size capacity.  This implementation
 // of Cache uses a least-recently-used eviction policy.
 extern Cache* NewLRUCache(size_t capacity);
-extern Cache *NewMultiQueue(const std::string& dbname, size_t capacity, int lrus_num, uint64_t life_time, double change_ratio, bool cache_use_real_size, bool should_recovery_hotness);
+extern Cache* NewMultiQueue(const std::string& dbname, size_t capacity,
+                            int lrus_num, uint64_t life_time,
+                            double change_ratio, bool cache_use_real_size,
+                            bool should_recovery_hotness);
 
 class Cache {
  public:
-  Cache() { }
+  Cache() {}
 
   // Destroys all existing entries by calling the "deleter"
   // function that was passed to the constructor.
   virtual ~Cache();
 
   // Opaque handle to an entry stored in the cache.
-  struct Handle { };
+  struct Handle {};
 
   // Insert a mapping from key->value into the cache and assign it
   // the specified charge against the total cache capacity.
@@ -53,7 +55,8 @@ class Cache {
   // When the inserted entry is no longer needed, the key and
   // value will be passed to "deleter".
   virtual Handle* Insert(const Slice& key, void* value, size_t charge,
-                         void (*deleter)(const Slice& key, void* value, const bool realDelete)) = 0;
+                         void (*deleter)(const Slice& key, void* value,
+                                         const bool realDelete)) = 0;
 
   // If the cache has no mapping for "key", returns NULL.
   //
@@ -61,14 +64,13 @@ class Cache {
   // must call this->Release(handle) when the returned mapping is no
   // longer needed.
   virtual Handle* Lookup(const Slice& key) = 0;
-  virtual Handle* Lookup(const Slice& key,bool Get) {return NULL;}
-  virtual uint64_t LookupFreCount(const Slice & key) {}
-  virtual void SetFreCount(const Slice & key,uint64_t freCount) {}
-  virtual int AllocFilterNums(int freq) {}
-  virtual void CheckUpperLevelHotness(Handle *handle, HotnessInfos &hot_infos) {}
+  virtual Handle* Lookup(const Slice& key, bool Get) { return NULL; }
+  virtual uint64_t LookupFreCount(const Slice& key) { return 0; }
+  virtual void SetFreCount(const Slice& key, uint64_t freCount) {}
+  virtual int AllocFilterNums(int freq) { return 0; }
 
   virtual void SupportCacheDeletedEntry(bool flag) {}
-  
+
   // Release a mapping returned by a previous Lookup().
   // REQUIRES: handle must not have been released yet.
   // REQUIRES: handle must have been returned by a method on *this.
@@ -101,12 +103,13 @@ class Cache {
   // Return an estimate of the combined charges of all elements stored in the
   // cache.
   virtual size_t TotalCharge() const = 0;
-  virtual std::string LRU_Status(){return std::string("LRU_Status");}
-  virtual void addCurrentTime(){}
-  virtual uint64_t GetLRUFreCount() const{return 0;} 
-  virtual bool IsCacheFull() const{return false;} 
+  virtual std::string LRU_Status() { return std::string("LRU_Status"); }
+  virtual void addCurrentTime() {}
+  virtual uint64_t GetLRUFreCount() const { return 0; }
+  virtual bool IsCacheFull() const { return false; }
   virtual void TurnOnAdjustment() {}
   virtual void TurnOffAdjustment() {}
+
  private:
   void LRU_Remove(Handle* e);
   void LRU_Append(Handle* e);

@@ -216,8 +216,6 @@ class MultiQueue : public Cache {
   uint64_t LookupFreCount(const Slice &key);
   void SetFreCount(const Slice &key, uint64_t freCount);
   virtual int AllocFilterNums(int freq) override;
-  void CheckUpperLevelHotness(Cache::Handle *handle,
-                              HotnessInfos &hot_infos) override;
 
   void Release(Cache::Handle *handle);
   virtual Handle *Insert(const Slice &key, void *value, size_t charge,
@@ -321,11 +319,6 @@ MultiQueue::MultiQueue(const std::string &dbname, size_t capacity, int lrus_num,
     pthread_setname_np(pids_[i], name_buf);
   }
 
-#ifdef ADJUST_UPPER_FREQ
-  cout << "enable adjust_upper_freq" << endl;
-#else
-  cout << "disable adjust_upper_freq" << endl;
-#endif
 }
 
 MultiQueue::~MultiQueue() {
@@ -337,9 +330,9 @@ MultiQueue::~MultiQueue() {
   }
 
   mutex_.lock();
-  fprintf(stderr, "optimized expection_ is %lf\n", expection_);
-  fprintf(stderr, "check_hotness_failed_nums_ is %lu\n",
-          check_hotness_failed_nums_);
+  // fprintf(stderr, "optimized expection_ is %lf\n", expection_);
+  // fprintf(stderr, "check_hotness_failed_nums_ is %lu\n",
+  //         check_hotness_failed_nums_);
 
   for (int i = 0; i < lrus_num_; i++) {
     for (LRUQueueHandle *e = lrus_[i].next; e != &lrus_[i];) {
@@ -351,10 +344,10 @@ MultiQueue::~MultiQueue() {
       e = next;
     }
   }
-  fprintf(stderr, "multi_queue_init is %s, expection_ is %lf\n",
-          multi_queue_init ? "true" : "false", expection_);
-  for (int i = 0; i < 16; i++)
-    fprintf(stderr, "counters[%d] = %d\n", i, counters[i]);
+  // fprintf(stderr, "multi_queue_init is %s, expection_ is %lf\n",
+  //         multi_queue_init ? "true" : "false", expection_);
+  // for (int i = 0; i < 16; i++)
+  //   fprintf(stderr, "counters[%d] = %d\n", i, counters[i]);
   mutex_.unlock();
   delete[] lrus_;
 }
@@ -487,12 +480,12 @@ void MultiQueue::backup_all() {
 
   fclose(fp);
 
-  int idx = 0;
-  for (int i = 0; i < lrus_num_; i++) {
-    idx +=
-        snprintf(name_buf + idx, sizeof(name_buf) - idx, "%lf,", avg_freqs[i]);
-  }
-  fprintf(stderr, "multiqueue avg freq of each queue: %s\n", name_buf);
+  // int idx = 0;
+  // for (int i = 0; i < lrus_num_; i++) {
+  //   idx +=
+  //       snprintf(name_buf + idx, sizeof(name_buf) - idx, "%lf,", avg_freqs[i]);
+  // }
+  // fprintf(stderr, "multiqueue avg freq of each queue: %s\n", name_buf);
 }
 
 void MultiQueue::restore_all() {
@@ -934,32 +927,6 @@ int MultiQueue::AllocFilterNums(int freq) {
   }
   // return last_ + 1 < lrus_num_ ? last_ + 1 : last_;
   return last_;
-}
-
-void MultiQueue::CheckUpperLevelHotness(Cache::Handle *handle,
-                                        HotnessInfos &hot_infos) {
-  LRUQueueHandle *h = (LRUQueueHandle *)handle;
-  if (hot_infos.used_num == 0) {
-    hot_infos.Insert(h->key_data, h->fre_count, h->queue_id);
-  } else {
-    bool pass = hot_infos.Check(h->fre_count, h->queue_id);
-#ifdef ADJUST_UPPER_FREQ
-    if (!pass) {
-      check_hotness_failed_nums_++;
-      int i;
-      mutex_.lock();
-      for (i = 0; i < hot_infos.used_num; i++) {
-        Slice key(hot_infos.handle_keys[i], 12);
-        uint32_t hash = HashSlice(key);
-        LRUQueueHandle *pre_handle = table_.Lookup(key, hash);
-        if (pre_handle->fre_count < h->fre_count)
-          pre_handle->fre_count = h->fre_count;
-      }
-      mutex_.unlock();
-    }
-#endif
-    hot_infos.Insert(h->key_data, h->fre_count, h->queue_id);
-  }
 }
 
 inline bool MultiQueue::IsCacheFull() const { return usage_ >= capacity_; }

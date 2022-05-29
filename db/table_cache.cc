@@ -14,8 +14,11 @@
 extern bool multi_queue_init;
 
 // #define DEBUG_HOTNESS_INHERIT
+
+#ifdef DEBUG_HOTNESS_INHERIT
 FILE *hot_dev = fopen("hotness_dev.txt", "w");
 long long hot_counter = 0;
+#endif
 
 namespace leveldb {
 bool directIO_of_RandomAccess = false;
@@ -472,7 +475,6 @@ Status TableCache::Get(const ReadOptions &options, uint64_t file_number,
       Slice key(buf, sizeof(buf));
       Cache::Handle *cache_handle = cache_->Lookup(key, true);
       if (cache_handle != NULL) {
-        cache_->CheckUpperLevelHotness(cache_handle, options.hot_infos);
         cache_->Release(cache_handle);
       }
     }

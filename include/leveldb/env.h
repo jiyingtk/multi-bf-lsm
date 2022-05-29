@@ -13,14 +13,16 @@
 #ifndef STORAGE_LEVELDB_INCLUDE_ENV_H_
 #define STORAGE_LEVELDB_INCLUDE_ENV_H_
 
-#include <string>
-#include <vector>
 #include <stdarg.h>
 #include <stdint.h>
+
+#include <string>
+#include <vector>
+
 #include "leveldb/status.h"
 
 namespace leveldb {
-extern bool directIO_of_RandomAccess ;
+extern bool directIO_of_RandomAccess;
 class FileLock;
 class Logger;
 class RandomAccessFile;
@@ -30,7 +32,7 @@ class WritableFile;
 
 class Env {
  public:
-  Env() { }
+  Env() {}
   virtual ~Env();
 
   // Return a default environment suitable for the current operating
@@ -59,10 +61,11 @@ class Env {
   //
   // The returned file may be concurrently accessed by multiple threads.
   virtual Status NewRandomAccessFile(const std::string& fname,
-                                     RandomAccessFile** result,bool direct_IO_flag = false) = 0;
+                                     RandomAccessFile** result,
+                                     bool direct_IO_flag = false) = 0;
 
   virtual Status NewBufferedRandomAccessFile(const std::string& fname,
-                                     RandomAccessFile** result) = 0;
+                                             RandomAccessFile** result) = 0;
   // Create an object that writes to a new file with the specified
   // name.  Deletes any existing file with the same name and creates a
   // new file.  On success, stores a pointer to the new file in
@@ -137,11 +140,7 @@ class Env {
   enum Priority { BOTTOM, LOW, HIGH, TOTAL };
 
   // Priority for requesting bytes in rate limiter scheduler
-  enum IOPriority {
-    IO_LOW = 0,
-    IO_HIGH = 1,
-    IO_TOTAL = 2
-  };
+  enum IOPriority { IO_LOW = 0, IO_HIGH = 1, IO_TOTAL = 2 };
 
   // Arrange to run "(*function)(arg)" once in a background thread.
   //
@@ -149,9 +148,7 @@ class Env {
   // added to the same Env may run concurrently in different threads.
   // I.e., the caller may not assume that background work items are
   // serialized.
-  virtual void Schedule(
-      void (*function)(void* arg),
-      void* arg) = 0;
+  virtual void Schedule(void (*function)(void* arg), void* arg) = 0;
 
   // Start a new thread, invoking "function(arg)" within the new thread.
   // When "function(arg)" returns, the thread will be destroyed.
@@ -182,7 +179,7 @@ class Env {
 // A file abstraction for reading sequentially through a file
 class SequentialFile {
  public:
-  SequentialFile() { }
+  SequentialFile() {}
   virtual ~SequentialFile();
 
   // Read up to "n" bytes from the file.  "scratch[0..n-1]" may be
@@ -213,7 +210,7 @@ class SequentialFile {
 // A file abstraction for randomly reading the contents of a file.
 class RandomAccessFile {
  public:
-  RandomAccessFile(){ }
+  RandomAccessFile() {}
   virtual ~RandomAccessFile();
 
   // Read up to "n" bytes from the file starting at "offset".
@@ -227,15 +224,15 @@ class RandomAccessFile {
   // Safe for concurrent use by multiple threads.
   virtual Status Read(uint64_t offset, size_t n, Slice* result,
                       char* scratch) const = 0;
- virtual Status Reads(uint64_t offset, size_t n, Slice results[],
-                      char* scratch[],size_t lens[],int num) const{
-			  fprintf(stderr,"not implemented!\n");
-		    }
+  virtual Status Reads(uint64_t offset, size_t n, Slice results[],
+                       char* scratch[], size_t lens[], int num) const {
+    return Status::NotSupported("not implemented Reads");
+  }
+
  private:
   // No copying allowed
   RandomAccessFile(const RandomAccessFile&);
   void operator=(const RandomAccessFile&);
-  
 };
 
 // A file abstraction for sequential writing.  The implementation
@@ -243,7 +240,7 @@ class RandomAccessFile {
 // at a time to the file.
 class WritableFile {
  public:
-  WritableFile() { }
+  WritableFile() {}
   virtual ~WritableFile();
 
   virtual Status Append(const Slice& data) = 0;
@@ -260,7 +257,7 @@ class WritableFile {
 // An interface for writing log messages.
 class Logger {
  public:
-  Logger() { }
+  Logger() {}
   virtual ~Logger();
 
   // Write an entry to the log file with the specified format.
@@ -272,12 +269,12 @@ class Logger {
   void operator=(const Logger&);
 };
 
-
 // Identifies a locked file.
 class FileLock {
  public:
-  FileLock() { }
+  FileLock() {}
   virtual ~FileLock();
+
  private:
   // No copying allowed
   FileLock(const FileLock&);
@@ -286,9 +283,9 @@ class FileLock {
 
 // Log the specified data to *info_log if info_log is non-NULL.
 extern void Log(Logger* info_log, const char* format, ...)
-#   if defined(__GNUC__) || defined(__clang__)
-    __attribute__((__format__ (__printf__, 2, 3)))
-#   endif
+#if defined(__GNUC__) || defined(__clang__)
+    __attribute__((__format__(__printf__, 2, 3)))
+#endif
     ;
 
 // A utility routine: write "data" to the named file.
@@ -305,7 +302,7 @@ extern Status ReadFileToString(Env* env, const std::string& fname,
 class EnvWrapper : public Env {
  public:
   // Initialize an EnvWrapper that delegates all calls to *t
-  explicit EnvWrapper(Env* t) : target_(t) { }
+  explicit EnvWrapper(Env* t) : target_(t) {}
   virtual ~EnvWrapper();
 
   // Return the target to which this Env forwards all calls
@@ -315,12 +312,14 @@ class EnvWrapper : public Env {
   Status NewSequentialFile(const std::string& f, SequentialFile** r) {
     return target_->NewSequentialFile(f, r);
   }
-  Status NewRandomAccessFile(const std::string& f, RandomAccessFile** r,bool direct_IO_flag=false) {
-    return target_->NewRandomAccessFile(f, r,direct_IO_flag);
+  Status NewRandomAccessFile(const std::string& f, RandomAccessFile** r,
+                             bool direct_IO_flag = false) {
+    return target_->NewRandomAccessFile(f, r, direct_IO_flag);
   }
-  Status NewBufferedRandomAccessFile(const std::string& f, RandomAccessFile** r){
-	return target_->NewBufferedRandomAccessFile(f,r);
- }
+  Status NewBufferedRandomAccessFile(const std::string& f,
+                                     RandomAccessFile** r) {
+    return target_->NewBufferedRandomAccessFile(f, r);
+  }
   Status NewWritableFile(const std::string& f, WritableFile** r) {
     return target_->NewWritableFile(f, r);
   }
@@ -344,9 +343,7 @@ class EnvWrapper : public Env {
     return target_->LockFile(f, l);
   }
   Status UnlockFile(FileLock* l) { return target_->UnlockFile(l); }
-  void Schedule(void (*f)(void*), void* a) {
-    return target_->Schedule(f, a);
-  }
+  void Schedule(void (*f)(void*), void* a) { return target_->Schedule(f, a); }
   void StartThread(void (*f)(void*), void* a) {
     return target_->StartThread(f, a);
   }
@@ -356,12 +353,11 @@ class EnvWrapper : public Env {
   virtual Status NewLogger(const std::string& fname, Logger** result) {
     return target_->NewLogger(fname, result);
   }
-  uint64_t NowMicros() {
-    return target_->NowMicros();
-  }
+  uint64_t NowMicros() { return target_->NowMicros(); }
   void SleepForMicroseconds(int micros) {
     target_->SleepForMicroseconds(micros);
   }
+
  private:
   Env* target_;
 };
