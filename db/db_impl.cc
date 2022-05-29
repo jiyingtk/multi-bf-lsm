@@ -4,12 +4,15 @@
 
 #include "db/db_impl.h"
 
+#include <stdint.h>
+#include <stdio.h>
+#include <table/filter_block.h>
+
 #include <algorithm>
 #include <set>
 #include <string>
-#include <stdint.h>
-#include <stdio.h>
 #include <vector>
+
 #include "db/builder.h"
 #include "db/db_iter.h"
 #include "db/dbformat.h"
@@ -22,6 +25,7 @@
 #include "db/write_batch_internal.h"
 #include "leveldb/db.h"
 #include "leveldb/env.h"
+#include "leveldb/statistics.h"
 #include "leveldb/status.h"
 #include "leveldb/table.h"
 #include "leveldb/table_builder.h"
@@ -29,11 +33,9 @@
 #include "table/block.h"
 #include "table/merger.h"
 #include "table/two_level_iterator.h"
-#include <table/filter_block.h>
 #include "util/coding.h"
 #include "util/logging.h"
 #include "util/mutexlock.h"
-#include "leveldb/statistics.h"
 #include "util/stop_watch.h"
 unsigned long long filter_mem_space = 0;
 unsigned long long filter_num = 0;
@@ -52,7 +54,7 @@ struct DBImpl::Writer {
   bool done;
   port::CondVar cv;
 
-  explicit Writer(port::Mutex* mu) : cv(mu) { }
+  explicit Writer(port::Mutex* mu) : cv(mu) {}
 };
 
 struct DBImpl::CompactionState {
@@ -78,18 +80,14 @@ struct DBImpl::CompactionState {
 
   uint64_t total_bytes;
 
-  Output* current_output() { return &outputs[outputs.size()-1]; }
+  Output* current_output() { return &outputs[outputs.size() - 1]; }
 
   explicit CompactionState(Compaction* c)
-      : compaction(c),
-        outfile(NULL),
-        builder(NULL),
-        total_bytes(0) {
-  }
+      : compaction(c), outfile(NULL), builder(NULL), total_bytes(0) {}
 };
 
 // Fix user-supplied options to be reasonable
-template <class T,class V>
+template <class T, class V>
 static void ClipToRange(T* ptr, V minvalue, V maxvalue) {
   if (static_cast<V>(*ptr) > maxvalue) *ptr = maxvalue;
   if (static_cast<V>(*ptr) < minvalue) *ptr = minvalue;
@@ -101,10 +99,10 @@ Options SanitizeOptions(const std::string& dbname,
   Options result = src;
   result.comparator = icmp;
   result.filter_policy = (src.filter_policy != NULL) ? ipolicy : NULL;
-  ClipToRange(&result.max_open_files,    64 + kNumNonTableCacheFiles, 200000);
-  ClipToRange(&result.write_buffer_size, 64<<10,                      1<<30);
-  ClipToRange(&result.max_file_size,     1<<20,                       1<<30);
-  ClipToRange(&result.block_size,        1<<10,                       4<<20);
+  ClipToRange(&result.max_open_files, 64 + kNumNonTableCacheFiles, 200000);
+  ClipToRange(&result.write_buffer_size, 64 << 10, 1 << 30);
+  ClipToRange(&result.max_file_size, 1 << 20, 1 << 30);
+  ClipToRange(&result.block_size, 1 << 10, 4 << 20);
   if (result.info_log == NULL) {
     // Open a log file in the same directory as the db
     src.env->CreateDir(dbname);  // In case it does not exist
@@ -116,15 +114,17 @@ Options SanitizeOptions(const std::string& dbname,
     }
   }
   if (result.block_cache == NULL) {
-    //result.block_cache = NewLRUCache(8 << 20);
-      result.block_cache = NULL;
+    // result.block_cache = NewLRUCache(8 << 20);
+    result.block_cache = NULL;
   }
 
   char name_buf[100];
   snprintf(name_buf, sizeof(name_buf), "/freq_info");
   std::string freq_info_fn = dbname + name_buf;
-  // result.opEp_.should_recovery_hotness = (access(freq_info_fn.c_str(), F_OK) != -1) && !result.opEp_.cache_use_real_size;
-  fprintf(stderr, "should recovery hotness: %s\n", (result.opEp_.should_recovery_hotness?"True":"False"));
+  // result.opEp_.should_recovery_hotness = (access(freq_info_fn.c_str(), F_OK)
+  // != -1) && !result.opEp_.cache_use_real_size;
+  fprintf(stderr, "should recovery hotness: %s\n",
+          (result.opEp_.should_recovery_hotness ? "True" : "False"));
 
 #ifdef Micros_Stat
   fprintf(stderr, "duration unit: us\n");
@@ -160,16 +160,25 @@ DBImpl::DBImpl(const Options& raw_options, const std::string& dbname)
   has_imm_.Release_Store(NULL);
 
   // Reserve ten files or so for other uses and give the rest to TableCache.
-  // const size_t table_cache_size = (size_t)((options_.max_open_files - kNumNonTableCacheFiles)*options_.opEp_.filter_capacity_ratio / 8 * 64 * 10000);
+  // const size_t table_cache_size = (size_t)((options_.max_open_files -
+  // kNumNonTableCacheFiles)*options_.opEp_.filter_capacity_ratio / 8 * 64 *
+  // 10000);
   size_t table_cache_size;
   if (options_.opEp_.cache_use_real_size) {
-    table_cache_size = (size_t)((options_.max_open_files - kNumNonTableCacheFiles)*options_.opEp_.filter_capacity_ratio / 8 * options_.max_file_size / options_.opEp_.key_value_size);
-  }
-  else {
-    if (options_.max_file_size > options_.opEp_.region_divide_size) 
-      table_cache_size = (size_t)((options_.max_open_files - kNumNonTableCacheFiles)*options_.opEp_.filter_capacity_ratio * options_.max_file_size / options_.opEp_.region_divide_size);
+    table_cache_size =
+        (size_t)((options_.max_open_files - kNumNonTableCacheFiles) *
+                 options_.opEp_.filter_capacity_ratio / 8 *
+                 options_.max_file_size / options_.opEp_.key_value_size);
+  } else {
+    if (options_.max_file_size > options_.opEp_.region_divide_size)
+      table_cache_size =
+          (size_t)((options_.max_open_files - kNumNonTableCacheFiles) *
+                   options_.opEp_.filter_capacity_ratio *
+                   options_.max_file_size / options_.opEp_.region_divide_size);
     else
-      table_cache_size = (size_t)((options_.max_open_files - kNumNonTableCacheFiles)*options_.opEp_.filter_capacity_ratio);
+      table_cache_size =
+          (size_t)((options_.max_open_files - kNumNonTableCacheFiles) *
+                   options_.opEp_.filter_capacity_ratio);
   }
 
   // if (options_.opEp_.useLRUCache) {
@@ -178,8 +187,8 @@ DBImpl::DBImpl(const Options& raw_options, const std::string& dbname)
 
   table_cache_ = new TableCache(dbname_, &options_, table_cache_size);
 
-  versions_ = new VersionSet(dbname_, &options_, table_cache_,
-                             &internal_comparator_);
+  versions_ =
+      new VersionSet(dbname_, &options_, table_cache_, &internal_comparator_);
   leveldb::directIO_of_RandomAccess = options_.opEp_.no_cache_io_;
 
   printf("DBImpl l0sizeraito %lf\n", options_.opEp_.l0_base_ratio);
@@ -192,36 +201,36 @@ DBImpl::DBImpl(const Options& raw_options, const std::string& dbname)
   fp_real_fpr_str.clear();
   fp_real_io_str.clear();
 
-  for (int i = 0; i < config::kNumLevels; i++)
-    get_latency_str[i].clear();
+  for (int i = 0; i < config::kNumLevels; i++) get_latency_str[i].clear();
 }
 
-void DBImpl::untilCompactionEnds()
- {
-    std::string preValue,afterValue;
-    int count = 0;
-    const int countMAX = 24000;
-    this->GetProperty("leveldb.num-files",&afterValue);
-    // std::cout<<afterValue<<std::endl;
-    //std::cout<<preValue<<std::endl;
-    while(preValue.compare(afterValue) != 0 && count < countMAX){
-      preValue = afterValue;
-      sleep(120);
-      this->GetProperty("leveldb.num-files",&afterValue);
-      count++;
-    }
-    std::cout<<"--- untilCompactionEnds will output ------------"<<std::endl;
-    if(count == countMAX){
-      fprintf(stderr,"Compaction is still running!\n");
-    }else{
-      fprintf(stderr,"no compaction!\n");
-    }
-    std::cout<<"\n--------------above are untilCompactionEnds output--------------\n"<<std::endl;
-    std::string stat_str;
-    if(count  > 3){
-	this->GetProperty("leveldb.stats",&stat_str);
-	std::cout<<stat_str<<std::endl;
-    }
+void DBImpl::untilCompactionEnds() {
+  std::string preValue, afterValue;
+  int count = 0;
+  const int countMAX = 24000;
+  this->GetProperty("leveldb.num-files", &afterValue);
+  // std::cout<<afterValue<<std::endl;
+  // std::cout<<preValue<<std::endl;
+  while (preValue.compare(afterValue) != 0 && count < countMAX) {
+    preValue = afterValue;
+    sleep(120);
+    this->GetProperty("leveldb.num-files", &afterValue);
+    count++;
+  }
+  std::cout << "--- untilCompactionEnds will output ------------" << std::endl;
+  if (count == countMAX) {
+    fprintf(stderr, "Compaction is still running!\n");
+  } else {
+    fprintf(stderr, "no compaction!\n");
+  }
+  std::cout
+      << "\n--------------above are untilCompactionEnds output--------------\n"
+      << std::endl;
+  std::string stat_str;
+  if (count > 3) {
+    this->GetProperty("leveldb.stats", &stat_str);
+    std::cout << stat_str << std::endl;
+  }
 }
 
 DBImpl::~DBImpl() {
@@ -252,8 +261,8 @@ DBImpl::~DBImpl() {
   if (owns_cache_) {
     delete options_.block_cache;
   }
- // FilterBlockReader::end_thread = true;
-  //AlignedBuffer::FreeAlignedBuffers();
+  // FilterBlockReader::end_thread = true;
+  // AlignedBuffer::FreeAlignedBuffers();
 }
 
 Status DBImpl::NewDB() {
@@ -309,7 +318,7 @@ void DBImpl::DeleteObsoleteFiles() {
   versions_->AddLiveFiles(&live);
 
   std::vector<std::string> filenames;
-  env_->GetChildren(dbname_, &filenames); // Ignoring errors on purpose
+  env_->GetChildren(dbname_, &filenames);  // Ignoring errors on purpose
   uint64_t number;
   FileType type;
   for (size_t i = 0; i < filenames.size(); i++) {
@@ -344,8 +353,7 @@ void DBImpl::DeleteObsoleteFiles() {
         if (type == kTableFile) {
           table_cache_->Evict(number);
         }
-        Log(options_.info_log, "Delete type=%d #%lld\n",
-            int(type),
+        Log(options_.info_log, "Delete type=%d #%lld\n", int(type),
             static_cast<unsigned long long>(number));
         env_->DeleteFile(dbname_ + "/" + filenames[i]);
       }
@@ -353,7 +361,7 @@ void DBImpl::DeleteObsoleteFiles() {
   }
 }
 
-Status DBImpl::Recover(VersionEdit* edit, bool *save_manifest) {
+Status DBImpl::Recover(VersionEdit* edit, bool* save_manifest) {
   mutex_.AssertHeld();
 
   // Ignore error from CreateDir since the creation of the DB is
@@ -378,8 +386,8 @@ Status DBImpl::Recover(VersionEdit* edit, bool *save_manifest) {
     }
   } else {
     if (options_.error_if_exists) {
-      return Status::InvalidArgument(
-          dbname_, "exists (error_if_exists is true)");
+      return Status::InvalidArgument(dbname_,
+                                     "exists (error_if_exists is true)");
     }
   }
 
@@ -454,8 +462,8 @@ Status DBImpl::RecoverLogFile(uint64_t log_number, bool last_log,
     Status* status;  // NULL if options_.paranoid_checks==false
     virtual void Corruption(size_t bytes, const Status& s) {
       Log(info_log, "%s%s: dropping %d bytes; %s",
-          (this->status == NULL ? "(ignoring error) " : ""),
-          fname, static_cast<int>(bytes), s.ToString().c_str());
+          (this->status == NULL ? "(ignoring error) " : ""), fname,
+          static_cast<int>(bytes), s.ToString().c_str());
       if (this->status != NULL && this->status->ok()) *this->status = s;
     }
   };
@@ -481,10 +489,9 @@ Status DBImpl::RecoverLogFile(uint64_t log_number, bool last_log,
   // paranoid_checks==false so that corruptions cause entire commits
   // to be skipped instead of propagating bad information (like overly
   // large sequence numbers).
-  log::Reader reader(file, &reporter, true/*checksum*/,
-                     0/*initial_offset*/);
+  log::Reader reader(file, &reporter, true /*checksum*/, 0 /*initial_offset*/);
   Log(options_.info_log, "Recovering log #%llu",
-      (unsigned long long) log_number);
+      (unsigned long long)log_number);
 
   // Read all the records and add to a memtable
   std::string scratch;
@@ -492,11 +499,10 @@ Status DBImpl::RecoverLogFile(uint64_t log_number, bool last_log,
   WriteBatch batch;
   int compactions = 0;
   MemTable* mem = NULL;
-  while (reader.ReadRecord(&record, &scratch) &&
-         status.ok()) {
+  while (reader.ReadRecord(&record, &scratch) && status.ok()) {
     if (record.size() < 12) {
-      reporter.Corruption(
-          record.size(), Status::Corruption("log record too small"));
+      reporter.Corruption(record.size(),
+                          Status::Corruption("log record too small"));
       continue;
     }
     WriteBatchInternal::SetContents(&batch, record);
@@ -510,9 +516,8 @@ Status DBImpl::RecoverLogFile(uint64_t log_number, bool last_log,
     if (!status.ok()) {
       break;
     }
-    const SequenceNumber last_seq =
-        WriteBatchInternal::Sequence(&batch) +
-        WriteBatchInternal::Count(&batch) - 1;
+    const SequenceNumber last_seq = WriteBatchInternal::Sequence(&batch) +
+                                    WriteBatchInternal::Count(&batch) - 1;
     if (last_seq > *max_sequence) {
       *max_sequence = last_seq;
     }
@@ -576,22 +581,20 @@ Status DBImpl::WriteLevel0Table(MemTable* mem, VersionEdit* edit,
   pending_outputs_.insert(meta.number);
   Iterator* iter = mem->NewIterator();
   Log(options_.info_log, "Level-0 table #%llu: started",
-      (unsigned long long) meta.number);
+      (unsigned long long)meta.number);
 
   Status s;
   {
     mutex_.Unlock();
-    s = BuildTable(dbname_, env_, options_, table_cache_, iter, &meta,true);
+    s = BuildTable(dbname_, env_, options_, table_cache_, iter, &meta, true);
     mutex_.Lock();
   }
 
   Log(options_.info_log, "Level-0 table #%llu: %lld bytes %s",
-      (unsigned long long) meta.number,
-      (unsigned long long) meta.file_size,
+      (unsigned long long)meta.number, (unsigned long long)meta.file_size,
       s.ToString().c_str());
   delete iter;
   pending_outputs_.erase(meta.number);
-
 
   // Note that if file_size is zero, the file has been deleted and
   // should not be added to the manifest.
@@ -602,8 +605,8 @@ Status DBImpl::WriteLevel0Table(MemTable* mem, VersionEdit* edit,
     if (base != NULL) {
       level = base->PickLevelForMemTableOutput(min_user_key, max_user_key);
     }
-    edit->AddFile(level, meta.number, meta.file_size,
-                  meta.smallest, meta.largest);
+    edit->AddFile(level, meta.number, meta.file_size, meta.smallest,
+                  meta.largest);
   }
 
   CompactionStats stats;
@@ -657,13 +660,14 @@ void DBImpl::CompactRange(const Slice* begin, const Slice* end) {
       }
     }
   }
-  TEST_CompactMemTable(); // TODO(sanjay): Skip if memtable does not overlap
+  TEST_CompactMemTable();  // TODO(sanjay): Skip if memtable does not overlap
   for (int level = 0; level < max_level_with_files; level++) {
     TEST_CompactRange(level, begin, end);
   }
 }
 
-void DBImpl::TEST_CompactRange(int level, const Slice* begin,const Slice* end) {
+void DBImpl::TEST_CompactRange(int level, const Slice* begin,
+                               const Slice* end) {
   assert(level >= 0);
   assert(level + 1 < config::kNumLevels);
 
@@ -732,8 +736,7 @@ void DBImpl::MaybeScheduleCompaction() {
     // DB is being deleted; no more background compactions
   } else if (!bg_error_.ok()) {
     // Already got an error; no more changes
-  } else if (imm_ == NULL &&
-             manual_compaction_ == NULL &&
+  } else if (imm_ == NULL && manual_compaction_ == NULL &&
              !versions_->NeedsCompaction()) {
     // No work to be done
   } else {
@@ -785,8 +788,7 @@ void DBImpl::BackgroundCompaction() {
     }
     Log(options_.info_log,
         "Manual compaction at level-%d from %s .. %s; will stop at %s\n",
-        m->level,
-        (m->begin ? m->begin->DebugString().c_str() : "(begin)"),
+        m->level, (m->begin ? m->begin->DebugString().c_str() : "(begin)"),
         (m->end ? m->end->DebugString().c_str() : "(end)"),
         (m->done ? "(end)" : manual_end.DebugString().c_str()));
   } else {
@@ -796,24 +798,23 @@ void DBImpl::BackgroundCompaction() {
   Status status;
   if (c == NULL) {
     // Nothing to do
-  } else if (false && !is_manual && c->IsTrivialMove()) { //disable trivial move
+  } else if (false && !is_manual &&
+             c->IsTrivialMove()) {  // disable trivial move
     // Move file to next level
     assert(c->num_input_files(0) == 1);
     FileMetaData* f = c->input(0, 0);
     c->edit()->DeleteFile(c->level(), f->number);
-    c->edit()->AddFile(c->level() + 1, f->number, f->file_size,
-                       f->smallest, f->largest);
+    c->edit()->AddFile(c->level() + 1, f->number, f->file_size, f->smallest,
+                       f->largest);
     status = versions_->LogAndApply(c->edit(), &mutex_);
     if (!status.ok()) {
       RecordBackgroundError(status);
     }
     VersionSet::LevelSummaryStorage tmp;
     Log(options_.info_log, "Moved #%lld to level-%d %lld bytes %s: %s\n",
-        static_cast<unsigned long long>(f->number),
-        c->level() + 1,
+        static_cast<unsigned long long>(f->number), c->level() + 1,
         static_cast<unsigned long long>(f->file_size),
-        status.ToString().c_str(),
-        versions_->LevelSummary(&tmp));
+        status.ToString().c_str(), versions_->LevelSummary(&tmp));
   } else {
     CompactionState* compact = new CompactionState(c);
     status = DoCompactionWork(compact);
@@ -825,7 +826,7 @@ void DBImpl::BackgroundCompaction() {
       for (int i = 0; i < compact->compaction->num_input_files(0); i++)
         table_cache_->SaveLevel0Freq(compact->compaction->input(0, i)->number);
     }
-    
+
     CleanupCompaction(compact);
     c->ReleaseInputs();
     DeleteObsoleteFiles();
@@ -837,8 +838,7 @@ void DBImpl::BackgroundCompaction() {
   } else if (shutting_down_.Acquire_Load()) {
     // Ignore compaction errors found during shutting down
   } else {
-    Log(options_.info_log,
-        "Compaction error: %s", status.ToString().c_str());
+    Log(options_.info_log, "Compaction error: %s", status.ToString().c_str());
   }
 
   if (is_manual) {
@@ -855,49 +855,59 @@ void DBImpl::BackgroundCompaction() {
     manual_compaction_ = NULL;
   }
 }
-void DBImpl::KeepFreCount(CompactionState *compact){
-  uint64_t sum_fre_count = 0,bundle_fre_count = 0;
-  uint64_t old_bags[30],new_bags[30];
-  int which = 0,num_bags;
+void DBImpl::KeepFreCount(CompactionState* compact) {
+  uint64_t sum_fre_count = 0, bundle_fre_count = 0;
+  uint64_t old_bags[30], new_bags[30];
+  int which = 0, num_bags;
   int i;
   num_bags = compact->compaction->num_input_files(0);
   mutex_.Unlock();
   for (i = 0; i < num_bags; i++) {
-      sum_fre_count += table_cache_->LookupFreCount(compact->compaction->input(0, i)->number);
+    sum_fre_count +=
+        table_cache_->LookupFreCount(compact->compaction->input(0, i)->number);
   }
-  sum_fre_count  = sum_fre_count/num_bags;
+  sum_fre_count = sum_fre_count / num_bags;
   num_bags = compact->compaction->num_input_files(1);
-  for(i = 0 ; i < num_bags ; i++){
-	old_bags[i] = table_cache_->LookupFreCount(compact->compaction->input(1,i)->number) + sum_fre_count;
+  for (i = 0; i < num_bags; i++) {
+    old_bags[i] =
+        table_cache_->LookupFreCount(compact->compaction->input(1, i)->number) +
+        sum_fre_count;
   }
   size_t output_size = compact->outputs.size();
-  int curr_ball_num =  output_size ,need_ball_num = num_bags , full_ball_num = output_size ;
+  int curr_ball_num = output_size, need_ball_num = num_bags,
+      full_ball_num = output_size;
   int curr_id = 0;
   uint64_t new_fre_count;
-  std::vector<leveldb::DBImpl::CompactionState::Output>::iterator iter = compact->outputs.begin();
-  for(i = 0 ; i < output_size ; i ++){
-      if(curr_ball_num >= need_ball_num){
-	   new_fre_count = old_bags[curr_id]*(need_ball_num*1.0/full_ball_num);
-      }else{
-	  new_fre_count = old_bags[curr_id]*(curr_ball_num*1.0/full_ball_num) + old_bags[curr_id + 1] *((need_ball_num - curr_ball_num)*1.0/full_ball_num);
-      }
-      curr_ball_num -= need_ball_num;
-      if(curr_ball_num <= 0 ){
-	    curr_ball_num += full_ball_num;
-	    ++curr_id;
-	}
-	table_cache_->SetFreCount(iter->number,new_fre_count);
-	iter++;
-   }
-   mutex_.Lock();
+  std::vector<leveldb::DBImpl::CompactionState::Output>::iterator iter =
+      compact->outputs.begin();
+  for (i = 0; i < output_size; i++) {
+    if (curr_ball_num >= need_ball_num) {
+      new_fre_count = old_bags[curr_id] * (need_ball_num * 1.0 / full_ball_num);
+    } else {
+      new_fre_count =
+          old_bags[curr_id] * (curr_ball_num * 1.0 / full_ball_num) +
+          old_bags[curr_id + 1] *
+              ((need_ball_num - curr_ball_num) * 1.0 / full_ball_num);
+    }
+    curr_ball_num -= need_ball_num;
+    if (curr_ball_num <= 0) {
+      curr_ball_num += full_ball_num;
+      ++curr_id;
+    }
+    table_cache_->SetFreCount(iter->number, new_fre_count);
+    iter++;
+  }
+  mutex_.Lock();
 }
 void DBImpl::CleanupCompaction(CompactionState* compact) {
   mutex_.AssertHeld();
-  
-   if(options_.opEp_.setFreCountInCompaction){
-	uint64_t start_micros = Env::Default()->NowMicros();     
-	KeepFreCount(compact);
-	MeasureTime(Statistics::GetStatistics().get(),Tickers::SET_FRE_COUNT_IN_COMPACTION_TIME,Env::Default()->NowMicros() - start_micros);
+
+  if (options_.opEp_.setFreCountInCompaction) {
+    uint64_t start_micros = Env::Default()->NowMicros();
+    KeepFreCount(compact);
+    MeasureTime(Statistics::GetStatistics().get(),
+                Tickers::SET_FRE_COUNT_IN_COMPACTION_TIME,
+                Env::Default()->NowMicros() - start_micros);
   }
   if (compact->builder != NULL) {
     // May happen if we get a shutdown call in the middle of compaction
@@ -951,10 +961,10 @@ Status DBImpl::FinishCompactionOutputFile(CompactionState* compact,
   // Check for iterator errors
   Status s = input->status();
   const uint64_t current_entries = compact->builder->NumEntries();
-  TableMetaData *tableMetaData_ = NULL;
+  TableMetaData* tableMetaData_ = NULL;
   if (s.ok()) {
     s = compact->builder->Finish();
-  tableMetaData_ = compact->builder->tableMetaData_;
+    tableMetaData_ = compact->builder->tableMetaData_;
   } else {
     compact->builder->Abandon();
   }
@@ -966,9 +976,10 @@ Status DBImpl::FinishCompactionOutputFile(CompactionState* compact,
 
   // Finish and check for file errors
   if (s.ok()) {
-    uint64_t start_micros = Env::Default()->NowMicros();     
+    uint64_t start_micros = Env::Default()->NowMicros();
     s = compact->outfile->Sync();
-    MeasureTime(Statistics::GetStatistics().get(),Tickers::SYNC_TIME,Env::Default()->NowMicros() - start_micros);
+    MeasureTime(Statistics::GetStatistics().get(), Tickers::SYNC_TIME,
+                Env::Default()->NowMicros() - start_micros);
   }
   if (s.ok()) {
     s = compact->outfile->Close();
@@ -976,7 +987,7 @@ Status DBImpl::FinishCompactionOutputFile(CompactionState* compact,
   delete compact->outfile;
   compact->outfile = NULL;
 
-  std::vector<uint64_t> *input_0_numbers, *input_1_numbers;
+  std::vector<uint64_t>*input_0_numbers, *input_1_numbers;
   input_0_numbers = new std::vector<uint64_t>();
   input_1_numbers = new std::vector<uint64_t>();
   for (int i = 0; i < compact->compaction->num_input_files(0); i++)
@@ -988,36 +999,30 @@ Status DBImpl::FinishCompactionOutputFile(CompactionState* compact,
     // Verify that the table is usable
     leveldb::ReadOptions ro;
     ro.file_level = compact->compaction->level() + 1;
-    Iterator* iter = table_cache_->NewIterator(ro,
-                                               output_number,
-                                               current_bytes, NULL, tableMetaData_, input_0_numbers, input_1_numbers);
+    Iterator* iter = table_cache_->NewIterator(
+        ro, output_number, current_bytes, NULL, tableMetaData_, input_0_numbers,
+        input_1_numbers);
     delete input_0_numbers;
     delete input_1_numbers;
 
     s = iter->status();
     delete iter;
     if (s.ok()) {
-      if (tableMetaData_ != NULL)
-        delete tableMetaData_;
-      Log(options_.info_log,
-          "Generated table #%llu@%d: %lld keys, %lld bytes",
-          (unsigned long long) output_number,
-          compact->compaction->level(),
-          (unsigned long long) current_entries,
-          (unsigned long long) current_bytes);
+      if (tableMetaData_ != NULL) delete tableMetaData_;
+      Log(options_.info_log, "Generated table #%llu@%d: %lld keys, %lld bytes",
+          (unsigned long long)output_number, compact->compaction->level(),
+          (unsigned long long)current_entries,
+          (unsigned long long)current_bytes);
     }
   }
   return s;
 }
 
-
 Status DBImpl::InstallCompactionResults(CompactionState* compact) {
   mutex_.AssertHeld();
-  Log(options_.info_log,  "Compacted %d@%d + %d@%d files => %lld bytes",
-      compact->compaction->num_input_files(0),
-      compact->compaction->level(),
-      compact->compaction->num_input_files(1),
-      compact->compaction->level() + 1,
+  Log(options_.info_log, "Compacted %d@%d + %d@%d files => %lld bytes",
+      compact->compaction->num_input_files(0), compact->compaction->level(),
+      compact->compaction->num_input_files(1), compact->compaction->level() + 1,
       static_cast<long long>(compact->total_bytes));
 
   // Add compaction outputs
@@ -1025,9 +1030,8 @@ Status DBImpl::InstallCompactionResults(CompactionState* compact) {
   const int level = compact->compaction->level();
   for (size_t i = 0; i < compact->outputs.size(); i++) {
     const CompactionState::Output& out = compact->outputs[i];
-    compact->compaction->edit()->AddFile(
-        level + 1,
-        out.number, out.file_size, out.smallest, out.largest);
+    compact->compaction->edit()->AddFile(level + 1, out.number, out.file_size,
+                                         out.smallest, out.largest);
   }
   return versions_->LogAndApply(compact->compaction->edit(), &mutex_);
 }
@@ -1036,9 +1040,8 @@ Status DBImpl::DoCompactionWork(CompactionState* compact) {
   const uint64_t start_micros = env_->NowMicros();
   int64_t imm_micros = 0;  // Micros spent doing imm_ compactions
 
-  Log(options_.info_log,  "Compacting %d@%d + %d@%d files",
-      compact->compaction->num_input_files(0),
-      compact->compaction->level(),
+  Log(options_.info_log, "Compacting %d@%d + %d@%d files",
+      compact->compaction->num_input_files(0), compact->compaction->level(),
       compact->compaction->num_input_files(1),
       compact->compaction->level() + 1);
 
@@ -1061,7 +1064,7 @@ Status DBImpl::DoCompactionWork(CompactionState* compact) {
   std::string current_user_key;
   bool has_current_user_key = false;
   SequenceNumber last_sequence_for_key = kMaxSequenceNumber;
-  for (; input->Valid() && !shutting_down_.Acquire_Load(); ) {
+  for (; input->Valid() && !shutting_down_.Acquire_Load();) {
     // Prioritize immutable compaction work
     if (has_imm_.NoBarrier_Load() != NULL) {
       const uint64_t imm_start = env_->NowMicros();
@@ -1092,8 +1095,8 @@ Status DBImpl::DoCompactionWork(CompactionState* compact) {
       last_sequence_for_key = kMaxSequenceNumber;
     } else {
       if (!has_current_user_key ||
-          user_comparator()->Compare(ikey.user_key,
-                                     Slice(current_user_key)) != 0) {
+          user_comparator()->Compare(ikey.user_key, Slice(current_user_key)) !=
+              0) {
         // First occurrence of this user key
         current_user_key.assign(ikey.user_key.data(), ikey.user_key.size());
         has_current_user_key = true;
@@ -1102,7 +1105,7 @@ Status DBImpl::DoCompactionWork(CompactionState* compact) {
 
       if (last_sequence_for_key <= compact->smallest_snapshot) {
         // Hidden by an newer entry for same user key
-        drop = true;    // (A)
+        drop = true;  // (A)
       } else if (ikey.type == kTypeDeletion &&
                  ikey.sequence <= compact->smallest_snapshot &&
                  compact->compaction->IsBaseLevelForKey(ikey.user_key)) {
@@ -1169,7 +1172,8 @@ Status DBImpl::DoCompactionWork(CompactionState* compact) {
 
   CompactionStats stats;
   stats.micros = env_->NowMicros() - start_micros - imm_micros;
-  MeasureTime(Statistics::GetStatistics().get(),Tickers::COMPACTION_TIME,Env::Default()->NowMicros() - start_micros);
+  MeasureTime(Statistics::GetStatistics().get(), Tickers::COMPACTION_TIME,
+              Env::Default()->NowMicros() - start_micros);
   for (int which = 0; which < 2; which++) {
     for (int i = 0; i < compact->compaction->num_input_files(which); i++) {
       stats.bytes_read += compact->compaction->input(which, i)->file_size;
@@ -1189,8 +1193,7 @@ Status DBImpl::DoCompactionWork(CompactionState* compact) {
     RecordBackgroundError(status);
   }
   VersionSet::LevelSummaryStorage tmp;
-  Log(options_.info_log,
-      "compacted to: %s", versions_->LevelSummary(&tmp));
+  Log(options_.info_log, "compacted to: %s", versions_->LevelSummary(&tmp));
   return status;
 }
 
@@ -1255,8 +1258,7 @@ int64_t DBImpl::TEST_MaxNextLevelOverlappingBytes() {
   return versions_->MaxNextLevelOverlappingBytes();
 }
 
-Status DBImpl::Get(const ReadOptions& options,
-                   const Slice& key,
+Status DBImpl::Get(const ReadOptions& options, const Slice& key,
                    std::string* value) {
   Status s;
   MutexLock l(&mutex_);
@@ -1278,10 +1280,11 @@ Status DBImpl::Get(const ReadOptions& options,
   Version::GetStats stats;
   std::allocator<StopWatch> alloc_stop_watch;
   auto p = alloc_stop_watch.allocate(1);
-  alloc_stop_watch.construct(p,env_,statis_,MEM_READ_TIME);
+  alloc_stop_watch.construct(p, env_, statis_, MEM_READ_TIME);
   // Unlock while reading from files and memtables
 
-  uint64_t fp_reqs_ = 0, filter_info_ = 0, read_nums_ = 0, fp_nums_ = 0, fp_io_ = 0;
+  uint64_t fp_reqs_ = 0, filter_info_ = 0, read_nums_ = 0, fp_nums_ = 0,
+           fp_io_ = 0;
   // double fp_sum_ = 0;
   {
     mutex_.Unlock();
@@ -1289,23 +1292,23 @@ Status DBImpl::Get(const ReadOptions& options,
     LookupKey lkey(key, snapshot);
     if (mem->Get(lkey, value, &s)) {
       // Done
-	alloc_stop_watch.destroy(p);
+      alloc_stop_watch.destroy(p);
     } else if (imm != NULL && imm->Get(lkey, value, &s)) {
       // Done
-	p->setHistType(IMMEM_READ_TIME);
-	alloc_stop_watch.destroy(p);
+      p->setHistType(IMMEM_READ_TIME);
+      alloc_stop_watch.destroy(p);
     } else {
       uint64_t start_micros = Env::Default()->NowMicros();
 
       s = current->Get(options, lkey, value, &stats);
       //      if(s.IsNotFound()){
       if (options.read_file_nums < 10)
-      	p->setHistType(options.read_file_nums+READ_0_TIME);
+        p->setHistType(options.read_file_nums + READ_0_TIME);
       else
-        p->setHistType(10+READ_0_TIME);
+        p->setHistType(10 + READ_0_TIME);
 
-    	alloc_stop_watch.destroy(p);
-	//      }
+      alloc_stop_watch.destroy(p);
+      //      }
       have_stat_update = true;
 
       // if(s.IsNotFound()){
@@ -1321,22 +1324,24 @@ Status DBImpl::Get(const ReadOptions& options,
       read_nums_ = __sync_add_and_fetch(&read_nums, options.access_file_nums);
       fp_nums_ = __sync_add_and_fetch(&fp_nums, options.read_file_nums);
       fp_io_ = __sync_add_and_fetch(&fp_io, options.read_file_nums);
-      
-      if(!s.IsNotFound()){
+
+      if (!s.IsNotFound()) {
         fp_nums_ = __sync_sub_and_fetch(&fp_nums, 1);
       }
-    // #ifndef MULTI_THREAD_MODE
-    //   else {
-    //     uint64_t during = Env::Default()->NowMicros() - start_micros;
-    //     char buf[32];
-    //     snprintf(buf, sizeof(buf), "%lu,", during);
+      // #ifndef MULTI_THREAD_MODE
+      //   else {
+      //     uint64_t during = Env::Default()->NowMicros() - start_micros;
+      //     char buf[32];
+      //     snprintf(buf, sizeof(buf), "%lu,", during);
 
-    //     int which = options.access_compacted_file_nums >= config::kNumLevels ? config::kNumLevels - 1 : options.access_compacted_file_nums;
-    //     get_latency_str[which].append(buf);
-    //   }
-    // #endif
+      //     int which = options.access_compacted_file_nums >=
+      //     config::kNumLevels ? config::kNumLevels - 1 :
+      //     options.access_compacted_file_nums;
+      //     get_latency_str[which].append(buf);
+      //   }
+      // #endif
     }
-    alloc_stop_watch.deallocate(p,1);
+    alloc_stop_watch.deallocate(p, 1);
     mutex_.Lock();
   }
 
@@ -1353,17 +1358,19 @@ Status DBImpl::Get(const ReadOptions& options,
   if (fp_reqs_ != 0 && fp_reqs_ % options_.opEp_.fp_stat_num == 0) {
     char buf[32];
     // snprintf(buf, sizeof(buf), "%lu,", fp_reqs);
-    snprintf(buf, sizeof(buf), "%.5lf,", (double)(1.0*fp_sum/fp_reqs_));
+    snprintf(buf, sizeof(buf), "%.5lf,", (double)(1.0 * fp_sum / fp_reqs_));
     fp_calc_fpr_str.append(buf);
-    snprintf(buf, sizeof(buf), "%.5lf,", (double)(1.0*filter_info_/fp_reqs_));
+    snprintf(buf, sizeof(buf), "%.5lf,",
+             (double)(1.0 * filter_info_ / fp_reqs_));
     filter_info_str.append(buf);
-    snprintf(buf, sizeof(buf), "%.5lf,", (double)(1.0*read_nums_/fp_reqs_));
+    snprintf(buf, sizeof(buf), "%.5lf,", (double)(1.0 * read_nums_ / fp_reqs_));
     fp_access_file_str.append(buf);
-    snprintf(buf, sizeof(buf), "%.5lf,", (double)(1.0*fp_nums_/options_.opEp_.fp_stat_num));
+    snprintf(buf, sizeof(buf), "%.5lf,",
+             (double)(1.0 * fp_nums_ / options_.opEp_.fp_stat_num));
     fp_real_fpr_str.append(buf);
-    snprintf(buf, sizeof(buf), "%.5lf,", (double)(1.0*fp_io_/fp_reqs_));
+    snprintf(buf, sizeof(buf), "%.5lf,", (double)(1.0 * fp_io_ / fp_reqs_));
     fp_real_io_str.append(buf);
-    
+
     // double cur_fp = (double)(1.0*fp_nums_/options_.opEp_.fp_stat_num);
     // if (last_fp != 0) {
     //   double fp_diff = (cur_fp - last_fp) / last_fp;
@@ -1376,7 +1383,7 @@ Status DBImpl::Get(const ReadOptions& options,
 
     fp_nums = 0;
   }
-  
+
   return s;
 }
 
@@ -1387,8 +1394,8 @@ Iterator* DBImpl::NewIterator(const ReadOptions& options) {
   return NewDBIterator(
       this, user_comparator(), iter,
       (options.snapshot != NULL
-       ? reinterpret_cast<const SnapshotImpl*>(options.snapshot)->number_
-       : latest_snapshot),
+           ? reinterpret_cast<const SnapshotImpl*>(options.snapshot)->number_
+           : latest_snapshot),
       seed);
 }
 
@@ -1436,7 +1443,8 @@ Status DBImpl::Write(const WriteOptions& options, WriteBatch* my_batch) {
   // May temporarily unlock and wait.
   uint64_t start_micros = Env::Default()->NowMicros();
   Status status = MakeRoomForWrite(my_batch == NULL);
-  MeasureTime(Statistics::GetStatistics().get(),Tickers::MAKE_ROOM_FOR_WRITE,Env::Default()->NowMicros() - start_micros);
+  MeasureTime(Statistics::GetStatistics().get(), Tickers::MAKE_ROOM_FOR_WRITE,
+              Env::Default()->NowMicros() - start_micros);
   uint64_t last_sequence = versions_->LastSequence();
   Writer* last_writer = &w;
   if (status.ok() && my_batch != NULL) {  // NULL batch is for compactions
@@ -1459,12 +1467,14 @@ Status DBImpl::Write(const WriteOptions& options, WriteBatch* my_batch) {
           sync_error = true;
         }
       }
-      MeasureTime(Statistics::GetStatistics().get(),Tickers::WRITE_TO_LOG,Env::Default()->NowMicros() - start_micros);
+      MeasureTime(Statistics::GetStatistics().get(), Tickers::WRITE_TO_LOG,
+                  Env::Default()->NowMicros() - start_micros);
       start_micros = Env::Default()->NowMicros();
       if (status.ok()) {
         status = WriteBatchInternal::InsertInto(updates, mem_);
       }
-      MeasureTime(Statistics::GetStatistics().get(),Tickers::WRITE_TO_MEMTABLE,Env::Default()->NowMicros() - start_micros);
+      MeasureTime(Statistics::GetStatistics().get(), Tickers::WRITE_TO_MEMTABLE,
+                  Env::Default()->NowMicros() - start_micros);
       mutex_.Lock();
       if (sync_error) {
         // The state of the log file is indeterminate: the log record we
@@ -1511,8 +1521,8 @@ WriteBatch* DBImpl::BuildBatchGroup(Writer** last_writer) {
   // original write is small, limit the growth so we do not slow
   // down the small write too much.
   size_t max_size = 1 << 20;
-  if (size <= (128<<10)) {
-    max_size = size + (128<<10);
+  if (size <= (128 << 10)) {
+    max_size = size + (128 << 10);
   }
 
   *last_writer = first;
@@ -1559,9 +1569,8 @@ Status DBImpl::MakeRoomForWrite(bool force) {
       // Yield previous error
       s = bg_error_;
       break;
-    } else if (
-        allow_delay &&
-        versions_->NumLevelFiles(0) >= config::kL0_SlowdownWritesTrigger) {
+    } else if (allow_delay && versions_->NumLevelFiles(0) >=
+                                  config::kL0_SlowdownWritesTrigger) {
       // We are getting close to hitting a hard limit on the number of
       // L0 files.  Rather than delaying a single write by several
       // seconds when we hit the hard limit, start delaying each
@@ -1571,8 +1580,10 @@ Status DBImpl::MakeRoomForWrite(bool force) {
       mutex_.Unlock();
       env_->SleepForMicroseconds(1000);
       allow_delay = false;  // Do not delay a single write more than once
-      MeasureTime(Statistics::GetStatistics().get(),Tickers::SLOW_DOWN_WRITE,Env::Default()->NowMicros() - start_micros);
-      MeasureTime(Statistics::GetStatistics().get(),Tickers::WAIT_TIME,Env::Default()->NowMicros() - start_micros);
+      MeasureTime(Statistics::GetStatistics().get(), Tickers::SLOW_DOWN_WRITE,
+                  Env::Default()->NowMicros() - start_micros);
+      MeasureTime(Statistics::GetStatistics().get(), Tickers::WAIT_TIME,
+                  Env::Default()->NowMicros() - start_micros);
       mutex_.Lock();
     } else if (!force &&
                (mem_->ApproximateMemoryUsage() <= options_.write_buffer_size)) {
@@ -1583,13 +1594,16 @@ Status DBImpl::MakeRoomForWrite(bool force) {
       // one is still being compacted, so we wait.
       Log(options_.info_log, "Current memtable full; waiting...\n");
       bg_cv_.Wait();
-      MeasureTime(Statistics::GetStatistics().get(),Tickers::WAIT_TIME,Env::Default()->NowMicros() - start_micros);
+      MeasureTime(Statistics::GetStatistics().get(), Tickers::WAIT_TIME,
+                  Env::Default()->NowMicros() - start_micros);
     } else if (versions_->NumLevelFiles(0) >= config::kL0_StopWritesTrigger) {
       // There are too many level-0 files.
       Log(options_.info_log, "Too many L0 files; waiting...\n");
       bg_cv_.Wait();
-      MeasureTime(Statistics::GetStatistics().get(),Tickers::WAIT_TIME,Env::Default()->NowMicros() - start_micros);
-      MeasureTime(Statistics::GetStatistics().get(),Tickers::STOP_WRITE,Env::Default()->NowMicros() - start_micros);
+      MeasureTime(Statistics::GetStatistics().get(), Tickers::WAIT_TIME,
+                  Env::Default()->NowMicros() - start_micros);
+      MeasureTime(Statistics::GetStatistics().get(), Tickers::STOP_WRITE,
+                  Env::Default()->NowMicros() - start_micros);
     } else {
       // Attempt to switch to a new memtable and trigger compaction of old
       assert(versions_->PrevLogNumber() == 0);
@@ -1610,7 +1624,7 @@ Status DBImpl::MakeRoomForWrite(bool force) {
       has_imm_.Release_Store(imm_);
       mem_ = new MemTable(internal_comparator_);
       mem_->Ref();
-      force = false;   // Do not force another compaction if have room
+      force = false;  // Do not force another compaction if have room
       MaybeScheduleCompaction();
     }
   }
@@ -1619,7 +1633,7 @@ Status DBImpl::MakeRoomForWrite(bool force) {
 
 bool DBImpl::GetProperty(const Slice& property, std::string* value) {
   value->clear();
-  
+
   MutexLock l(&mutex_);
   Slice in = property;
   Slice prefix("leveldb.");
@@ -1645,121 +1659,161 @@ bool DBImpl::GetProperty(const Slice& property, std::string* value) {
     snprintf(buf, sizeof(buf),
              "                               Compactions\n"
              "Level  Files Size(MB) Time(sec) Read(MB) Write(MB)\n"
-             "--------------------------------------------------\n"
-             );
+             "--------------------------------------------------\n");
     value->append(buf);
     for (int level = 0; level < config::kNumLevels; level++) {
       int files = versions_->NumLevelFiles(level);
       if (stats_[level].micros > 0 || files > 0) {
-        snprintf(
-            buf, sizeof(buf),
-            "%3d %8d %8.0f %9.0f %8.0f %9.0f\n",
-            level,
-            files,
-            versions_->NumLevelBytes(level) / 1048576.0,
-            stats_[level].micros / 1e6,
-            stats_[level].bytes_read / 1048576.0,
-            stats_[level].bytes_written / 1048576.0);
+        snprintf(buf, sizeof(buf), "%3d %8d %8.0f %9.0f %8.0f %9.0f\n", level,
+                 files, versions_->NumLevelBytes(level) / 1048576.0,
+                 stats_[level].micros / 1e6,
+                 stats_[level].bytes_read / 1048576.0,
+                 stats_[level].bytes_written / 1048576.0);
         value->append(buf);
-	stats_sum += stats_[level].micros;
+        stats_sum += stats_[level].micros;
       }
     }
-    unsigned long long tmp_hit = block_cache_hit - bc_hit_prev, tmp_count = block_cache_count - bc_count_prev;
+    unsigned long long tmp_hit = block_cache_hit - bc_hit_prev,
+                       tmp_count = block_cache_count - bc_count_prev;
     bc_hit_prev = block_cache_hit;
     bc_count_prev = block_cache_count;
-    snprintf(buf,sizeof(buf),"filter mem space overhead:%llu filter_num:%llu table meta mem overhead:%llu \n",filter_mem_space,filter_num,table_meta_space);
+    snprintf(buf, sizeof(buf),
+             "filter mem space overhead:%llu filter_num:%llu table meta mem "
+             "overhead:%llu \n",
+             filter_mem_space, filter_num, table_meta_space);
     value->append(buf);
-    snprintf(buf,sizeof(buf),"block cache count:%llu hit:%llu hit rate:%lf, phase hit rate:%lf \n", block_cache_count, block_cache_hit, block_cache_count == 0 ? 0.0 : block_cache_hit * 1.0 / block_cache_count, tmp_count == 0 ? 0 : tmp_hit * 1.0 / tmp_count);
+    snprintf(
+        buf, sizeof(buf),
+        "block cache count:%llu hit:%llu hit rate:%lf, phase hit rate:%lf \n",
+        block_cache_count, block_cache_hit,
+        block_cache_count == 0 ? 0.0
+                               : block_cache_hit * 1.0 / block_cache_count,
+        tmp_count == 0 ? 0 : tmp_hit * 1.0 / tmp_count);
     value->append(buf);
-    if(statis_){
-	if(stats_sum != 0){
-	    snprintf(buf,sizeof(buf),"create filters time / compaction time = %.3lf%% write filters time / compaction time = %.3lf%%\n",
-		    statis_->GetTickerHistogram(Tickers::CREATE_FILTER_TIME)*1.0/stats_sum*100,
-		    statis_->GetTickerHistogram(Tickers::WRITE_FILTER_TIME)*1.0/stats_sum*100);
-	    value->append(buf);
-	    if(statis_->getTickerCount(Tickers::CREATE_FILTER_TIME) != 0){
-		snprintf(buf,sizeof(buf),"average create filters time  = %.3lf average filter lock time = %.3lf average filter wait time = %.3lf \n",
-			statis_->GetTickerHistogram(Tickers::CREATE_FILTER_TIME)*1.0/statis_->getTickerCount(Tickers::CREATE_FILTER_TIME),
-			statis_->GetTickerHistogram(Tickers::FILTER_LOCK_TIME)*1.0/statis_->getTickerCount(Tickers::FILTER_LOCK_TIME),
-			statis_->GetTickerHistogram(Tickers::FILTER_WAIT_TIME)*1.0/statis_->getTickerCount(Tickers::FILTER_WAIT_TIME)
-			);
-		value->append(buf);    
-		snprintf(buf,sizeof(buf),"average sync time  = %.3lf sync count = %lu \n",
-			statis_->GetTickerHistogram(Tickers::SYNC_TIME)*1.0/statis_->getTickerCount(Tickers::SYNC_TIME)
-			,statis_->getTickerCount(Tickers::SYNC_TIME));
-		value->append(buf);    
-		snprintf(buf,sizeof(buf),"average child create filter time  = %.3lf average child other time = %.3lf \n",
-			statis_->GetTickerHistogram(Tickers::CHILD_CREATE_FILTER_TIME)*1.0/statis_->getTickerCount(Tickers::CHILD_CREATE_FILTER_TIME)
-			,statis_->getTickerCount(Tickers::CHILD_FILTER_OTHER_TIME)*1.0/statis_->getTickerCount(Tickers::CHILD_FILTER_OTHER_TIME));
-		value->append(buf);    
-	    }
-	}
-	if(true){
-	    int i;
-	    value->append(" Remove Expired Filter \n");
-	     for(i = Tickers::REMOVE_EXPIRED_FILTER_TIME_0 ; i <= Tickers::REMOVE_EXPIRED_FILTER_TIME_6  ; i ++){
-		if(statis_->getTickerCount(i) == 0){
-		    continue;
-		}
-		snprintf(buf,sizeof(buf),"Remove LRU%d expired filter count: %lu time: %lu \n", i - Tickers::REMOVE_EXPIRED_FILTER_TIME_0,
-			statis_->getTickerCount(i),
-			statis_->GetTickerHistogram(i));
-		value->append(buf);
-	     }
-	     value->append(" Remove Head Filter \n");
-	     for(i = Tickers::REMOVE_HEAD_FILTER_TIME_0 ; i <= Tickers::REMOVE_HEAD_FILTER_TIME_6  ; i ++){
-		if(statis_->getTickerCount(i) == 0){
-		    continue;
-		}
-		snprintf(buf,sizeof(buf),"Remove LRU%d head filter count: %lu time: %lu \n", i - Tickers::REMOVE_HEAD_FILTER_TIME_0,
-			statis_->getTickerCount(i),
-			statis_->GetTickerHistogram(i));
-		value->append(buf);
-	     }
-	}
-	if(statis_->getTickerCount(Tickers::REMOVE_FILTER_TIME)!= 0){
-	  int i = Tickers::REMOVE_FILTER_TIME;
-	  snprintf(buf,sizeof(buf),"Remove filter count: %lu time: %lu \n", 
-			statis_->getTickerCount(i),
-			statis_->GetTickerHistogram(i));
-	  value->append(buf);
-	}
-	if(statis_->getTickerCount(Tickers::ADD_FILTER_TIME_0) != 0 || statis_->getTickerCount(Tickers::ADD_FILTER_TIME_0+options_.opEp_.init_filter_nums) != 0){
-	        int i;
-		uint64_t totalAddFilterCount = 0;
-		uint64_t totalAddFilterTime = 0;
-		value->append(" ADD Filter Time \n");
-		for(i = Tickers::ADD_FILTER_TIME_0 ; i <= Tickers::ADD_FILTER_TIME_7  ; i ++){
-		    if(statis_->getTickerCount(i) == 0){
-			continue;
-		    }
-		    snprintf(buf,sizeof(buf),"add filter to %d filter(s) count: %lu time: %lu  average time: %.3lf\n", i - Tickers::ADD_FILTER_TIME_0,
-			statis_->getTickerCount(i),
-			statis_->GetTickerHistogram(i),
-			statis_->GetTickerHistogram(i)*1.0/statis_->getTickerCount(i));
-		    value->append(buf);
-		    totalAddFilterTime += statis_->GetTickerHistogram(i);
-		    totalAddFilterCount += statis_->getTickerCount(i);
-		}
-		snprintf(buf,sizeof(buf),"total add filter count: %lu latency: %.2lf  ",totalAddFilterCount,totalAddFilterTime*1.0/totalAddFilterCount);
-		value->append(buf);
-
-	}
-	value->append(statis_->ToString(Tickers::SET_FRE_COUNT_IN_COMPACTION_TIME,Tickers::SET_FRE_COUNT_IN_COMPACTION_TIME));
-	value->append(statis_->ToString(Tickers::FINDTABLE,Tickers::OPEN_TABLE_TIME));
-	if(statis_->getTickerCount(Tickers::SLOW_DOWN_WRITE) != 0){
-	  value->append(statis_->ToString(Tickers::SLOW_DOWN_WRITE,Tickers::WAIT_TIME));
-	}
-	if(statis_->getTickerCount(Tickers::WRITE_TO_MEMTABLE) != 0){
-        value->append(statis_->ToString(Tickers::WRITE_TO_MEMTABLE,Tickers::COMPACTION_READ_TIME));
-    }
-	value->append(table_cache_->LRU_Status());
-	value->append(printStatistics());
-  if(statis_->getTickerCount(Tickers::MQ_LOOKUP_TIME) != 0){
-    value->append(statis_->ToString(Tickers::MQ_LOOKUP_TIME,Tickers::MQ_LOOKUP_TIME));
-  }
-    value->append(statis_->ToString(Tickers::MQ_BACKUP_TIME,Tickers::MQ_BACKUP_TIME));
-	statis_->reset();
+    if (statis_) {
+      if (stats_sum != 0) {
+        snprintf(buf, sizeof(buf),
+                 "create filters time / compaction time = %.3lf%% write "
+                 "filters time / compaction time = %.3lf%%\n",
+                 statis_->GetTickerHistogram(Tickers::CREATE_FILTER_TIME) *
+                     1.0 / stats_sum * 100,
+                 statis_->GetTickerHistogram(Tickers::WRITE_FILTER_TIME) * 1.0 /
+                     stats_sum * 100);
+        value->append(buf);
+        if (statis_->getTickerCount(Tickers::CREATE_FILTER_TIME) != 0) {
+          snprintf(
+              buf, sizeof(buf),
+              "average create filters time  = %.3lf average filter lock time = "
+              "%.3lf average filter wait time = %.3lf \n",
+              statis_->GetTickerHistogram(Tickers::CREATE_FILTER_TIME) * 1.0 /
+                  statis_->getTickerCount(Tickers::CREATE_FILTER_TIME),
+              statis_->GetTickerHistogram(Tickers::FILTER_LOCK_TIME) * 1.0 /
+                  statis_->getTickerCount(Tickers::FILTER_LOCK_TIME),
+              statis_->GetTickerHistogram(Tickers::FILTER_WAIT_TIME) * 1.0 /
+                  statis_->getTickerCount(Tickers::FILTER_WAIT_TIME));
+          value->append(buf);
+          snprintf(buf, sizeof(buf),
+                   "average sync time  = %.3lf sync count = %lu \n",
+                   statis_->GetTickerHistogram(Tickers::SYNC_TIME) * 1.0 /
+                       statis_->getTickerCount(Tickers::SYNC_TIME),
+                   statis_->getTickerCount(Tickers::SYNC_TIME));
+          value->append(buf);
+          snprintf(
+              buf, sizeof(buf),
+              "average child create filter time  = %.3lf average child other "
+              "time = %.3lf \n",
+              statis_->GetTickerHistogram(Tickers::CHILD_CREATE_FILTER_TIME) *
+                  1.0 /
+                  statis_->getTickerCount(Tickers::CHILD_CREATE_FILTER_TIME),
+              statis_->getTickerCount(Tickers::CHILD_FILTER_OTHER_TIME) * 1.0 /
+                  statis_->getTickerCount(Tickers::CHILD_FILTER_OTHER_TIME));
+          value->append(buf);
+        }
+      }
+      if (true) {
+        int i;
+        value->append(" Remove Expired Filter \n");
+        for (i = Tickers::REMOVE_EXPIRED_FILTER_TIME_0;
+             i <= Tickers::REMOVE_EXPIRED_FILTER_TIME_6; i++) {
+          if (statis_->getTickerCount(i) == 0) {
+            continue;
+          }
+          snprintf(buf, sizeof(buf),
+                   "Remove LRU%d expired filter count: %lu time: %lu \n",
+                   i - Tickers::REMOVE_EXPIRED_FILTER_TIME_0,
+                   statis_->getTickerCount(i), statis_->GetTickerHistogram(i));
+          value->append(buf);
+        }
+        value->append(" Remove Head Filter \n");
+        for (i = Tickers::REMOVE_HEAD_FILTER_TIME_0;
+             i <= Tickers::REMOVE_HEAD_FILTER_TIME_6; i++) {
+          if (statis_->getTickerCount(i) == 0) {
+            continue;
+          }
+          snprintf(buf, sizeof(buf),
+                   "Remove LRU%d head filter count: %lu time: %lu \n",
+                   i - Tickers::REMOVE_HEAD_FILTER_TIME_0,
+                   statis_->getTickerCount(i), statis_->GetTickerHistogram(i));
+          value->append(buf);
+        }
+      }
+      if (statis_->getTickerCount(Tickers::REMOVE_FILTER_TIME) != 0) {
+        int i = Tickers::REMOVE_FILTER_TIME;
+        snprintf(buf, sizeof(buf), "Remove filter count: %lu time: %lu \n",
+                 statis_->getTickerCount(i), statis_->GetTickerHistogram(i));
+        value->append(buf);
+      }
+      if (statis_->getTickerCount(Tickers::ADD_FILTER_TIME_0) != 0 ||
+          statis_->getTickerCount(Tickers::ADD_FILTER_TIME_0 +
+                                  options_.opEp_.init_filter_nums) != 0) {
+        int i;
+        uint64_t totalAddFilterCount = 0;
+        uint64_t totalAddFilterTime = 0;
+        value->append(" ADD Filter Time \n");
+        for (i = Tickers::ADD_FILTER_TIME_0; i <= Tickers::ADD_FILTER_TIME_7;
+             i++) {
+          if (statis_->getTickerCount(i) == 0) {
+            continue;
+          }
+          snprintf(buf, sizeof(buf),
+                   "add filter to %d filter(s) count: %lu time: %lu  average "
+                   "time: %.3lf\n",
+                   i - Tickers::ADD_FILTER_TIME_0, statis_->getTickerCount(i),
+                   statis_->GetTickerHistogram(i),
+                   statis_->GetTickerHistogram(i) * 1.0 /
+                       statis_->getTickerCount(i));
+          value->append(buf);
+          totalAddFilterTime += statis_->GetTickerHistogram(i);
+          totalAddFilterCount += statis_->getTickerCount(i);
+        }
+        snprintf(buf, sizeof(buf),
+                 "total add filter count: %lu latency: %.2lf  ",
+                 totalAddFilterCount,
+                 totalAddFilterTime * 1.0 / totalAddFilterCount);
+        value->append(buf);
+      }
+      value->append(
+          statis_->ToString(Tickers::SET_FRE_COUNT_IN_COMPACTION_TIME,
+                            Tickers::SET_FRE_COUNT_IN_COMPACTION_TIME));
+      value->append(
+          statis_->ToString(Tickers::FINDTABLE, Tickers::OPEN_TABLE_TIME));
+      if (statis_->getTickerCount(Tickers::SLOW_DOWN_WRITE) != 0) {
+        value->append(
+            statis_->ToString(Tickers::SLOW_DOWN_WRITE, Tickers::WAIT_TIME));
+      }
+      if (statis_->getTickerCount(Tickers::WRITE_TO_MEMTABLE) != 0) {
+        value->append(statis_->ToString(Tickers::WRITE_TO_MEMTABLE,
+                                        Tickers::COMPACTION_READ_TIME));
+      }
+      value->append(table_cache_->LRU_Status());
+      value->append(printStatistics());
+      if (statis_->getTickerCount(Tickers::MQ_LOOKUP_TIME) != 0) {
+        value->append(statis_->ToString(Tickers::MQ_LOOKUP_TIME,
+                                        Tickers::MQ_LOOKUP_TIME));
+      }
+      value->append(
+          statis_->ToString(Tickers::MQ_BACKUP_TIME, Tickers::MQ_BACKUP_TIME));
+      statis_->reset();
     }
     return true;
   } else if (in == "sstables") {
@@ -1778,34 +1832,35 @@ bool DBImpl::GetProperty(const Slice& property, std::string* value) {
              static_cast<unsigned long long>(total_usage));
     value->append(buf);
     return true;
-  } else if(in.starts_with("files-access-frequencies")){
-   	in.remove_prefix(strlen("files-access-frequencies"));
-   	uint64_t level;
-   	bool ok = ConsumeDecimalNumber(&in, &level) && in.empty();
-   	if (!ok || level >= config::kNumLevels) {
-   	    return false;
-   	} else {
-   	    versions_->printTables(level,value); 
-   	    return true;
-   	}
-  } else if(in.starts_with("files-extra-infos")){
+  } else if (in.starts_with("files-access-frequencies")) {
+    in.remove_prefix(strlen("files-access-frequencies"));
+    uint64_t level;
+    bool ok = ConsumeDecimalNumber(&in, &level) && in.empty();
+    if (!ok || level >= config::kNumLevels) {
+      return false;
+    } else {
+      versions_->printTables(level, value);
+      return true;
+    }
+  } else if (in.starts_with("files-extra-infos")) {
     in.remove_prefix(strlen("files-extra-infos"));
     uint64_t level;
     bool ok = ConsumeDecimalNumber(&in, &level) && in.empty();
     if (!ok || level >= config::kNumLevels) {
-        return false;
+      return false;
     } else {
-        // versions_->printTableExtraInfos(level,value); 
-        value->append(get_latency_str[level]);
-        return true;
-    }
-  } else if(in == "num-files"){
-      for(int level = 0  ; level < config::kNumLevels ; level++){
-      	char buf[100];
-      	snprintf(buf, sizeof(buf), "%d",versions_->NumLevelFiles(static_cast<int>(level)));
-      	value->append(buf);
-      }
+      // versions_->printTableExtraInfos(level,value);
+      value->append(get_latency_str[level]);
       return true;
+    }
+  } else if (in == "num-files") {
+    for (int level = 0; level < config::kNumLevels; level++) {
+      char buf[100];
+      snprintf(buf, sizeof(buf), "%d",
+               versions_->NumLevelFiles(static_cast<int>(level)));
+      value->append(buf);
+    }
+    return true;
   } else if (in == "fp-stat-calc_fpr") {
     value->append(fp_calc_fpr_str);
     return true;
@@ -1821,23 +1876,21 @@ bool DBImpl::GetProperty(const Slice& property, std::string* value) {
   } else if (in == "fp-stat-real_io") {
     value->append(fp_real_io_str);
     return true;
-  } else if(in.starts_with("file_filter_size")){
-        in.remove_prefix(strlen("file_filter_size"));
- 	uint64_t level;
- 	bool ok = ConsumeDecimalNumber(&in, &level) && in.empty();
- 	if (!ok || level >= config::kNumLevels) {
- 	    return false;
- 	} else {
-	    versions_->printTables(level,value,"file_filter_size"); 
- 	    return true;
- 	}  
-   }
-   return false;
+  } else if (in.starts_with("file_filter_size")) {
+    in.remove_prefix(strlen("file_filter_size"));
+    uint64_t level;
+    bool ok = ConsumeDecimalNumber(&in, &level) && in.empty();
+    if (!ok || level >= config::kNumLevels) {
+      return false;
+    } else {
+      versions_->printTables(level, value, "file_filter_size");
+      return true;
+    }
+  }
+  return false;
 }
 
-void DBImpl::GetApproximateSizes(
-    const Range* range, int n,
-    uint64_t* sizes) {
+void DBImpl::GetApproximateSizes(const Range* range, int n, uint64_t* sizes) {
   // TODO(opt): better implementation
   Version* v;
   {
@@ -1860,12 +1913,11 @@ void DBImpl::GetApproximateSizes(
     v->Unref();
   }
 }
-std::string DBImpl::printStatistics()
-{
-    if(statis_){
-	    return statis_->ToString();
-    }
-    return std::string();
+std::string DBImpl::printStatistics() {
+  if (statis_) {
+    return statis_->ToString();
+  }
+  return std::string();
 }
 
 // Default implementations of convenience methods that subclasses of DB
@@ -1882,10 +1934,9 @@ Status DB::Delete(const WriteOptions& opt, const Slice& key) {
   return Write(opt, &batch);
 }
 
-DB::~DB() { }
+DB::~DB() {}
 
-Status DB::Open(const Options& options, const std::string& dbname,
-                DB** dbptr) {
+Status DB::Open(const Options& options, const std::string& dbname, DB** dbptr) {
   *dbptr = NULL;
 
   DBImpl* impl = new DBImpl(options, dbname);
@@ -1922,8 +1973,8 @@ Status DB::Open(const Options& options, const std::string& dbname,
   if (s.ok()) {
     assert(impl->mem_ != NULL);
     impl->mutex_.Lock();
-    if(options.opEp_.findAllTable){
-	impl->versions_->findAllTables();
+    if (options.opEp_.findAllTable) {
+      impl->versions_->findAllTables();
     }
     impl->mutex_.Unlock();
     *dbptr = impl;
@@ -1933,25 +1984,20 @@ Status DB::Open(const Options& options, const std::string& dbname,
   return s;
 }
 
-void DBImpl::DoSomeThing(void* arg)
-{
-    char *thing_str = static_cast<char *>(arg);
-    char adjust_filter_str[] = "adjust_filter";
-    if(strncmp(thing_str,adjust_filter_str,strlen(adjust_filter_str)) == 0){
-	adjustFilter();
-    }
+void DBImpl::DoSomeThing(void* arg) {
+  char* thing_str = static_cast<char*>(arg);
+  char adjust_filter_str[] = "adjust_filter";
+  if (strncmp(thing_str, adjust_filter_str, strlen(adjust_filter_str)) == 0) {
+    adjustFilter();
+  }
 }
 
-
-void DBImpl::adjustFilter()
-{
-    MutexLock l(&mutex_);
-    versions_->adjustFilter();
+void DBImpl::adjustFilter() {
+  MutexLock l(&mutex_);
+  versions_->adjustFilter();
 }
 
-
-Snapshot::~Snapshot() {
-}
+Snapshot::~Snapshot() {}
 
 Status DestroyDB(const std::string& dbname, const Options& options) {
   Env* env = options.env;

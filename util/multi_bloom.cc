@@ -2,757 +2,704 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file. See the AUTHORS file for names of contributors.
 
-#include "leveldb/filter_policy.h"
 #include <stdio.h>
-#include "leveldb/slice.h"
-#include "util/hash.h"
-#include <list>
-#include <thread>
-#include <mutex>
-#include <condition_variable>
-#include <atomic>
-#include "leveldb/env.h"
-#include "leveldb/threadpool.h"
-#include "util/threadpool_imp.h"
-#include "leveldb/statistics.h"
-#include "util/coding.h"
 #include <unistd.h>
+
+#include <atomic>
+#include <condition_variable>
+#include <list>
+#include <mutex>
+#include <thread>
+
+#include "leveldb/env.h"
+#include "leveldb/filter_policy.h"
+#include "leveldb/slice.h"
+#include "leveldb/statistics.h"
+#include "leveldb/threadpool.h"
+#include "util/coding.h"
+#include "util/hash.h"
+#include "util/threadpool_imp.h"
 #define handle_error_en(en, msg) \
-	do                           \
-	{                            \
-		errno = en;              \
-		perror(msg);             \
-		exit(EXIT_FAILURE);      \
-	} while (0)
+  do {                           \
+    errno = en;                  \
+    perror(msg);                 \
+    exit(EXIT_FAILURE);          \
+  } while (0)
 
-namespace leveldb
-{
+namespace leveldb {
 
-namespace
-{
-static uint32_t BloomHash(const Slice &key, int id)
-{
-	switch (id)
-	{
-	case 0:
-		return Hash(key.data(), key.size(), 0xbc9f1d34);
-	case 1:
-		return Hash(key.data(), key.size(), 0x34f1d34b);
-	case 2:
-		return Hash(key.data(), key.size(), 0x251d34bc);
-	case 3:
-		return Hash(key.data(), key.size(), 0x01d34bc9);
-	case 4:
-		return Hash(key.data(), key.size(), 0x1934bc9f);
-	case 5:
-		return Hash(key.data(), key.size(), 0x934bc9f1);
-	case 6:
-		return Hash(key.data(), key.size(), 0x4bc9f193);
-	case 7:
-		return Hash(key.data(), key.size(), 0x51c2578a);
-	case 8:
-		return Hash(key.data(), key.size(), 0xda23562f);
-	case 9:
-		return Hash(key.data(), key.size(), 0x135254f2);
-	case 10:
-		return Hash(key.data(), key.size(), 0xea1e4a48);
-	case 11:
-		return Hash(key.data(), key.size(), 0x567925f1);
-	default:
-		handle_error_en(1, "BloomHash id error");
-	}
+namespace {
+static uint32_t BloomHash(const Slice &key, int id) {
+  switch (id) {
+    case 0:
+      return Hash(key.data(), key.size(), 0xbc9f1d34);
+    case 1:
+      return Hash(key.data(), key.size(), 0x34f1d34b);
+    case 2:
+      return Hash(key.data(), key.size(), 0x251d34bc);
+    case 3:
+      return Hash(key.data(), key.size(), 0x01d34bc9);
+    case 4:
+      return Hash(key.data(), key.size(), 0x1934bc9f);
+    case 5:
+      return Hash(key.data(), key.size(), 0x934bc9f1);
+    case 6:
+      return Hash(key.data(), key.size(), 0x4bc9f193);
+    case 7:
+      return Hash(key.data(), key.size(), 0x51c2578a);
+    case 8:
+      return Hash(key.data(), key.size(), 0xda23562f);
+    case 9:
+      return Hash(key.data(), key.size(), 0x135254f2);
+    case 10:
+      return Hash(key.data(), key.size(), 0xea1e4a48);
+    case 11:
+      return Hash(key.data(), key.size(), 0x567925f1);
+    default:
+      handle_error_en(1, "BloomHash id error");
+  }
 }
 
-class TraditionalBloomFilterPolicy : public FilterPolicy
-{
-private:
-	size_t bits_per_key_;
-	size_t k_;
-	int id_; //begin from 0
-public:
-	explicit TraditionalBloomFilterPolicy(int bits_per_key, int id)
-		: bits_per_key_(bits_per_key), id_(id)
-	{
-		// We intentionally round down to reduce probing cost a little bit
-		k_ = static_cast<size_t>(bits_per_key * 0.69); // 0.69 =~ ln(2)
-		if (k_ < 1)
-			k_ = 1;
-		if (k_ > 30)
-			k_ = 30;
-	}
+class TraditionalBloomFilterPolicy : public FilterPolicy {
+ private:
+  size_t bits_per_key_;
+  size_t k_;
+  int id_;  // begin from 0
+ public:
+  explicit TraditionalBloomFilterPolicy(int bits_per_key, int id)
+      : bits_per_key_(bits_per_key), id_(id) {
+    // We intentionally round down to reduce probing cost a little bit
+    k_ = static_cast<size_t>(bits_per_key * 0.69);  // 0.69 =~ ln(2)
+    if (k_ < 1) k_ = 1;
+    if (k_ > 30) k_ = 30;
+  }
 
-	virtual const char *Name() const
-	{
-		return "leveldb.BuiltinBloomFilter2";
-	}
+  virtual const char *Name() const { return "leveldb.BuiltinBloomFilter2"; }
 
-	virtual void CreateFilter(const Slice *keys, int n, std::string *dst) const
-	{
-		// Compute bloom filter size (in both bits and bytes)
-		size_t bits = n * bits_per_key_;
+  virtual void CreateFilter(const Slice *keys, int n, std::string *dst) const {
+    // Compute bloom filter size (in both bits and bytes)
+    size_t bits = n * bits_per_key_;
 
-		// For small n, we can see a very high false positive rate.  Fix it
-		// by enforcing a minimum bloom filter length.
-		if (bits < 64)
-			bits = 64;
+    // For small n, we can see a very high false positive rate.  Fix it
+    // by enforcing a minimum bloom filter length.
+    if (bits < 64) bits = 64;
 
-		size_t bytes = (bits + 7) / 8;
-		bits = bytes * 8;
+    size_t bytes = (bits + 7) / 8;
+    bits = bytes * 8;
 
-		const size_t init_size = dst->size();
-		dst->resize(init_size + bytes, 0);
-		dst->push_back(static_cast<char>(k_)); // Remember # of probes in filter
-		char *array = &(*dst)[init_size];
-		for (int i = 0; i < n; i++)
-		{
-			// Use double-hashing to generate a sequence of hash values.
-			// See analysis in [Kirsch,Mitzenmacher 2006].
-			uint32_t h = BloomHash(keys[i], id_);
-			const uint32_t delta = (h >> 17) | (h << 15); // Rotate right 17 bits
-			for (size_t j = 0; j < k_; j++)
-			{
-				const uint32_t bitpos = h % bits;
-				h += delta;
-				array[bitpos / 8] |= (1 << (bitpos % 8));
-			}
-		}
-	}
+    const size_t init_size = dst->size();
+    dst->resize(init_size + bytes, 0);
+    dst->push_back(static_cast<char>(k_));  // Remember # of probes in filter
+    char *array = &(*dst)[init_size];
+    for (int i = 0; i < n; i++) {
+      // Use double-hashing to generate a sequence of hash values.
+      // See analysis in [Kirsch,Mitzenmacher 2006].
+      uint32_t h = BloomHash(keys[i], id_);
+      const uint32_t delta = (h >> 17) | (h << 15);  // Rotate right 17 bits
+      for (size_t j = 0; j < k_; j++) {
+        const uint32_t bitpos = h % bits;
+        h += delta;
+        array[bitpos / 8] |= (1 << (bitpos % 8));
+      }
+    }
+  }
 
-	virtual void CreateFilter(const Slice *keys, int n, std::list<std::string> &dsts) const
-	{
-		return;
-	}
+  virtual void CreateFilter(const Slice *keys, int n,
+                            std::list<std::string> &dsts) const {
+    return;
+  }
 
-	virtual bool KeyMayMatchFilters(const Slice &key, const std::list<leveldb::Slice> &filters) const
-	{
-		return true;
-	}
+  virtual bool KeyMayMatchFilters(
+      const Slice &key, const std::list<leveldb::Slice> &filters) const {
+    return true;
+  }
 
-	virtual bool KeyMayMatch(const Slice &key, const Slice &bloom_filter) const
-	{
-		const size_t len = bloom_filter.size();
-		if (len < 2)
-			return false;
+  virtual bool KeyMayMatch(const Slice &key, const Slice &bloom_filter) const {
+    const size_t len = bloom_filter.size();
+    if (len < 2) return false;
 
-		const char *array = bloom_filter.data();
-		const size_t bits = (len - 1) * 8;
+    const char *array = bloom_filter.data();
+    const size_t bits = (len - 1) * 8;
 
-		// Use the encoded k so that we can read filters generated by
-		// bloom filters created using different parameters.
-		const size_t k = array[len - 1];
-		if (k > 30)
-		{
-			// Reserved for potentially new encodings for short bloom filters.
-			// Consider it a match.
-			return true;
-		}
+    // Use the encoded k so that we can read filters generated by
+    // bloom filters created using different parameters.
+    const size_t k = array[len - 1];
+    if (k > 30) {
+      // Reserved for potentially new encodings for short bloom filters.
+      // Consider it a match.
+      return true;
+    }
 
-		uint32_t h = BloomHash(key, id_);
-		const uint32_t delta = (h >> 17) | (h << 15); // Rotate right 17 bits
-		for (size_t j = 0; j < k; j++)
-		{
-			const uint32_t bitpos = h % bits;
-			h += delta;
-			if ((array[bitpos / 8] & (1 << (bitpos % 8))) == 0)
-				return false;
-		}
-		return true;
-	}
+    uint32_t h = BloomHash(key, id_);
+    const uint32_t delta = (h >> 17) | (h << 15);  // Rotate right 17 bits
+    for (size_t j = 0; j < k; j++) {
+      const uint32_t bitpos = h % bits;
+      h += delta;
+      if ((array[bitpos / 8] & (1 << (bitpos % 8))) == 0) return false;
+    }
+    return true;
+  }
 
-	virtual int filterNums() const
-	{
-		return 1;
-	}
+  virtual int filterNums() const { return 1; }
 };
 
 #define LOG2_CACHE_LINE_BYTES 6
 #define CACHE_LINE_SIZE (1 << LOG2_CACHE_LINE_BYTES)
 #define PREFETCH(addr, rw, locality) __builtin_prefetch(addr, rw, locality)
 
-class BlockedBloomFilterPolicy : public FilterPolicy
-{
-private:
-	size_t bits_per_key_;
-	size_t k_;
-	int id_; //begin from 0
-	static const bool ExtraRotates = true;
-public:
-	explicit BlockedBloomFilterPolicy(int bits_per_key, int id)
-		: bits_per_key_(bits_per_key), id_(id)
-	{
-		// We intentionally round down to reduce probing cost a little bit
-		k_ = static_cast<size_t>(bits_per_key * 0.69); // 0.69 =~ ln(2)
-		if (k_ < 1)
-			k_ = 1;
-		if (k_ > 30)
-			k_ = 30;
-	}
+class BlockedBloomFilterPolicy : public FilterPolicy {
+ private:
+  size_t bits_per_key_;
+  size_t k_;
+  int id_;  // begin from 0
+  static const bool ExtraRotates = true;
 
-	virtual const char *Name() const
-	{
-		return "leveldb.BuiltinBlockedBloomFilter";
-	}
+ public:
+  explicit BlockedBloomFilterPolicy(int bits_per_key, int id)
+      : bits_per_key_(bits_per_key), id_(id) {
+    // We intentionally round down to reduce probing cost a little bit
+    k_ = static_cast<size_t>(bits_per_key * 0.69);  // 0.69 =~ ln(2)
+    if (k_ < 1) k_ = 1;
+    if (k_ > 30) k_ = 30;
+  }
 
-	size_t GetTotalBitsForLocality(size_t total_bits) const
-	{
-		size_t num_lines =
-			(total_bits + CACHE_LINE_SIZE * 8 - 1) / (CACHE_LINE_SIZE * 8);
+  virtual const char *Name() const {
+    return "leveldb.BuiltinBlockedBloomFilter";
+  }
 
-		// Make num_lines an odd number to make sure more bits are involved
-		// when determining which block.
-		if (num_lines % 2 == 0)
-		{
-			num_lines++;
-		}
-		return num_lines * (CACHE_LINE_SIZE * 8);
-	}
+  size_t GetTotalBitsForLocality(size_t total_bits) const {
+    size_t num_lines =
+        (total_bits + CACHE_LINE_SIZE * 8 - 1) / (CACHE_LINE_SIZE * 8);
 
-	static inline uint32_t GetLine(uint32_t h, uint32_t num_lines) {
-		uint32_t offset_h = ExtraRotates ? (h >> 11) | (h << 21) : h;
-		return offset_h % num_lines;
-	}
+    // Make num_lines an odd number to make sure more bits are involved
+    // when determining which block.
+    if (num_lines % 2 == 0) {
+      num_lines++;
+    }
+    return num_lines * (CACHE_LINE_SIZE * 8);
+  }
 
-	virtual void CreateFilter(const Slice *keys, int n, std::string *dst) const
-	{
-		// Compute bloom filter size (in both bits and bytes)
-		size_t bits = GetTotalBitsForLocality(n * bits_per_key_);
-		size_t bytes = bits / 8;
-		size_t num_lines = bits / (CACHE_LINE_SIZE * 8);
+  static inline uint32_t GetLine(uint32_t h, uint32_t num_lines) {
+    uint32_t offset_h = ExtraRotates ? (h >> 11) | (h << 21) : h;
+    return offset_h % num_lines;
+  }
 
-		const size_t init_size = dst->size();
-		dst->resize(init_size + bytes + 5, 0);
-		char *array = &(*dst)[init_size];
+  virtual void CreateFilter(const Slice *keys, int n, std::string *dst) const {
+    // Compute bloom filter size (in both bits and bytes)
+    size_t bits = GetTotalBitsForLocality(n * bits_per_key_);
+    size_t bytes = bits / 8;
+    size_t num_lines = bits / (CACHE_LINE_SIZE * 8);
 
-		array[bytes] = static_cast<char>(k_);
-		EncodeFixed32(array + bytes + 1, static_cast<uint32_t>(num_lines));
+    const size_t init_size = dst->size();
+    dst->resize(init_size + bytes + 5, 0);
+    char *array = &(*dst)[init_size];
 
-		for (int i = 0; i < n; i++)
-		{
-			uint32_t h = BloomHash(keys[i], 11);
-			uint32_t h2 = BloomHash(keys[i], id_);
+    array[bytes] = static_cast<char>(k_);
+    EncodeFixed32(array + bytes + 1, static_cast<uint32_t>(num_lines));
 
-			const int log2_cache_line_bits = LOG2_CACHE_LINE_BYTES + 3;
+    for (int i = 0; i < n; i++) {
+      uint32_t h = BloomHash(keys[i], 11);
+      uint32_t h2 = BloomHash(keys[i], id_);
 
-			char *data_at_offset =
-				array + (GetLine(h, num_lines) << LOG2_CACHE_LINE_BYTES);
+      const int log2_cache_line_bits = LOG2_CACHE_LINE_BYTES + 3;
 
-			h = h2;
-			const uint32_t delta = (h >> 17) | (h << 15);
-			for (int i = 0; i < k_; ++i) {
-				// Mask to bit-within-cache-line address
-				const uint32_t bitpos = h & ((1 << log2_cache_line_bits) - 1);
-				data_at_offset[bitpos / 8] |= (1 << (bitpos % 8));
-				if (ExtraRotates) {
-					h = (h >> log2_cache_line_bits) | (h << (32 - log2_cache_line_bits));
-				}
-				h += delta;
-			}
-		}
-	}
+      char *data_at_offset =
+          array + (GetLine(h, num_lines) << LOG2_CACHE_LINE_BYTES);
 
-	virtual void CreateFilter(const Slice *keys, int n, std::list<std::string> &dsts) const
-	{
-		return;
-	}
+      h = h2;
+      const uint32_t delta = (h >> 17) | (h << 15);
+      for (int i = 0; i < k_; ++i) {
+        // Mask to bit-within-cache-line address
+        const uint32_t bitpos = h & ((1 << log2_cache_line_bits) - 1);
+        data_at_offset[bitpos / 8] |= (1 << (bitpos % 8));
+        if (ExtraRotates) {
+          h = (h >> log2_cache_line_bits) | (h << (32 - log2_cache_line_bits));
+        }
+        h += delta;
+      }
+    }
+  }
 
-	virtual bool KeyMayMatchFilters(const Slice &key, const std::list<leveldb::Slice> &filters) const
-	{
-		return true;
-	}
+  virtual void CreateFilter(const Slice *keys, int n,
+                            std::list<std::string> &dsts) const {
+    return;
+  }
 
-	inline void PrepareHashMayMatch(uint32_t h, uint32_t num_lines,
-									const char *data,
-									uint32_t /*out*/ *byte_offset) const {
-		uint32_t b = GetLine(h, num_lines) << LOG2_CACHE_LINE_BYTES;
-		PREFETCH(data + b, 0 /* rw */, 1 /* locality */);
-		PREFETCH(data + b + ((1 << LOG2_CACHE_LINE_BYTES) - 1), 0 /* rw */,
-				1 /* locality */);
-		*byte_offset = b;
-	}
+  virtual bool KeyMayMatchFilters(
+      const Slice &key, const std::list<leveldb::Slice> &filters) const {
+    return true;
+  }
 
-	static inline bool HashMayMatchPrepared(uint32_t h, int num_probes,
+  inline void PrepareHashMayMatch(uint32_t h, uint32_t num_lines,
+                                  const char *data,
+                                  uint32_t /*out*/ *byte_offset) const {
+    uint32_t b = GetLine(h, num_lines) << LOG2_CACHE_LINE_BYTES;
+    PREFETCH(data + b, 0 /* rw */, 1 /* locality */);
+    PREFETCH(data + b + ((1 << LOG2_CACHE_LINE_BYTES) - 1), 0 /* rw */,
+             1 /* locality */);
+    *byte_offset = b;
+  }
+
+  static inline bool HashMayMatchPrepared(uint32_t h, int num_probes,
                                           const char *data_at_offset) {
-		const int log2_cache_line_bits = LOG2_CACHE_LINE_BYTES + 3;
+    const int log2_cache_line_bits = LOG2_CACHE_LINE_BYTES + 3;
 
-		const uint32_t delta = (h >> 17) | (h << 15);
-		for (int i = 0; i < num_probes; ++i) {
-			// Mask to bit-within-cache-line address
-			const uint32_t bitpos = h & ((1 << log2_cache_line_bits) - 1);
-			if (((data_at_offset[bitpos / 8]) & (1 << (bitpos % 8))) == 0) {
-				return false;
-			}
-			if (ExtraRotates) {
-				h = (h >> log2_cache_line_bits) | (h << (32 - log2_cache_line_bits));
-			}
-			h += delta;
-		}
-		return true;
-	}
+    const uint32_t delta = (h >> 17) | (h << 15);
+    for (int i = 0; i < num_probes; ++i) {
+      // Mask to bit-within-cache-line address
+      const uint32_t bitpos = h & ((1 << log2_cache_line_bits) - 1);
+      if (((data_at_offset[bitpos / 8]) & (1 << (bitpos % 8))) == 0) {
+        return false;
+      }
+      if (ExtraRotates) {
+        h = (h >> log2_cache_line_bits) | (h << (32 - log2_cache_line_bits));
+      }
+      h += delta;
+    }
+    return true;
+  }
 
-	virtual bool KeyMayMatch(const Slice &key, const Slice &bloom_filter) const
-	{
-		const size_t len = bloom_filter.size();
-		if (len < 5)
-			return false;
+  virtual bool KeyMayMatch(const Slice &key, const Slice &bloom_filter) const {
+    const size_t len = bloom_filter.size();
+    if (len < 5) return false;
 
-		const char *array = bloom_filter.data();
-		const size_t bits = (len - 5) * 8;
+    const char *array = bloom_filter.data();
+    const size_t bits = (len - 5) * 8;
 
-		// Use the encoded k so that we can read filters generated by
-		// bloom filters created using different parameters.
-		const size_t k = array[len - 5];
-		const size_t num_lines = DecodeFixed32(array + len - 4);
-		if (k > 30)
-		{
-			// Reserved for potentially new encodings for short bloom filters.
-			// Consider it a match.
-			return true;
-		}
+    // Use the encoded k so that we can read filters generated by
+    // bloom filters created using different parameters.
+    const size_t k = array[len - 5];
+    const size_t num_lines = DecodeFixed32(array + len - 4);
+    if (k > 30) {
+      // Reserved for potentially new encodings for short bloom filters.
+      // Consider it a match.
+      return true;
+    }
 
-		uint32_t h1 = BloomHash(key, 11);
-		uint32_t h2 = BloomHash(key, id_);
+    uint32_t h1 = BloomHash(key, 11);
+    uint32_t h2 = BloomHash(key, id_);
 
-		uint32_t byte_offset;
-		PrepareHashMayMatch(h1, num_lines, array, &byte_offset);
-		return HashMayMatchPrepared(h2, k, array + byte_offset);
-	}
+    uint32_t byte_offset;
+    PrepareHashMayMatch(h1, num_lines, array, &byte_offset);
+    return HashMayMatchPrepared(h2, k, array + byte_offset);
+  }
 
-	virtual int filterNums() const
-	{
-		return 1;
-	}
+  virtual int filterNums() const { return 1; }
 };
 
-struct CreateFilterArg
-{
-	ChildPolicy *ch;
-	std::string *dst;
+struct CreateFilterArg {
+  ChildPolicy *ch;
+  std::string *dst;
 };
 
-class MultiFilter : public FilterPolicy
-{
-private:
-	std::vector<ChildPolicy *> filters;
-	size_t bits_per_key_;
-	//	static pthread_mutex_t filter_mutexs_[10];
-	//	static pthread_cond_t filter_conds_[10];
-	static pthread_t pids_[16];
-	static std::atomic<int> curr_completed_filter_num_;
-	static int filter_num_;
-	static std::atomic<bool> filled_[16];
-	static const Slice *keys_;
-	static int n_;
-	static bool end_thread;
+class MultiFilter : public FilterPolicy {
+ private:
+  std::vector<ChildPolicy *> filters;
+  size_t bits_per_key_;
+  //	static pthread_mutex_t filter_mutexs_[10];
+  //	static pthread_cond_t filter_conds_[10];
+  static pthread_t pids_[16];
+  static std::atomic<int> curr_completed_filter_num_;
+  static int filter_num_;
+  static std::atomic<bool> filled_[16];
+  static const Slice *keys_;
+  static int n_;
+  static bool end_thread;
 
-public: 
-	static CreateFilterArg *cfas;
-	static void *CreateFilter_T(void *arg)
-	{
-		int id = *(int *)(arg);
-		delete (int *)(arg);
-		CreateFilterArg *temp_cfa = cfas + id;
-		while (true)
-		{
-			//	      pthread_mutex_lock(&filter_mutexs_[id]);
-			while (!filled_[id] && !end_thread)
-			{
-				//		pthread_cond_wait(&filter_conds_[id],&filter_mutexs_[id]);
-			}
-			//	      pthread_mutex_unlock(&filter_mutexs_[id]);
-			if (end_thread)
-			{
-				break;
-			}
-			uint64_t start_micros = Env::Default()->NowMicros();
-			cfas[id].ch->CreateFilter(keys_, n_, cfas[id].dst);
-			filled_[id] = false;
-			MeasureTime(Statistics::GetStatistics().get(), Tickers::CHILD_CREATE_FILTER_TIME, Env::Default()->NowMicros() - start_micros);
-			start_micros = Env::Default()->NowMicros();
-			++curr_completed_filter_num_;
-			MeasureTime(Statistics::GetStatistics().get(), Tickers::CHILD_FILTER_OTHER_TIME, Env::Default()->NowMicros() - start_micros);
-		}
-	}
-	explicit MultiFilter(int bits_per_key_per_filter[], int bits_per_key) : bits_per_key_(bits_per_key)
-	{
-		int i;
-		int cpu_count = sysconf(_SC_NPROCESSORS_CONF);
-		int base_cpu_id = 8;
+ public:
+  static CreateFilterArg *cfas;
+  static void *CreateFilter_T(void *arg) {
+    int id = *(int *)(arg);
+    delete (int *)(arg);
+    CreateFilterArg *temp_cfa = cfas + id;
+    while (true) {
+      //	      pthread_mutex_lock(&filter_mutexs_[id]);
+      while (!filled_[id] && !end_thread) {
+        //		pthread_cond_wait(&filter_conds_[id],&filter_mutexs_[id]);
+      }
+      //	      pthread_mutex_unlock(&filter_mutexs_[id]);
+      if (end_thread) {
+        break;
+      }
+      uint64_t start_micros = Env::Default()->NowMicros();
+      cfas[id].ch->CreateFilter(keys_, n_, cfas[id].dst);
+      filled_[id] = false;
+      MeasureTime(Statistics::GetStatistics().get(),
+                  Tickers::CHILD_CREATE_FILTER_TIME,
+                  Env::Default()->NowMicros() - start_micros);
+      start_micros = Env::Default()->NowMicros();
+      ++curr_completed_filter_num_;
+      MeasureTime(Statistics::GetStatistics().get(),
+                  Tickers::CHILD_FILTER_OTHER_TIME,
+                  Env::Default()->NowMicros() - start_micros);
+    }
+  }
+  explicit MultiFilter(int bits_per_key_per_filter[], int bits_per_key)
+      : bits_per_key_(bits_per_key) {
+    int i;
+    int cpu_count = sysconf(_SC_NPROCESSORS_CONF);
+    int base_cpu_id = 8;
 
-		bits_per_key_per_filter_ = new size_t[16]();
-		char name_buf[24];
-		end_thread = false;
-		for (i = 0; bits_per_key_per_filter[i] != 0; i++)
-		{
-			ChildPolicy *ch_filter = new ChildPolicy(bits_per_key_per_filter[i], i);
-			filters.push_back(ch_filter);
-			bits_per_key_per_filter_[i] = bits_per_key_per_filter[i];
-			filled_[i] = false;
-		}
-		curr_completed_filter_num_ = 0;
-		filter_num_ = i;
-		fprintf(stderr, "filters size:%ld\n", filters.size());
-		fprintf(stderr, "bits per key array: ");
-		for (int i = 0; i < filters.size(); i++)
-			fprintf(stderr, "%d ", bits_per_key_per_filter[i]);
-		fprintf(stderr, "\n");
+    bits_per_key_per_filter_ = new size_t[16]();
+    char name_buf[24];
+    end_thread = false;
+    for (i = 0; bits_per_key_per_filter[i] != 0; i++) {
+      ChildPolicy *ch_filter = new ChildPolicy(bits_per_key_per_filter[i], i);
+      filters.push_back(ch_filter);
+      bits_per_key_per_filter_[i] = bits_per_key_per_filter[i];
+      filled_[i] = false;
+    }
+    curr_completed_filter_num_ = 0;
+    filter_num_ = i;
+    fprintf(stderr, "filters size:%ld\n", filters.size());
+    fprintf(stderr, "bits per key array: ");
+    for (int i = 0; i < filters.size(); i++)
+      fprintf(stderr, "%d ", bits_per_key_per_filter[i]);
+    fprintf(stderr, "\n");
 
-		cfas = new CreateFilterArg[filters.size()];
-		i = 0;
+    cfas = new CreateFilterArg[filters.size()];
+    i = 0;
 
-	#ifdef ChildPolicy
-		printf("Used ChildPolicy: %s\n", STR(ChildPolicy));
-	#endif
+#ifdef ChildPolicy
+    printf("Used ChildPolicy: %s\n", STR(ChildPolicy));
+#endif
 
-	#ifdef FilterMergeThreshold 
-		printf("FilterMergeThreshold: %d\n", FilterMergeThreshold);
-		if (FilterMergeThreshold <= 1 || FilterMergeThreshold > filters.size()) {
-			fprintf(stderr, "set FilterMergeThreshold error!\n");
-			// exit(1);
-		}
-	#endif
+#ifdef FilterMergeThreshold
+    printf("FilterMergeThreshold: %d\n", FilterMergeThreshold);
+    if (FilterMergeThreshold <= 1 || FilterMergeThreshold > filters.size()) {
+      fprintf(stderr, "set FilterMergeThreshold error!\n");
+      // exit(1);
+    }
+#endif
 
-		for (std::vector<ChildPolicy *>::const_iterator iter = filters.begin(); iter != filters.end(); iter++)
-		{
-			int *temp_id = new int(i);
-			cpu_set_t cpuset;
-			CPU_ZERO(&cpuset);
-			CPU_SET(base_cpu_id + i, &cpuset);
+    for (std::vector<ChildPolicy *>::const_iterator iter = filters.begin();
+         iter != filters.end(); iter++) {
+      int *temp_id = new int(i);
+      cpu_set_t cpuset;
+      CPU_ZERO(&cpuset);
+      CPU_SET(base_cpu_id + i, &cpuset);
 
-			if (pthread_create(pids_ + i, NULL, MultiFilter::CreateFilter_T, (void *)(temp_id)) != 0)
-			{
-				perror("create thread ");
-			}
-			snprintf(name_buf, sizeof name_buf, "filter:bg%d", i);
-			name_buf[sizeof name_buf - 1] = '\0';
-			pthread_setname_np(pids_[i], name_buf);
+      if (pthread_create(pids_ + i, NULL, MultiFilter::CreateFilter_T,
+                         (void *)(temp_id)) != 0) {
+        perror("create thread ");
+      }
+      snprintf(name_buf, sizeof name_buf, "filter:bg%d", i);
+      name_buf[sizeof name_buf - 1] = '\0';
+      pthread_setname_np(pids_[i], name_buf);
 
-			if (base_cpu_id + filters.size() < cpu_count)
-			{
-				int s = pthread_setaffinity_np(pids_[i], sizeof(cpu_set_t), &cpuset);
-				if (s != 0)
-				{
-					handle_error_en(s, "pthread_setaffinity_np");
-				}
-			}
+      if (base_cpu_id + filters.size() < cpu_count) {
+        int s = pthread_setaffinity_np(pids_[i], sizeof(cpu_set_t), &cpuset);
+        if (s != 0) {
+          handle_error_en(s, "pthread_setaffinity_np");
+        }
+      }
 
-			cfas[i++].ch = *iter;
-		}
-	}
+      cfas[i++].ch = *iter;
+    }
+  }
 
-	virtual void CreateFilter(const Slice *keys, int n, std::string *dst) const
-	{
-		int i = 0;
-		for (std::vector<ChildPolicy *>::const_iterator iter = filters.begin(); iter != filters.end(); iter++)
-		{
-			(*iter)->CreateFilter(keys, n, dst + i);
-			i++;
-		}
-	}
-	virtual void CreateFilter(const Slice *keys, int n, std::list<std::string> &dsts) const
-	{
-		CreateFilterArg *cfa = cfas;
-		keys_ = keys;
-		n_ = n;
-		int i = 0;
-		uint64_t start_micros = Env::Default()->NowMicros();
-		for (auto dsts_iter = dsts.begin(); dsts_iter != dsts.end(); ++dsts_iter)
-		{
-			// pthread_mutex_lock(&filter_mutexs_[i]);
-			cfa->dst = &(*dsts_iter);
-			filled_[i] = true;
-			// pthread_mutex_unlock(&filter_mutexs_[i]);
-			// pthread_cond_signal(&filter_conds_[i++]);
-			cfa++;
-			i++;
-		}
-		MeasureTime(Statistics::GetStatistics().get(), Tickers::FILTER_LOCK_TIME, Env::Default()->NowMicros() - start_micros);
-		start_micros = Env::Default()->NowMicros();
-		while (curr_completed_filter_num_ != filter_num_)
-			;
-		MeasureTime(Statistics::GetStatistics().get(), Tickers::FILTER_WAIT_TIME, Env::Default()->NowMicros() - start_micros);
-		curr_completed_filter_num_ = 0;
-	}
-	virtual bool KeyMayMatch(const Slice &key, const Slice &bloom_filter, int id) const
-	{
-		return filters[id]->KeyMayMatch(key, bloom_filter);
-	}
-	virtual bool KeyMayMatch(const Slice &key, const Slice &bloom_filter) const
-	{
-		return true;
-	}
-	virtual bool KeyMayMatchFilters(const Slice &key, const std::list<Slice> &filter_strs) const
-	{
-		std::vector<ChildPolicy *>::const_iterator filter_iter = filters.begin();
-		for (std::list<Slice>::const_iterator filter_strs_iter = filter_strs.begin(); filter_strs_iter != filter_strs.end(); filter_strs_iter++)
-		{
-			if (!(*filter_iter)->KeyMayMatch(key, *filter_strs_iter))
-			{
-				return false;
-			}
-			filter_iter++;
-		}
-		return true;
-	}
+  virtual void CreateFilter(const Slice *keys, int n, std::string *dst) const {
+    int i = 0;
+    for (std::vector<ChildPolicy *>::const_iterator iter = filters.begin();
+         iter != filters.end(); iter++) {
+      (*iter)->CreateFilter(keys, n, dst + i);
+      i++;
+    }
+  }
+  virtual void CreateFilter(const Slice *keys, int n,
+                            std::list<std::string> &dsts) const {
+    CreateFilterArg *cfa = cfas;
+    keys_ = keys;
+    n_ = n;
+    int i = 0;
+    uint64_t start_micros = Env::Default()->NowMicros();
+    for (auto dsts_iter = dsts.begin(); dsts_iter != dsts.end(); ++dsts_iter) {
+      // pthread_mutex_lock(&filter_mutexs_[i]);
+      cfa->dst = &(*dsts_iter);
+      filled_[i] = true;
+      // pthread_mutex_unlock(&filter_mutexs_[i]);
+      // pthread_cond_signal(&filter_conds_[i++]);
+      cfa++;
+      i++;
+    }
+    MeasureTime(Statistics::GetStatistics().get(), Tickers::FILTER_LOCK_TIME,
+                Env::Default()->NowMicros() - start_micros);
+    start_micros = Env::Default()->NowMicros();
+    while (curr_completed_filter_num_ != filter_num_)
+      ;
+    MeasureTime(Statistics::GetStatistics().get(), Tickers::FILTER_WAIT_TIME,
+                Env::Default()->NowMicros() - start_micros);
+    curr_completed_filter_num_ = 0;
+  }
+  virtual bool KeyMayMatch(const Slice &key, const Slice &bloom_filter,
+                           int id) const {
+    return filters[id]->KeyMayMatch(key, bloom_filter);
+  }
+  virtual bool KeyMayMatch(const Slice &key, const Slice &bloom_filter) const {
+    return true;
+  }
+  virtual bool KeyMayMatchFilters(const Slice &key,
+                                  const std::list<Slice> &filter_strs) const {
+    std::vector<ChildPolicy *>::const_iterator filter_iter = filters.begin();
+    for (std::list<Slice>::const_iterator filter_strs_iter =
+             filter_strs.begin();
+         filter_strs_iter != filter_strs.end(); filter_strs_iter++) {
+      if (!(*filter_iter)->KeyMayMatch(key, *filter_strs_iter)) {
+        return false;
+      }
+      filter_iter++;
+    }
+    return true;
+  }
 
-	virtual bool KeyMayMatchFilters(const Slice& key, const MultiFilters* multi_filters) const
-	{
-		std::vector<ChildPolicy *>::const_iterator filter_iter = filters.begin();
+  virtual bool KeyMayMatchFilters(const Slice &key,
+                                  const MultiFilters *multi_filters) const {
+    std::vector<ChildPolicy *>::const_iterator filter_iter = filters.begin();
 
-		if (!multi_filters->is_merged) {
-			for (std::list<Slice>::const_iterator filter_strs_iter = multi_filters->separated_filters.begin(); filter_strs_iter != multi_filters->separated_filters.end(); filter_strs_iter++)
-			{
-				if (!(*filter_iter)->KeyMayMatch(key, *filter_strs_iter))
-				{
-					return false;
-				}
-				filter_iter++;
-			}
-		} else { //merged filters
-			const char *array_of_all = &(*multi_filters->merged_filters)[0];
-			const size_t len_of_all = multi_filters->merged_filters->size();
-			const size_t k = array_of_all[len_of_all - 5];
-			const size_t num_lines = DecodeFixed32(array_of_all + len_of_all - 4);
+    if (!multi_filters->is_merged) {
+      for (std::list<Slice>::const_iterator filter_strs_iter =
+               multi_filters->separated_filters.begin();
+           filter_strs_iter != multi_filters->separated_filters.end();
+           filter_strs_iter++) {
+        if (!(*filter_iter)->KeyMayMatch(key, *filter_strs_iter)) {
+          return false;
+        }
+        filter_iter++;
+      }
+    } else {  // merged filters
+      const char *array_of_all = &(*multi_filters->merged_filters)[0];
+      const size_t len_of_all = multi_filters->merged_filters->size();
+      const size_t k = array_of_all[len_of_all - 5];
+      const size_t num_lines = DecodeFixed32(array_of_all + len_of_all - 4);
 
-			uint32_t hs[16];
-			hs[0] = BloomHash(key, 11);
-			// for (int i = 0; i < multi_filters->curr_num_of_filters; i++) {
-			// 	hs[i + 1] = BloomHash(key, i);
-			// }
+      uint32_t hs[16];
+      hs[0] = BloomHash(key, 11);
+      // for (int i = 0; i < multi_filters->curr_num_of_filters; i++) {
+      // 	hs[i + 1] = BloomHash(key, i);
+      // }
 
-			// uint32_t h = BloomHash(key, 11);
+      // uint32_t h = BloomHash(key, 11);
 
-			uint32_t byte_offset;
-			byte_offset = BlockedBloomFilterPolicy::GetLine(hs[0], num_lines) * multi_filters->curr_num_of_filters * CACHE_LINE_SIZE;
-			for (int i = 0; i < multi_filters->curr_num_of_filters; i++) {
-				hs[0] = BloomHash(key, i);
-				PREFETCH(array_of_all + byte_offset, 0 /* rw */, 1);
-				if (!BlockedBloomFilterPolicy::HashMayMatchPrepared(hs[0], k, array_of_all + byte_offset)) {
-					return false;
-				}
-				byte_offset += CACHE_LINE_SIZE;
-			}
-		}
+      uint32_t byte_offset;
+      byte_offset = BlockedBloomFilterPolicy::GetLine(hs[0], num_lines) *
+                    multi_filters->curr_num_of_filters * CACHE_LINE_SIZE;
+      for (int i = 0; i < multi_filters->curr_num_of_filters; i++) {
+        hs[0] = BloomHash(key, i);
+        PREFETCH(array_of_all + byte_offset, 0 /* rw */, 1);
+        if (!BlockedBloomFilterPolicy::HashMayMatchPrepared(
+                hs[0], k, array_of_all + byte_offset)) {
+          return false;
+        }
+        byte_offset += CACHE_LINE_SIZE;
+      }
+    }
 
-		return true;
-	}
+    return true;
+  }
 
-	virtual int filterNums() const override
-	{
-		return filters.size();
-	}
+  virtual int filterNums() const override { return filters.size(); }
 
-	virtual const char *Name() const
-	{
-		return "leveldb.multi_bloom_filter";
-	}
+  virtual const char *Name() const { return "leveldb.multi_bloom_filter"; }
 
-	virtual ~MultiFilter()
-	{
-		int i = 0;
-		end_thread = true;
-		for (auto iter = filters.begin(); !filters.empty();)
-		{
-			delete *iter;
-			iter = filters.erase(iter);
-			pthread_join(pids_[i++], NULL);
-		}
-		fprintf(stderr, "Multi_bloom_filter destructor is called\n");
-	}
+  virtual ~MultiFilter() {
+    int i = 0;
+    end_thread = true;
+    for (auto iter = filters.begin(); !filters.empty();) {
+      delete *iter;
+      iter = filters.erase(iter);
+      pthread_join(pids_[i++], NULL);
+    }
+    fprintf(stderr, "Multi_bloom_filter destructor is called\n");
+  }
 };
 
 std::atomic<int> MultiFilter::curr_completed_filter_num_(0);
 int MultiFilter::filter_num_ = 0;
-// pthread_mutex_t MultiFilter::filter_mutexs_[10]={PTHREAD_MUTEX_INITIALIZER,PTHREAD_MUTEX_INITIALIZER,PTHREAD_MUTEX_INITIALIZER,PTHREAD_MUTEX_INITIALIZER,PTHREAD_MUTEX_INITIALIZER,PTHREAD_MUTEX_INITIALIZER,PTHREAD_MUTEX_INITIALIZER,PTHREAD_MUTEX_INITIALIZER,PTHREAD_MUTEX_INITIALIZER,PTHREAD_MUTEX_INITIALIZER,};
-// pthread_cond_t MultiFilter::filter_conds_[10]={PTHREAD_COND_INITIALIZER,PTHREAD_COND_INITIALIZER,PTHREAD_COND_INITIALIZER,PTHREAD_COND_INITIALIZER,PTHREAD_COND_INITIALIZER,PTHREAD_COND_INITIALIZER,PTHREAD_COND_INITIALIZER,PTHREAD_COND_INITIALIZER,PTHREAD_COND_INITIALIZER,PTHREAD_COND_INITIALIZER};
+// pthread_mutex_t
+// MultiFilter::filter_mutexs_[10]={PTHREAD_MUTEX_INITIALIZER,PTHREAD_MUTEX_INITIALIZER,PTHREAD_MUTEX_INITIALIZER,PTHREAD_MUTEX_INITIALIZER,PTHREAD_MUTEX_INITIALIZER,PTHREAD_MUTEX_INITIALIZER,PTHREAD_MUTEX_INITIALIZER,PTHREAD_MUTEX_INITIALIZER,PTHREAD_MUTEX_INITIALIZER,PTHREAD_MUTEX_INITIALIZER,};
+// pthread_cond_t
+// MultiFilter::filter_conds_[10]={PTHREAD_COND_INITIALIZER,PTHREAD_COND_INITIALIZER,PTHREAD_COND_INITIALIZER,PTHREAD_COND_INITIALIZER,PTHREAD_COND_INITIALIZER,PTHREAD_COND_INITIALIZER,PTHREAD_COND_INITIALIZER,PTHREAD_COND_INITIALIZER,PTHREAD_COND_INITIALIZER,PTHREAD_COND_INITIALIZER};
 std::atomic<bool> MultiFilter::filled_[16];
 pthread_t MultiFilter::pids_[16];
 CreateFilterArg *MultiFilter::cfas(NULL);
 int MultiFilter::n_(0);
 const Slice *MultiFilter::keys_(NULL);
 bool MultiFilter::end_thread(false);
-} //anonymous namespace
-
+}  // anonymous namespace
 
 MultiFilters::~MultiFilters() {
-	if (this->merged_filters)
-		delete this->merged_filters;
-	for(auto iter: this->separated_filters)
-		iter.clear();
+  if (this->merged_filters) delete this->merged_filters;
+  for (auto iter : this->separated_filters) iter.clear();
 }
 
 void MultiFilters::addFilter(Slice &contents) {
 #ifdef FilterMergeThreshold
-	if (!is_merged && !is_compressed) {
-		separated_filters.push_back(contents);
-		curr_num_of_filters++;
+  if (!is_merged && !is_compressed) {
+    separated_filters.push_back(contents);
+    curr_num_of_filters++;
 
-		if (curr_num_of_filters >= FilterMergeThreshold) {
-			merge();
-			is_merged = true;
-		}
-	} else { //merged filters
-		this->push_back_merged_filters(contents);
-		curr_num_of_filters++;
-	}
+    if (curr_num_of_filters >= FilterMergeThreshold) {
+      merge();
+      is_merged = true;
+    }
+  } else {  // merged filters
+    this->push_back_merged_filters(contents);
+    curr_num_of_filters++;
+  }
 #else
-	separated_filters.push_back(contents);
-	curr_num_of_filters++;
+  separated_filters.push_back(contents);
+  curr_num_of_filters++;
 #endif
 }
 
 void MultiFilters::removeFilter() {
 #ifdef FilterMergeThreshold
-	if (!is_merged && !is_compressed) {
-		separated_filters.pop_back();
-		curr_num_of_filters--;
-	} else if (curr_num_of_filters == FilterMergeThreshold) {
-		separate();
-		is_merged = false;
+  if (!is_merged && !is_compressed) {
+    separated_filters.pop_back();
+    curr_num_of_filters--;
+  } else if (curr_num_of_filters == FilterMergeThreshold) {
+    separate();
+    is_merged = false;
 
-		separated_filters.pop_back();
-		curr_num_of_filters--;
-	} else { //Waiting to be optimized
-		this->pop_back_merged_filters();
-		curr_num_of_filters--;
-	}
+    separated_filters.pop_back();
+    curr_num_of_filters--;
+  } else {  // Waiting to be optimized
+    this->pop_back_merged_filters();
+    curr_num_of_filters--;
+  }
 #else
-	separated_filters.pop_back();
-	curr_num_of_filters--;
+  separated_filters.pop_back();
+  curr_num_of_filters--;
 #endif
 }
 
 void MultiFilters::merge() {
-	if (is_merged)
-		return;
+  if (is_merged) return;
 
-	//decide the target size
-	uint32_t merged_filters_size = 0;
-	for(Slice iter : this->separated_filters){
-		merged_filters_size += iter.size() - 5;
-	}
-	if(this->merged_filters == NULL)
-		this->merged_filters = new std::string();
-	this->merged_filters ->resize(merged_filters_size + 5,0);
-	char * dst = &(*this->merged_filters)[0];
-	// copy the tail information from front element
-	auto front_filter = this->separated_filters.front().data();
-	uint32_t font_filter_len = this->separated_filters.front().size();
-	dst[merged_filters_size] = front_filter[font_filter_len - 5];
-	uint32_t num_lines = DecodeFixed32(front_filter + font_filter_len - 4);
-	EncodeFixed32(dst + merged_filters_size + 1,static_cast<uint32_t>(num_lines));
+  // decide the target size
+  uint32_t merged_filters_size = 0;
+  for (Slice iter : this->separated_filters) {
+    merged_filters_size += iter.size() - 5;
+  }
+  if (this->merged_filters == NULL) this->merged_filters = new std::string();
+  this->merged_filters->resize(merged_filters_size + 5, 0);
+  char *dst = &(*this->merged_filters)[0];
+  // copy the tail information from front element
+  auto front_filter = this->separated_filters.front().data();
+  uint32_t font_filter_len = this->separated_filters.front().size();
+  dst[merged_filters_size] = front_filter[font_filter_len - 5];
+  uint32_t num_lines = DecodeFixed32(front_filter + font_filter_len - 4);
+  EncodeFixed32(dst + merged_filters_size + 1,
+                static_cast<uint32_t>(num_lines));
 
-	//get needed information: numlines, start to copy inforamtion
-	int k = this->separated_filters.size();
-	for(uint32_t i = 0; i < num_lines; i++){
-		char *tmp = dst + i * k * CACHE_LINE_SIZE;
-		uint32_t offset = 0;
-		for(auto iter : this->separated_filters){
-			memcpy(tmp + offset,iter.data() + i* CACHE_LINE_SIZE, CACHE_LINE_SIZE);
-			offset += CACHE_LINE_SIZE;
-		}
-	}
-	
+  // get needed information: numlines, start to copy inforamtion
+  int k = this->separated_filters.size();
+  for (uint32_t i = 0; i < num_lines; i++) {
+    char *tmp = dst + i * k * CACHE_LINE_SIZE;
+    uint32_t offset = 0;
+    for (auto iter : this->separated_filters) {
+      memcpy(tmp + offset, iter.data() + i * CACHE_LINE_SIZE, CACHE_LINE_SIZE);
+      offset += CACHE_LINE_SIZE;
+    }
+  }
 }
 
 void MultiFilters::separate() {
-	if (!is_merged)
-		return;
-		
-	uint32_t source_size = this->merged_filters->size() -5;
-	uint32_t dst_size = source_size/this->curr_num_of_filters;
-	char * source = &(*this->merged_filters)[0];
-	const size_t num_lines = DecodeFixed32(source + source_size +1);
-	
-	//init the sepearted_filters
-	std::list<std::string *> tmp_list;
-	for(int i = 0 ; i < this->curr_num_of_filters; i++){
-		std::string*tmp = new std::string();
-		tmp->resize(dst_size+5,0);
-		char * target = &(*tmp)[0];
-		target[dst_size] = source[source_size];
-		EncodeFixed32(target + dst_size +1,static_cast<uint32_t>(num_lines));
-		tmp_list.push_back(tmp);
-	}
-	for(int i = 0; i < num_lines; i++){
-		uint32_t source_offset = i * this->curr_num_of_filters * CACHE_LINE_SIZE;
-		uint32_t dst_offset = i * CACHE_LINE_SIZE;
-		uint32_t multi_cache_line_offset = 0;
+  if (!is_merged) return;
 
-		for(auto iter: tmp_list){
-			char * dst = &(*iter)[0];
-			memcpy(dst + dst_offset, source + source_offset + multi_cache_line_offset,CACHE_LINE_SIZE);
-			multi_cache_line_offset += CACHE_LINE_SIZE;
-		}
-	}
+  uint32_t source_size = this->merged_filters->size() - 5;
+  uint32_t dst_size = source_size / this->curr_num_of_filters;
+  char *source = &(*this->merged_filters)[0];
+  const size_t num_lines = DecodeFixed32(source + source_size + 1);
 
-	this->separated_filters.clear();
-	for(auto iter: tmp_list){
-		this->separated_filters.push_back(Slice(*iter));	
-	}
-	
-	delete this->merged_filters;
-	this->merged_filters = NULL;
-	
+  // init the sepearted_filters
+  std::list<std::string *> tmp_list;
+  for (int i = 0; i < this->curr_num_of_filters; i++) {
+    std::string *tmp = new std::string();
+    tmp->resize(dst_size + 5, 0);
+    char *target = &(*tmp)[0];
+    target[dst_size] = source[source_size];
+    EncodeFixed32(target + dst_size + 1, static_cast<uint32_t>(num_lines));
+    tmp_list.push_back(tmp);
+  }
+  for (int i = 0; i < num_lines; i++) {
+    uint32_t source_offset = i * this->curr_num_of_filters * CACHE_LINE_SIZE;
+    uint32_t dst_offset = i * CACHE_LINE_SIZE;
+    uint32_t multi_cache_line_offset = 0;
+
+    for (auto iter : tmp_list) {
+      char *dst = &(*iter)[0];
+      memcpy(dst + dst_offset, source + source_offset + multi_cache_line_offset,
+             CACHE_LINE_SIZE);
+      multi_cache_line_offset += CACHE_LINE_SIZE;
+    }
+  }
+
+  this->separated_filters.clear();
+  for (auto iter : tmp_list) {
+    this->separated_filters.push_back(Slice(*iter));
+  }
+
+  delete this->merged_filters;
+  this->merged_filters = NULL;
 }
 
-void MultiFilters::push_back_merged_filters(const Slice &contents){
-	uint32_t input_size = contents.size() - 5;
-	uint32_t dst_size = input_size + this->merged_filters->size() - 5;
-	const char *input_data = contents.data();
-	this->merged_filters->resize(dst_size + 5,0);
-	char * dst = &(*this->merged_filters)[0];
-	
+void MultiFilters::push_back_merged_filters(const Slice &contents) {
+  uint32_t input_size = contents.size() - 5;
+  uint32_t dst_size = input_size + this->merged_filters->size() - 5;
+  const char *input_data = contents.data();
+  this->merged_filters->resize(dst_size + 5, 0);
+  char *dst = &(*this->merged_filters)[0];
 
-	//start to move the tail information
-	dst[dst_size] = input_data[input_size];
-	uint32_t num_lines = DecodeFixed32(input_data + input_size + 1);
-	EncodeFixed32(dst + dst_size + 1,static_cast<uint32_t>(num_lines));
-	//move the dst elements for space
-	for(int i = num_lines - 1; i >= 0; i--){
-		uint32_t origin_offset = i * this->curr_num_of_filters * CACHE_LINE_SIZE;
-		uint32_t dst_offset = i*(this->curr_num_of_filters+1) *CACHE_LINE_SIZE;
-		memcpy(dst+dst_offset,dst+ origin_offset,this->curr_num_of_filters*CACHE_LINE_SIZE);
-	}
+  // start to move the tail information
+  dst[dst_size] = input_data[input_size];
+  uint32_t num_lines = DecodeFixed32(input_data + input_size + 1);
+  EncodeFixed32(dst + dst_size + 1, static_cast<uint32_t>(num_lines));
+  // move the dst elements for space
+  for (int i = num_lines - 1; i >= 0; i--) {
+    uint32_t origin_offset = i * this->curr_num_of_filters * CACHE_LINE_SIZE;
+    uint32_t dst_offset = i * (this->curr_num_of_filters + 1) * CACHE_LINE_SIZE;
+    memcpy(dst + dst_offset, dst + origin_offset,
+           this->curr_num_of_filters * CACHE_LINE_SIZE);
+  }
 
-	//copy the input elements to dst
-	for(int i = num_lines -1; i >= 0; i--){
-		uint32_t origin_offset = i * CACHE_LINE_SIZE;
-		uint32_t dst_offset = i*(this->curr_num_of_filters+1) *CACHE_LINE_SIZE + this->curr_num_of_filters * CACHE_LINE_SIZE;
-		memcpy(dst+dst_offset,input_data+ origin_offset,CACHE_LINE_SIZE);
-	}
+  // copy the input elements to dst
+  for (int i = num_lines - 1; i >= 0; i--) {
+    uint32_t origin_offset = i * CACHE_LINE_SIZE;
+    uint32_t dst_offset =
+        i * (this->curr_num_of_filters + 1) * CACHE_LINE_SIZE +
+        this->curr_num_of_filters * CACHE_LINE_SIZE;
+    memcpy(dst + dst_offset, input_data + origin_offset, CACHE_LINE_SIZE);
+  }
 }
 
-void MultiFilters::pop_back_merged_filters(){
-	uint32_t input_size = this->merged_filters->size() - 5;
-	char *input , *dst;
-	input = dst = &(*this->merged_filters)[0];
-	uint32_t num_lines = DecodeFixed32(input + input_size + 1);
-	uint32_t k_ = input[input_size];
-	uint32_t dst_size =  this->merged_filters->size() - num_lines*CACHE_LINE_SIZE- 5;	
+void MultiFilters::pop_back_merged_filters() {
+  uint32_t input_size = this->merged_filters->size() - 5;
+  char *input, *dst;
+  input = dst = &(*this->merged_filters)[0];
+  uint32_t num_lines = DecodeFixed32(input + input_size + 1);
+  uint32_t k_ = input[input_size];
+  uint32_t dst_size =
+      this->merged_filters->size() - num_lines * CACHE_LINE_SIZE - 5;
 
-	//start to move data
-	for(int i = 0 ; i < num_lines; i++){
-		uint32_t origin_offset = i*this->curr_num_of_filters*CACHE_LINE_SIZE;
-		uint32_t dst_offset = i*(this->curr_num_of_filters-1)*CACHE_LINE_SIZE;
-		memcpy(dst + dst_offset,input + origin_offset,(this->curr_num_of_filters-1)*CACHE_LINE_SIZE);
-	}
-	this->merged_filters->resize(dst_size + 5,0);
-	dst[dst_size] = k_;
-	EncodeFixed32(dst+dst_size + 1,static_cast<uint32_t>(num_lines));	
+  // start to move data
+  for (int i = 0; i < num_lines; i++) {
+    uint32_t origin_offset = i * this->curr_num_of_filters * CACHE_LINE_SIZE;
+    uint32_t dst_offset = i * (this->curr_num_of_filters - 1) * CACHE_LINE_SIZE;
+    memcpy(dst + dst_offset, input + origin_offset,
+           (this->curr_num_of_filters - 1) * CACHE_LINE_SIZE);
+  }
+  this->merged_filters->resize(dst_size + 5, 0);
+  dst[dst_size] = k_;
+  EncodeFixed32(dst + dst_size + 1, static_cast<uint32_t>(num_lines));
 }
 
 size_t *leveldb::FilterPolicy::bits_per_key_per_filter_ = nullptr;
-const FilterPolicy *NewBloomFilterPolicy(int bits_per_key_per_filter[], int bits_per_key)
-{
-	return new MultiFilter(bits_per_key_per_filter, bits_per_key);
+const FilterPolicy *NewBloomFilterPolicy(int bits_per_key_per_filter[],
+                                         int bits_per_key) {
+  return new MultiFilter(bits_per_key_per_filter, bits_per_key);
 }
-const FilterPolicy *NewBloomFilterPolicy(int *)
-{
-	return NULL;
-}
-const FilterPolicy *NewBloomFilterPolicy(int)
-{
-	return NULL;
-}
+const FilterPolicy *NewBloomFilterPolicy(int *) { return NULL; }
+const FilterPolicy *NewBloomFilterPolicy(int) { return NULL; }
 
-} // namespace leveldb
+}  // namespace leveldb
